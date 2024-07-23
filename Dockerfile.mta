@@ -5,8 +5,12 @@ FROM ubuntu:latest
 RUN apt-get update && \
     apt-get install -y postfix && \
     apt-get clean
-
 RUN apt install -y rsyslog
+RUN apt install -y libsasl2-modules sasl2-bin
+RUN apt install -y dnsutils
+
+# Configure master.cf
+RUN echo "submission inet n - y - - smtpd" >> /etc/postfix/master.cf
 
 # Configure Postfix to receive emails on all interfaces
 RUN postconf -e 'inet_interfaces = all' && \
@@ -14,14 +18,31 @@ RUN postconf -e 'inet_interfaces = all' && \
     postconf -e 'mydestination = $myhostname, localhost.$mydomain, localhost' && \
     postconf -e 'recipient_delimiter = +' && \
     postconf -e 'inet_protocols = all' && \
-#    postconf -e 'home_mailbox = Mailbox' && \
+#    postconf -e 'home_mailbox = Mailbox/' && \
 #    postconf -e 'mail_spool_directory = /var/mail/%u' && \
     postconf -e 'maillog_file = /var/log/postfix.log' && \
     postconf -e 'debug_peer_level = 2' && \
     postconf -e 'debugger_command = PATH=/bin:/usr/bin:/usr/local/bin; export PATH; (echo cont; echo where) | gdb $daemon_directory/$process_name $process_id 2>&1 | tee /var/log/postfix-debug.log | mail -s "Postfix debug log for $process_name" you@example.com' && \
     postconf -e 'smtp_tls_loglevel = 1' && \
     postconf -e 'smtpd_tls_loglevel = 1' && \
-    postconf -e 'smtpd_tls_received_header = yes'
+    postconf -e 'syslog_name = postfix/submission' && \
+    postconf -e 'smtpd_tls_security_level = encrypt' && \
+    postconf -e 'smtpd_tls_received_header = yes' && \
+    postconf -e 'relayhost = ' && \
+    postconf -e 'smtpd_sasl_type = dovecot' && \
+    postconf -e 'smtpd_sasl_path = inet:172.20.0.3:12345' && \
+#    postconf -e 'smtpd_sasl_password_maps = hash:/etc/postfix/sasl_passwd' && \
+    postconf -e 'smtpd_sasl_security_options = noanonymous' && \
+    postconf -e 'smtpd_sasl_auth_enable = yes' && \
+#    postconf -e 'broken_sasl_auth_clients = yes' && \
+    postconf -e 'smtpd_recipient_restrictions = permit_sasl_authenticated,permit_mynetworks,reject_unauth_destination'
+
+# Configure users and sasl
+#COPY ./sasl_passwd /etc/postfix/sasl_passwd
+RUN echo "START=yes" >> /etc/default/saslauthd
+#RUN sed -i 's/^MECHANISMS=.*/MECHANISMS="rimap"/' /etc/default/saslauthd
+#RUN sed -i 's/^MECH_OPTIONS=.*/MECH_OPTIONS="mda"/' /etc/default/saslauthd
+RUN service saslauthd restart
 
 # Configure rsyslog to capture Postfix logs
 RUN echo "mail.* -/var/log/mail.log" >> /etc/rsyslog.conf
@@ -36,14 +57,20 @@ RUN chmod +x /usr/local/bin/save_email.sh
 
 # Configure Postfix to use the script for all incoming emails
 RUN echo "/.*/ root" >> /etc/postfix/virtual && \
+#RUN echo "@gordarg.com root" >> /etc/postfix/virtual && \
+#    echo "@tyyi.net root" >> /etc/postfix/virtual && \
+#    echo "@0pt.ir root" >> /etc/postfix/virtual && \
     postmap /etc/postfix/virtual && \
     postconf -e 'virtual_alias_maps = regexp:/etc/postfix/virtual' && \
     postconf -e 'virtual_transport = local' && \
-    echo "root: |/usr/local/bin/save_email.sh" >> /etc/aliases && \
+#    echo "root: |/usr/local/bin/save_email.sh" >> /etc/aliases && \
     newaliases
 
 # Expose the SMTP port
-EXPOSE 25
+EXPOSE 25 587
+
+# DNS issues
+RUN cp /etc/resolv.conf /var/spool/postfix/etc/resolv.conf
 
 # Start Postfix
 CMD ["sh", "-c", "postfix start-fg & tail -f /var/log/postfix.log"]

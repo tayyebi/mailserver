@@ -9,11 +9,17 @@ services:
       context: .
       dockerfile: ./Dockerfile.mta
     ports:
-      - "25:25"
+      - "25:25" # SMTP, Incoming mail
+      - "587:587" # SMTP, Outgoing mail
     volumes:
-      - ./data/mail.mta:/var/mail
+      - ./data/home:/root
+      - ./data/mail:/var/mail
+    dns:
+      - 8.8.8.8
+      - 4.4.4.4
     networks:
-      - gordarg
+      mail_network:
+        ipv4_address: 172.20.0.2
   mda:
     hostname: mda
     container_name: mda
@@ -22,13 +28,21 @@ services:
       context: .
       dockerfile: ./Dockerfile.mda
     ports:
-      - "110:110"
-      - "143:143"
+#      - "12345:12345" # RIMAP SASL
+      - "110:110" # POP3
+      - "143:143" # IMAP
+      - "993:993" # IMAPS
     volumes:
-      - ./data/mail.mda:/var/mail
+      - ./data/home:/root
+      - ./data/mail:/var/mail
     networks:
-      - gordarg
+      mail_network:
+        ipv4_address: 172.20.0.3
 
 networks:
-  gordarg:
-    external: true
+  mail_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1

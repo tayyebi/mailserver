@@ -6,6 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Update the package list and install necessary packages
 RUN apt-get update && \
+    apt install -y dovecot-core && \
     apt-get install -y dovecot-pop3d dovecot-imapd && \
     apt-get clean
 
@@ -18,21 +19,38 @@ WORKDIR /etc/dovecot
 # Copy the Dovecot configuration file
 COPY dovecot.conf /etc/dovecot/dovecot.conf
 
+# SSL Configuration
+COPY ./ssl/dovecot.pem /etc/dovecot/dovecot.pem
+COPY ./ssl/dovecot.pem.private /etc/dovecot/private/dovecot.pem
+COPY ./ssl/dh.pem /etc/dovecot/dh.pem
+RUN chmod 644 /etc/dovecot/private/dovecot.pem /etc/dovecot/dh.pem /etc/dovecot/dovecot.pem
+RUN chown root:root /etc/dovecot/dovecot.pem /etc/dovecot/private/dovecot.pem /etc/dovecot/dh.pem
+
+RUN sed -i '/^ssl_cert/d' /etc/dovecot/conf.d/10-ssl.conf
+RUN sed -i '/^ssl_key/d' /etc/dovecot/conf.d/10-ssl.conf
+RUN sed -i '/^ssl_dh/d' /etc/dovecot/conf.d/10-ssl.conf
+
+RUN echo "ssl = yes" >> /etc/dovecot/conf.d/10-ssl.conf
+RUN echo "ssl_dh = </etc/dovecot/dh.pem" >> /etc/dovecot/conf.d/10-ssl.conf
+RUN echo "ssl_cert = </etc/dovecot/dovecot.pem" >> /etc/dovecot/conf.d/10-ssl.conf
+RUN echo "ssl_key = </etc/dovecot/private/dovecot.pem" >> /etc/dovecot/conf.d/10-ssl.conf
+
+
+## Delete Old SSL Parameters
+RUN rm -f /var/lib/dovecot/ssl-parameters.dat
+
 # Copy the user database file
 COPY dovecot-users /etc/dovecot/dovecot-users
 
 # Set permissions for the user database file
-RUN chown root:root /etc/dovecot/dovecot-users && chmod 777 /etc/dovecot/dovecot-users
+RUN chown root:root /etc/dovecot/dovecot-users && chmod 644 /etc/dovecot/dovecot-users
 
 # Initialize files
-RUN touch /var/log/dovecot-info.log
-RUN touch /var/log/dovecot.log
-RUN touch /var/log/dovecot-debug.log
-RUN mkdir -p /var/mail
-RUN chmod 777 /var/mail
+RUN touch /var/log/dovecot-info.log /var/log/dovecot.log /var/log/dovecot-debug.log
+RUN mkdir -p /var/mail && chmod 755 /var/mail && chown root:root /var/mail
 
 # Expose the POP3 and IMAP ports
-EXPOSE 110 143
+EXPOSE 110 143 993 12345
 
 # Start Dovecot service
 CMD ["sh", "-c", "dovecot -F & tail -f /var/log/dovecot-info.log & tail -f /var/log/dovecot.log & tail -f /var/log/dovecot-debug.log"]
