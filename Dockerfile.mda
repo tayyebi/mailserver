@@ -1,0 +1,38 @@
+# Use the official Ubuntu image as a base
+FROM ubuntu:latest
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Update the package list and install necessary packages
+RUN apt-get update && \
+    apt-get install -y dovecot-pop3d dovecot-imapd && \
+    apt-get clean
+
+# Set user
+USER root
+
+# Set the working directory
+WORKDIR /etc/dovecot
+
+# Copy the Dovecot configuration file
+COPY dovecot.conf /etc/dovecot/dovecot.conf
+
+# Copy the user database file
+COPY dovecot-users /etc/dovecot/dovecot-users
+
+# Set permissions for the user database file
+RUN chown root:root /etc/dovecot/dovecot-users && chmod 777 /etc/dovecot/dovecot-users
+
+# Initialize files
+RUN touch /var/log/dovecot-info.log
+RUN touch /var/log/dovecot.log
+RUN touch /var/log/dovecot-debug.log
+RUN mkdir -p /var/mail
+RUN chmod 777 /var/mail
+
+# Expose the POP3 and IMAP ports
+EXPOSE 110 143
+
+# Start Dovecot service
+CMD ["sh", "-c", "dovecot -F & tail -f /var/log/dovecot-info.log & tail -f /var/log/dovecot.log & tail -f /var/log/dovecot-debug.log"]
