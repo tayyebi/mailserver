@@ -1,17 +1,31 @@
 version: '3.8'
 
 services:
-  inbound:
-    hostname: in
-    container_name: in
+  mta:
+    hostname: mta
+    container_name: mta
     restart: always
     build:
       context: .
-      dockerfile: ./Dockerfile.inbound
+      dockerfile: ./Dockerfile.mta
     ports:
       - "25:25"
     volumes:
-      - ./data/mail:/var/mail
+      - ./data/mail.mta:/var/mail
+    networks:
+      - gordarg
+  mda:
+    hostname: mda
+    container_name: mda
+    restart: always
+    build:
+      context: .
+      dockerfile: ./Dockerfile.mda
+    ports:
+      - "110:110"
+      - "143:143"
+    volumes:
+      - ./data/mail.mda:/var/mail
     networks:
       - gordarg
 

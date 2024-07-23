@@ -1,0 +1,5 @@
+# /etc/dovecot/dovecot-users
+# docker container exec -it mda doveadm pw -s SHA512-CRYPT
+# root:{SHA512-CRYPT}$6$ZORPNKjXndL5jMkN$8serEZpijeyQ9eiJsC0VnEqmszP.tlDctsAt9xFriHgJqQ1xacuQZZSVOwarh7/mbN2FDLtRpdOyX2KiNsih70
+root:{PLAIN}123456789
+
