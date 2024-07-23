@@ -1,13 +1,20 @@
 version: '3.8'
 
 services:
-  sendmail:
-    build: .
+  inbound:
+    hostname: in
+    container_name: in
+    restart: always
+    build:
+      context: .
+      dockerfile: ./Dockerfile.inbound
     ports:
-      - 25:25
+      - "25:25"
     volumes:
-      - ./ssmtp.conf:/etc/ssmtp/ssmtp.conf
-      - ./revaliases:/etc/ssmtp/revaliases
-      - ./forward-email.sh:/usr/local/bin/forward-email.sh
-    stdin_open: true
-    tty: true
+      - ./data/mail:/var/mail
+    networks:
+      - gordarg
+
+networks:
+  gordarg:
+    external: true
