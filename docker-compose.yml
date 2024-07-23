@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  sendmail:
+    build: .
+    ports:
+      - 25:25
+    volumes:
+      - ./ssmtp.conf:/etc/ssmtp/ssmtp.conf
+      - ./revaliases:/etc/ssmtp/revaliases
+      - ./forward-email.sh:/usr/local/bin/forward-email.sh
+    stdin_open: true
+    tty: true
