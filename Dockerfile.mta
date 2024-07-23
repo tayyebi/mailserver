@@ -56,12 +56,13 @@ COPY save_email.sh /usr/local/bin/save_email.sh
 RUN chmod +x /usr/local/bin/save_email.sh
 
 # Configure Postfix to use the script for all incoming emails
-RUN echo "/.*/ root" >> /etc/postfix/virtual && \
-#RUN echo "@gordarg.com root" >> /etc/postfix/virtual && \
-#    echo "@tyyi.net root" >> /etc/postfix/virtual && \
-#    echo "@0pt.ir root" >> /etc/postfix/virtual && \
+#RUN echo "/.*/ root" >> /etc/postfix/virtual && \
+RUN echo "@gordarg.com root" >> /etc/postfix/virtual && \
+    echo "@tyyi.net root" >> /etc/postfix/virtual && \
+    echo "@0pt.ir root" >> /etc/postfix/virtual && \
     postmap /etc/postfix/virtual && \
-    postconf -e 'virtual_alias_maps = regexp:/etc/postfix/virtual' && \
+#    postconf -e 'virtual_alias_maps = regexp:/etc/postfix/virtual' && \
+    postconf -e 'virtual_alias_maps = hash:/etc/postfix/virtual' && \
     postconf -e 'virtual_transport = local' && \
 #    echo "root: |/usr/local/bin/save_email.sh" >> /etc/aliases && \
     newaliases
