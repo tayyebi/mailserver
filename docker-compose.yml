@@ -12,11 +12,8 @@ services:
       - "25:25" # SMTP, Incoming mail
       - "587:587" # SMTP, Outgoing mail
     volumes:
-      - ./data/home:/root
+      - ./data/home:/var/vmail
       - ./data/mail:/var/mail
-    dns:
-      - 8.8.8.8
-      - 4.4.4.4
     networks:
       mail_network:
         ipv4_address: 172.20.0.2
@@ -33,7 +30,7 @@ services:
       - "143:143" # IMAP
       - "993:993" # IMAPS
     volumes:
-      - ./data/home:/root
+      - ./data/home:/var/vmail
       - ./data/mail:/var/mail
     networks:
       mail_network:

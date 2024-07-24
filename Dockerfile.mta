@@ -2,69 +2,136 @@
 FROM ubuntu:latest
 
 # Update the package list and install Postfix
-RUN apt-get update && \
-    apt-get install -y postfix && \
-    apt-get clean
-RUN apt install -y rsyslog
-RUN apt install -y libsasl2-modules sasl2-bin
-RUN apt install -y dnsutils
+RUN apt update
+RUN apt install -y     postfix \
+                       rsyslog \
+                       mailutils libsasl2-2 ca-certificates libsasl2-modules sasl2-bin \
+                       opendkim opendkim-tools
+RUN apt clean
 
 # Configure master.cf
 RUN echo "submission inet n - y - - smtpd" >> /etc/postfix/master.cf
 
-# Configure Postfix to receive emails on all interfaces
-RUN postconf -e 'inet_interfaces = all' && \
-    postconf -e 'myhostname = localhost' && \
-    postconf -e 'mydestination = $myhostname, localhost.$mydomain, localhost' && \
-    postconf -e 'recipient_delimiter = +' && \
-    postconf -e 'inet_protocols = all' && \
-#    postconf -e 'home_mailbox = Mailbox/' && \
-#    postconf -e 'mail_spool_directory = /var/mail/%u' && \
-    postconf -e 'maillog_file = /var/log/postfix.log' && \
-    postconf -e 'debug_peer_level = 2' && \
-    postconf -e 'debugger_command = PATH=/bin:/usr/bin:/usr/local/bin; export PATH; (echo cont; echo where) | gdb $daemon_directory/$process_name $process_id 2>&1 | tee /var/log/postfix-debug.log | mail -s "Postfix debug log for $process_name" you@example.com' && \
-    postconf -e 'smtp_tls_loglevel = 1' && \
-    postconf -e 'smtpd_tls_loglevel = 1' && \
-    postconf -e 'syslog_name = postfix/submission' && \
-    postconf -e 'smtpd_tls_security_level = encrypt' && \
-    postconf -e 'smtpd_tls_received_header = yes' && \
-    postconf -e 'relayhost = ' && \
-    postconf -e 'smtpd_sasl_type = dovecot' && \
+# Client to this server (Postfix with Dovecot) authentication
+RUN postconf -e 'smtpd_sasl_type = dovecot' && \
     postconf -e 'smtpd_sasl_path = inet:172.20.0.3:12345' && \
-#    postconf -e 'smtpd_sasl_password_maps = hash:/etc/postfix/sasl_passwd' && \
-    postconf -e 'smtpd_sasl_security_options = noanonymous' && \
+    postconf -e 'smtpd_tls_auth_only = yes' && \
+    postconf -e 'smtpd_use_tls = no' && \
     postconf -e 'smtpd_sasl_auth_enable = yes' && \
-#    postconf -e 'broken_sasl_auth_clients = yes' && \
+    postconf -e 'smtpd_tls_security_level = may' && \
+    postconf -e 'smtpd_tls_received_header = yes' && \
+    postconf -e 'smtpd_sasl_security_options = noanonymous' && \
+    postconf -e 'smtpd_sasl_tls_security_options = noanonymous' && \
     postconf -e 'smtpd_recipient_restrictions = permit_sasl_authenticated,permit_mynetworks,reject_unauth_destination'
 
+# External Relay Configuration
+COPY ./sasl_passwd /etc/postfix/sasl_passwd
+RUN postmap /etc/postfix/sasl_passwd && \
+    chmod 0600 /etc/postfix/sasl_passwd /etc/postfix/sasl_passwd.db
+
+RUN echo '[smtp.gmail.com]:587 encrypt' > /etc/postfix/tls_policy
+
+# Certificates
+RUN mkdir -p /ssl
+COPY ./ssl/certificate.crt /ssl/certificate.crt
+COPY ./ssl/private.key /ssl/private.key
+RUN chown root:root /ssl/certificate.crt /ssl/private.key && chmod 644 /ssl/certificate.crt /ssl/private.key
+
+# This server to Gmail SMTP
+RUN postconf -e 'relayhost = [smtp.gmail.com]:587' && \
+    postconf -e 'relay_transport = relay' && \
+    postconf -e 'relay_destination_concurrency_limit = 1' && \
+    postconf -e 'smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd' && \
+    postconf -e 'smtp_sasl_auth_enable = yes' && \
+    postconf -e 'smtpd_tls_cert_file = /ssl/certificate.crt' && \
+    postconf -e 'smtpd_tls_key_file = /ssl/private.key' && \
+    postconf -e 'smtp_sasl_auth_enable = yes' && \
+    postconf -e 'smtp_tls_note_starttls_offer = yes' && \
+    postconf -e 'tls_random_source = dev:/dev/urandom' && \
+    postconf -e 'smtp_tls_security_level = may' && \
+    postconf -e 'smtp_tls_policy_maps = hash:/etc/postfix/tls_policy' && \
+#    postconf -e 'smtp_tls_wrappermode = no' && \
+#    postconf -e 'smtp_tls_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1' && \
+#    postconf -e 'smtp_tls_mandatory_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1' && \
+    postconf -e 'smtp_tls_CAfile = /etc/ssl/certs/ca-certificates.crt' && \
+    postconf -e 'smtp_tls_session_cache_database = btree:${data_directory}/smtp_scache' && \
+    postconf -e 'smtpd_tls_session_cache_database = btree:${data_directory}/smtpd_scache' && \
+    postconf -e 'smtp_connection_cache_destinations = smtp.gmail.com' && \
+    postconf -e 'debug_peer_list = smtp.gmail.com' && \
+    postconf -e 'smtp_sasl_mechanism_filter = plain, login, cram-md5, digest-md5' && \
+    postconf -e 'smtpd_sasl_mechanism_filter = plain, login'
+
+# SMTP service
+RUN postconf -e 'inet_interfaces = all' && \
+    postconf -e 'inet_protocols = ipv4' && \
+    postconf -e 'debugger_command = PATH=/bin:/usr/bin:/usr/local/bin; export PATH; (echo cont; echo where) | gdb $daemon_directory/$process_name $process_id 2>&1 | tee /var/log/postfix-debug.log | mail -s "Postfix debug log for process: $process_name" webmaster@localhost' && \
+    postconf -e 'myhostname = localhost' && \
+    postconf -e 'mydestination = $myhostname, localhost.$mydomain, localhost, gordarg.com, www.gordarg.com, staff.gordarg.com, third-party.gordarg.com, tyyi.net, 0pt.ir, mbatalks.ir' && \
+    postconf -e 'recipient_delimiter = +' && \
+    postconf -e 'maillog_file = /var/log/postfix.log' && \
+    postconf -e 'smtp_tls_loglevel = 2' && \
+    postconf -e 'smtpd_tls_loglevel = 2' && \
+    postconf -e 'debug_peer_level = 3' && \
+    postconf -e 'syslog_name = postfix/submission'
+
+# Configure OpenDKIM
+RUN mkdir -p /etc/opendkim/keys && \
+    chown -R root:root /etc/opendkim && \
+    echo "Syslog yes" >> /etc/opendkim.conf && \
+    echo "UMask 002" >> /etc/opendkim.conf && \
+    echo "Canonicalization relaxed/simple" >> /etc/opendkim.conf && \
+    echo "Mode sv" >> /etc/opendkim.conf && \
+    echo "SubDomains no" >> /etc/opendkim.conf && \
+    echo "AutoRestart yes" >> /etc/opendkim.conf && \
+    echo "AutoRestartRate 10/1h" >> /etc/opendkim.conf && \
+    echo "Background yes" >> /etc/opendkim.conf && \
+    echo "DNSTimeout 5" >> /etc/opendkim.conf && \
+    echo "SignatureAlgorithm rsa-sha256" >> /etc/opendkim.conf && \
+    echo "Socket inet:8891@localhost" >> /etc/opendkim.conf && \
+    echo "PidFile /var/run/opendkim/opendkim.pid" >> /etc/opendkim.conf && \
+    echo "UserID root:root" >> /etc/opendkim.conf && \
+    echo "KeyTable /etc/opendkim/KeyTable" >> /etc/opendkim.conf && \
+    echo "SigningTable /etc/opendkim/SigningTable" >> /etc/opendkim.conf && \
+    echo "ExternalIgnoreList refile:/etc/opendkim/TrustedHosts" >> /etc/opendkim.conf && \
+    echo "InternalHosts refile:/etc/opendkim/TrustedHosts" >> /etc/opendkim.conf
+
+# Move DKIM keys
+COPY ./dkim/gordarg.com.private /etc/opendkim/keys/gordarg.com.private
+COPY ./dkim/gordarg.com.txt /etc/opendkim/keys/gordarg.com.txt
+RUN chown -R root:root /etc/opendkim/keys && chmod 644 -R /etc/opendkim/keys
+
+# Configure KeyTable, SigningTable, and TrustedHosts
+RUN echo "default._domainkey.gordarg.com gordarg.com:default:/etc/opendkim/keys/gordarg.com.private" >> /etc/opendkim/KeyTable && \
+    echo "*@gordarg.com default._domainkey.gordarg.com" >> /etc/opendkim/SigningTable && \
+    echo "127.0.0.1" >> /etc/opendkim/TrustedHosts && \
+    echo "localhost" >> /etc/opendkim/TrustedHosts && \
+    echo "*.gordarg.com" >> /etc/opendkim/TrustedHosts
+
+# Configure Postfix to use OpenDKIM
+RUN postconf -e 'milter_protocol = 6' && \
+    postconf -e 'milter_default_action = accept' && \
+    postconf -e 'smtpd_milters = inet:localhost:8891' && \
+    postconf -e 'non_smtpd_milters = inet:localhost:8891'
+
 # Configure users and sasl
-#COPY ./sasl_passwd /etc/postfix/sasl_passwd
 RUN echo "START=yes" >> /etc/default/saslauthd
-#RUN sed -i 's/^MECHANISMS=.*/MECHANISMS="rimap"/' /etc/default/saslauthd
-#RUN sed -i 's/^MECH_OPTIONS=.*/MECH_OPTIONS="mda"/' /etc/default/saslauthd
 RUN service saslauthd restart
 
 # Configure rsyslog to capture Postfix logs
 RUN echo "mail.* -/var/log/mail.log" >> /etc/rsyslog.conf
 RUN touch /var/log/postfix.log
 
-# Set user
-USER root
-
 ## Copy the save_email.sh script into the container
 COPY save_email.sh /usr/local/bin/save_email.sh
 RUN chmod +x /usr/local/bin/save_email.sh
 
 # Configure Postfix to use the script for all incoming emails
-#RUN echo "/.*/ root" >> /etc/postfix/virtual && \
-RUN echo "@gordarg.com root" >> /etc/postfix/virtual && \
-    echo "@tyyi.net root" >> /etc/postfix/virtual && \
-    echo "@0pt.ir root" >> /etc/postfix/virtual && \
+RUN echo "@gordarg.com vmail" >> /etc/postfix/virtual && \
+    echo "@tyyi.net vmail" >> /etc/postfix/virtual && \
+    echo "@0pt.ir vmail" >> /etc/postfix/virtual && \
     postmap /etc/postfix/virtual && \
-#    postconf -e 'virtual_alias_maps = regexp:/etc/postfix/virtual' && \
     postconf -e 'virtual_alias_maps = hash:/etc/postfix/virtual' && \
     postconf -e 'virtual_transport = local' && \
-#    echo "root: |/usr/local/bin/save_email.sh" >> /etc/aliases && \
     newaliases
 
 # Expose the SMTP port
@@ -73,5 +140,18 @@ EXPOSE 25 587
 # DNS issues
 RUN cp /etc/resolv.conf /var/spool/postfix/etc/resolv.conf
 
+## Set user
+ARG UNAME=vmail
+ARG UID=1000
+ARG GID=1000
+RUN groupadd -g $GID -o $UNAME && \
+    useradd -m -u $UID -g $GID -o -s /bin/bash $UNAME && \
+    usermod -aG root vmail
+USER root
+
+# Reload configurations
+RUN service postfix restart
+
 # Start Postfix
 CMD ["sh", "-c", "postfix start-fg & tail -f /var/log/postfix.log"]
+
