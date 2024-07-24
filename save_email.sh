@@ -6,8 +6,8 @@ FILENAME="/var/mail/$(date +%s%N).eml"
 
 # Save the email to the file
 cat > "$FILENAME"
-cat "$FILENAME" >> /var/mail/root/inbox
+cat "$FILENAME" >> /var/mail/vmail/inbox
 
 # Set file permissions to readonly
-chown root:root "$FILENAME"
+chown vmail:vmail "$FILENAME"
 chmod 644 "$FILENAME"

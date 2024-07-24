@@ -7,11 +7,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Update the package list and install necessary packages
 RUN apt-get update && \
     apt install -y dovecot-core && \
-    apt-get install -y dovecot-pop3d dovecot-imapd && \
-    apt-get clean
-
-# Set user
-USER root
+    apt-get install -y dovecot-pop3d dovecot-imapd
+RUN apt-get clean
 
 # Set the working directory
 WORKDIR /etc/dovecot
@@ -23,17 +20,18 @@ COPY dovecot.conf /etc/dovecot/dovecot.conf
 COPY ./ssl/dovecot.pem /etc/dovecot/dovecot.pem
 COPY ./ssl/dovecot.pem.private /etc/dovecot/private/dovecot.pem
 COPY ./ssl/dh.pem /etc/dovecot/dh.pem
-RUN chmod 644 /etc/dovecot/private/dovecot.pem /etc/dovecot/dh.pem /etc/dovecot/dovecot.pem
-RUN chown root:root /etc/dovecot/dovecot.pem /etc/dovecot/private/dovecot.pem /etc/dovecot/dh.pem
+RUN chmod 644 /etc/dovecot/private/dovecot.pem && \
+    chmod 644 /etc/dovecot/dh.pem && \
+    chmod 644 /etc/dovecot/dovecot.pem
 
-RUN sed -i '/^ssl_cert/d' /etc/dovecot/conf.d/10-ssl.conf
-RUN sed -i '/^ssl_key/d' /etc/dovecot/conf.d/10-ssl.conf
-RUN sed -i '/^ssl_dh/d' /etc/dovecot/conf.d/10-ssl.conf
+RUN sed -i '/^ssl_cert/d' /etc/dovecot/conf.d/10-ssl.conf && \
+    sed -i '/^ssl_key/d' /etc/dovecot/conf.d/10-ssl.conf && \
+    sed -i '/^ssl_dh/d' /etc/dovecot/conf.d/10-ssl.conf
 
-RUN echo "ssl = yes" >> /etc/dovecot/conf.d/10-ssl.conf
-RUN echo "ssl_dh = </etc/dovecot/dh.pem" >> /etc/dovecot/conf.d/10-ssl.conf
-RUN echo "ssl_cert = </etc/dovecot/dovecot.pem" >> /etc/dovecot/conf.d/10-ssl.conf
-RUN echo "ssl_key = </etc/dovecot/private/dovecot.pem" >> /etc/dovecot/conf.d/10-ssl.conf
+RUN echo "ssl = yes" >> /etc/dovecot/conf.d/10-ssl.conf && \
+    echo "ssl_dh = </etc/dovecot/dh.pem" >> /etc/dovecot/conf.d/10-ssl.conf && \
+    echo "ssl_cert = </etc/dovecot/dovecot.pem" >> /etc/dovecot/conf.d/10-ssl.conf && \
+    echo "ssl_key = </etc/dovecot/private/dovecot.pem" >> /etc/dovecot/conf.d/10-ssl.conf
 
 
 ## Delete Old SSL Parameters
@@ -43,14 +41,26 @@ RUN rm -f /var/lib/dovecot/ssl-parameters.dat
 COPY dovecot-users /etc/dovecot/dovecot-users
 
 # Set permissions for the user database file
-RUN chown root:root /etc/dovecot/dovecot-users && chmod 644 /etc/dovecot/dovecot-users
+RUN chmod 644 /etc/dovecot/dovecot-users
 
 # Initialize files
 RUN touch /var/log/dovecot-info.log /var/log/dovecot.log /var/log/dovecot-debug.log
-RUN mkdir -p /var/mail && chmod 755 /var/mail && chown root:root /var/mail
 
 # Expose the POP3 and IMAP ports
 EXPOSE 110 143 993 12345
+
+## Maildir
+#RUN mkdir -p /var/mail/vmail /var/vmail && \
+#    chmod 777 -R /var/mail /var/vmail
+
+# Set user
+ARG UNAME=vmail
+ARG UID=1000
+ARG GID=1000
+RUN groupadd -g $GID -o $UNAME && \
+    useradd -m -u $UID -g $GID -o -s /bin/bash $UNAME && \
+    usermod -aG root vmail   
+USER root
 
 # Start Dovecot service
 CMD ["sh", "-c", "dovecot -F & tail -f /var/log/dovecot-info.log & tail -f /var/log/dovecot.log & tail -f /var/log/dovecot-debug.log"]
