@@ -57,3 +57,15 @@ Before diving into the technicalities, it's essential to understand what each of
 By following these steps and carefully monitoring your email authentication, you can significantly improve your email deliverability and protect your domain from spoofing.
 
 **Would you like to focus on a specific step or do you have a particular email service provider in mind?**
+
+
+
+## Postfix SMTP/LMTP client policy - SASL mechanism properties
+
+Just like the Postfix SMTP server, the SMTP client has a policy that determines which SASL mechanisms are acceptable, based on their properties. The next two sections give examples of how these policies are used.
+
+    Property 	Description
+    noanonymous 	Don't use mechanisms that permit anonymous authentication.
+    noplaintext 	Don't use mechanisms that transmit unencrypted username and password information.
+    nodictionary 	Don't use mechanisms that are vulnerable to dictionary attacks.
+    mutual_auth 	Use only mechanisms that authenticate both the client and the server to each other. 

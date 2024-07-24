@@ -20,7 +20,9 @@ RUN postconf -e 'smtpd_sasl_type = dovecot' && \
     postconf -e 'smtpd_sasl_auth_enable = yes' && \
     postconf -e 'smtpd_tls_security_level = may' && \
     postconf -e 'smtpd_tls_received_header = yes' && \
+    postconf -e 'smtp_sasl_security_options = noanonymous' && \
     postconf -e 'smtpd_sasl_security_options = noanonymous' && \
+    postconf -e 'smtp_sasl_tls_security_options = noanonymous' && \
     postconf -e 'smtpd_sasl_tls_security_options = noanonymous' && \
     postconf -e 'smtpd_recipient_restrictions = permit_sasl_authenticated,permit_mynetworks,reject_unauth_destination'
 
@@ -29,13 +31,22 @@ COPY ./sasl_passwd /etc/postfix/sasl_passwd
 RUN postmap /etc/postfix/sasl_passwd && \
     chmod 0600 /etc/postfix/sasl_passwd /etc/postfix/sasl_passwd.db
 
-RUN echo '[smtp.gmail.com]:587 encrypt' > /etc/postfix/tls_policy
+RUN echo '[smtp.gmail.com]:587 encrypt' > /etc/postfix/tls_policy && \
+    postmap /etc/postfix/tls_policy && \
+    chown root:root /etc/postfix/tls_policy /etc/postfix/tls_policy.db && \
+    chmod 640 /etc/postfix/tls_policy /etc/postfix/tls_policy.db
+
 
 # Certificates
 RUN mkdir -p /ssl
 COPY ./ssl/certificate.crt /ssl/certificate.crt
 COPY ./ssl/private.key /ssl/private.key
 RUN chown root:root /ssl/certificate.crt /ssl/private.key && chmod 644 /ssl/certificate.crt /ssl/private.key
+
+# SASL SMTPD worthy mechanisms
+RUN echo 'pwcheck_method: saslauthd' >> /etc/postfix/sasl/smtpd.conf && \
+    echo 'allow_plaintext: true' >> /etc/postfix/sasl/smtpd.conf && \
+    echo 'mech_list: plain login' >> /etc/postfix/sasl/smtpd.conf
 
 # This server to Gmail SMTP
 RUN postconf -e 'relayhost = [smtp.gmail.com]:587' && \
@@ -58,14 +69,20 @@ RUN postconf -e 'relayhost = [smtp.gmail.com]:587' && \
     postconf -e 'smtpd_tls_session_cache_database = btree:${data_directory}/smtpd_scache' && \
     postconf -e 'smtp_connection_cache_destinations = smtp.gmail.com' && \
     postconf -e 'debug_peer_list = smtp.gmail.com' && \
+#    postconf -e 'smtp_sasl_mechanism_filter = !gssapi, !login, static:all' && \
+#    postconf -e 'smtpd_sasl_mechanism_filter = !gssapi, !login, static:all'
     postconf -e 'smtp_sasl_mechanism_filter = plain, login, cram-md5, digest-md5' && \
-    postconf -e 'smtpd_sasl_mechanism_filter = plain, login'
+    postconf -e 'smtpd_sasl_mechanism_filter = plain, login, cram-md5, digest-md5'
 
 # SMTP service
 RUN postconf -e 'inet_interfaces = all' && \
     postconf -e 'inet_protocols = ipv4' && \
     postconf -e 'debugger_command = PATH=/bin:/usr/bin:/usr/local/bin; export PATH; (echo cont; echo where) | gdb $daemon_directory/$process_name $process_id 2>&1 | tee /var/log/postfix-debug.log | mail -s "Postfix debug log for process: $process_name" webmaster@localhost' && \
     postconf -e 'myhostname = localhost' && \
+    postconf -e 'smtpd_banner = $myhostname ESMTP $mail_name (Ubuntu)' && \
+    postconf -e 'biff = no' && \
+    postconf -e 'append_dot_mydomain = no' && \
+    postconf -e 'readme_directory = no' && \
     postconf -e 'mydestination = $myhostname, localhost.$mydomain, localhost, gordarg.com, www.gordarg.com, staff.gordarg.com, third-party.gordarg.com, tyyi.net, 0pt.ir, mbatalks.ir' && \
     postconf -e 'recipient_delimiter = +' && \
     postconf -e 'maillog_file = /var/log/postfix.log' && \
@@ -113,10 +130,6 @@ RUN postconf -e 'milter_protocol = 6' && \
     postconf -e 'smtpd_milters = inet:localhost:8891' && \
     postconf -e 'non_smtpd_milters = inet:localhost:8891'
 
-# Configure users and sasl
-RUN echo "START=yes" >> /etc/default/saslauthd
-RUN service saslauthd restart
-
 # Configure rsyslog to capture Postfix logs
 RUN echo "mail.* -/var/log/mail.log" >> /etc/rsyslog.conf
 RUN touch /var/log/postfix.log
@@ -148,6 +161,10 @@ RUN groupadd -g $GID -o $UNAME && \
     useradd -m -u $UID -g $GID -o -s /bin/bash $UNAME && \
     usermod -aG root vmail
 USER root
+
+# Configure users and sasl
+RUN echo "START=yes" >> /etc/default/saslauthd
+RUN service saslauthd restart
 
 # Reload configurations
 RUN service postfix restart
