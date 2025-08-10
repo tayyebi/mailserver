@@ -2,39 +2,55 @@ version: '3.8'
 
 services:
   mta:
-    hostname: mta
+    hostname: mail.gordarg.com
     container_name: mta
-    restart: always
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "postfix status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     build:
       context: .
-      dockerfile: ./Dockerfile.mta
+      dockerfile: Dockerfile.mta
+    command: []  # Ensure this is empty
     ports:
-      - "25:25" # SMTP, Incoming mail
-      - "587:587" # SMTP, Outgoing mail
+      - "25:25"    # SMTP
+      - "465:465"  # SMTPS (implicit TLS)
+      - "587:587"  # Submission (STARTTLS)
     volumes:
-      - ./data/home:/var/vmail
-      - ./data/mail:/var/mail
+      - ./ssl/public.crt:/etc/ssl/certs/public.crt:ro
+      - ./ssl/private.key:/etc/ssl/private/private.key:ro
+      - ./data/log:/var/log
+      - ./data/vmail:/var/vmail
     networks:
       mail_network:
-        ipv4_address: 172.20.0.2
+        aliases:
+          - mta
+          - mail.gordarg.com
+          - mail.tyyi.net
+          - mail.0pt.ir
+
   mda:
     hostname: mda
     container_name: mda
-    restart: always
+    restart: unless-stopped
     build:
       context: .
-      dockerfile: ./Dockerfile.mda
+      dockerfile: Dockerfile.mda
     ports:
-#      - "12345:12345" # RIMAP SASL
-      - "110:110" # POP3
-      - "143:143" # IMAP
-      - "993:993" # IMAPS
+      - "110:110"  # POP3
+      - "143:143"  # IMAP
+      - "993:993"  # IMAPS
     volumes:
-      - ./data/home:/var/vmail
-      - ./data/mail:/var/mail
+      - ./data/vmail:/var/vmail
+      - ./data/log:/var/log
+    depends_on:
+      - mta
     networks:
       mail_network:
-        ipv4_address: 172.20.0.3
+        aliases:
+          - mda
 
 networks:
   mail_network:
@@ -42,4 +58,3 @@ networks:
     ipam:
       config:
         - subnet: 172.20.0.0/16
-          gateway: 172.20.0.1

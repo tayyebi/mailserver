@@ -1,66 +1,49 @@
-# Use the official Ubuntu image as a base
-FROM ubuntu:latest
+FROM debian:bookworm-slim
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Update the package list and install necessary packages
+# Install packages
 RUN apt-get update && \
-    apt install -y dovecot-core && \
-    apt-get install -y dovecot-pop3d dovecot-imapd
-RUN apt-get clean
+    apt-get install -y dovecot-core dovecot-imapd dovecot-pop3d && \
+    apt-get clean
 
-# Set the working directory
-WORKDIR /etc/dovecot
-
-# Copy the Dovecot configuration file
-COPY dovecot.conf /etc/dovecot/dovecot.conf
+# Create vmail user
+RUN groupadd -g 5000 vmail && \
+    useradd -g vmail -u 5000 vmail -d /var/vmail -m && \
+    groupadd -g 1006 postfix && \
+    useradd -u 1004 -g 1006 -d /var/spool/postfix -s /bin/false postfix && \
+    mkdir -p /var/spool/postfix/private && \
+    chown postfix:postfix /var/spool/postfix/private && \
+    chmod 750 /var/spool/postfix/private && \
+    adduser dovecot ssl-cert 
 
 # SSL Configuration
-COPY ./ssl/dovecot.pem /etc/dovecot/dovecot.pem
-COPY ./ssl/dovecot.pem.private /etc/dovecot/private/dovecot.pem
-COPY ./ssl/dh.pem /etc/dovecot/dh.pem
-RUN chmod 644 /etc/dovecot/private/dovecot.pem && \
-    chmod 644 /etc/dovecot/dh.pem && \
-    chmod 644 /etc/dovecot/dovecot.pem
+RUN mkdir -p /etc/dovecot/private
+COPY ./ssl/dovecot.pem /etc/dovecot/
+COPY ./ssl/dovecot.key /etc/dovecot/private/
+COPY ./ssl/dh.pem /etc/dovecot/
 
-RUN sed -i '/^ssl_cert/d' /etc/dovecot/conf.d/10-ssl.conf && \
-    sed -i '/^ssl_key/d' /etc/dovecot/conf.d/10-ssl.conf && \
-    sed -i '/^ssl_dh/d' /etc/dovecot/conf.d/10-ssl.conf
+# Set permissions
+RUN chown root:root /etc/dovecot/dovecot.pem && \
+    chmod 644 /etc/dovecot/dovecot.pem && \
+    chown root:dovecot /etc/dovecot/private/dovecot.key && \
+    chmod 640 /etc/dovecot/private/dovecot.key && \
+    chown root:root /etc/dovecot/dh.pem && \
+    chmod 644 /etc/dovecot/dh.pem
 
-RUN echo "ssl = yes" >> /etc/dovecot/conf.d/10-ssl.conf && \
-    echo "ssl_dh = </etc/dovecot/dh.pem" >> /etc/dovecot/conf.d/10-ssl.conf && \
-    echo "ssl_cert = </etc/dovecot/dovecot.pem" >> /etc/dovecot/conf.d/10-ssl.conf && \
-    echo "ssl_key = </etc/dovecot/private/dovecot.pem" >> /etc/dovecot/conf.d/10-ssl.conf
+# Copy configurations
+COPY dovecot.conf /etc/dovecot/
+COPY dovecot-users /etc/dovecot/
 
+# Set permissions for user database
+RUN chown root:dovecot /etc/dovecot/dovecot-users && \
+    chmod 640 /etc/dovecot/dovecot-users
 
-## Delete Old SSL Parameters
-RUN rm -f /var/lib/dovecot/ssl-parameters.dat
+# Initialize logs
+RUN touch /var/log/dovecot.log && \
+    chown dovecot:dovecot /var/log/dovecot.log && \
+    chmod 660 /var/log/dovecot.log
 
-# Copy the user database file
-COPY dovecot-users /etc/dovecot/dovecot-users
-
-# Set permissions for the user database file
-RUN chmod 644 /etc/dovecot/dovecot-users
-
-# Initialize files
-RUN touch /var/log/dovecot-info.log /var/log/dovecot.log /var/log/dovecot-debug.log
-
-# Expose the POP3 and IMAP ports
-EXPOSE 110 143 993 12345
-
-## Maildir
-#RUN mkdir -p /var/mail/vmail /var/vmail && \
-#    chmod 777 -R /var/mail /var/vmail
-
-# Set user
-ARG UNAME=vmail
-ARG UID=1000
-ARG GID=1000
-RUN groupadd -g $GID -o $UNAME && \
-    useradd -m -u $UID -g $GID -o -s /bin/bash $UNAME && \
-    usermod -aG root vmail   
 USER root
-
-# Start Dovecot service
-CMD ["sh", "-c", "dovecot -F & tail -f /var/log/dovecot-info.log & tail -f /var/log/dovecot.log & tail -f /var/log/dovecot-debug.log"]
+CMD ["dovecot", "-F"]

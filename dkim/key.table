@@ -1,0 +1,3 @@
+dkim._domainkey.gordarg.com gordarg.com:dkim:/etc/opendkim/keys/gordarg.com/dkim.private
+dkim._domainkey.tyyi.net tyyi.net:dkim:/etc/opendkim/keys/tyyi.net/dkim.private
+dkim._domainkey.0pt.ir 0pt.ir:dkim:/etc/opendkim/keys/0pt.ir/dkim.private
