@@ -1,3 +1,29 @@
-ssl
-dkim/keys
-data
+# Secrets & env
+.env
+.env.*
+
+# SSL / TLS
+data/ssl/
+*.key
+*.pem
+*.crt
+*.csr
+
+# Mail data & queues
+data/mail/
+data/dovecot/
+data/spool/
+
+# Logs
+logs/
+*.log
+tmp/
+*.pid
+*.sock
+
+# Editor/OS junk
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
