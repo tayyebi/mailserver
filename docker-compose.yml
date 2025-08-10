@@ -3,8 +3,11 @@ version: '3.8'
 services:
 
   opendkim:
-    image: ghcr.io/your-namespace/opendkim:latest
+    build:
+      context: ./opendkim
+      dockerfile: Dockerfile
     container_name: opendkim
+    hostname: opendkim.${MAIL_DOMAIN}
     restart: unless-stopped
     networks: [mailnet]
     volumes:
@@ -12,16 +15,31 @@ services:
       - ./data/opendkim/keys:/etc/opendkim/keys
     environment:
       - TZ=${TZ}
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep opendkim || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    labels:
+      com.mailserver.role: "dkim"
+      com.mailserver.maintainer: "MohammadReza"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   dovecot:
-    image: ghcr.io/your-namespace/dovecot:latest
+    build:
+      context: ./dovecot
+      dockerfile: Dockerfile
     container_name: dovecot
+    hostname: dovecot.${MAIL_DOMAIN}
     restart: unless-stopped
-    hostname: ${MAIL_HOST}
     networks: [mailnet]
     ports:
-      - "143:143"     # IMAP
-      - "993:993"     # IMAPS
+      - "143:143"
+      - "993:993"
     volumes:
       - ./data/dovecot-conf:/etc/dovecot
       - ./data/dovecot:/var/lib/dovecot
@@ -29,17 +47,32 @@ services:
       - ./data/ssl:/etc/ssl/private:ro
     environment:
       - TZ=${TZ}
+    healthcheck:
+      test: ["CMD-SHELL", "doveadm status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    labels:
+      com.mailserver.role: "imap"
+      com.mailserver.maintainer: "MohammadReza"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   postfix:
-    image: ghcr.io/your-namespace/postfix:latest
+    build:
+      context: ./postfix
+      dockerfile: Dockerfile
     container_name: postfix
-    restart: unless-stopped
-    hostname: ${MAIL_HOST}
+    hostname: postfix.${MAIL_DOMAIN}
     domainname: ${MAIL_DOMAIN}
+    restart: unless-stopped
     networks: [mailnet]
     ports:
-      - "25:25"       # SMTP
-      - "587:587"     # Submission
+      - "25:25"
+      - "587:587"
     volumes:
       - ./data/postfix:/etc/postfix
       - ./data/spool:/var/spool/postfix
@@ -51,6 +84,19 @@ services:
     depends_on:
       - opendkim
       - dovecot
+    healthcheck:
+      test: ["CMD-SHELL", "postfix status | grep running || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    labels:
+      com.mailserver.role: "smtp"
+      com.mailserver.maintainer: "MohammadReza"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   mailnet:
