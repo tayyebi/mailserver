@@ -1,42 +1,53 @@
-# Dockerfile for Postfix + OpenDKIM on Debian Bookworm
+# Dockerfile for Postfix 
 FROM debian:bookworm-slim
 
-LABEL maintainer="Mohammad R. Tayyebi <m@tyyi.net>"
+LABEL maintainer="m@tyyi.net" \
+      description="Postfix mail server container with Dovecot SASL & DKIM support"
 
-# avoid interactive prompts
-ARG DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=noninteractive
 
 # Install required packages
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-       postfix \
-       postfix-pcre \
-       postfix-mysql \
-       libsasl2-modules \
-       opendkim \
-       bash \
-       openssl \
-       swaks \
-       supervisor \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      postfix \
+      rsyslog \
+      dovecot-core dovecot-sasl \
+      dovecot-pop3d dovecot-imapd \
+      opendkim opendkim-tools \
+      libsasl2-modules \
+      openssl \
+      bash \
+      ca-certificates \
+      supervisor \
     && rm -rf /var/lib/apt/lists/*
 
-# Create postfix user/group if not existing
-RUN groupadd --system postfix \
-    && useradd  --system --no-create-home --gid postfix postfix
+# Create directories for configs, SSL, spool, logs
+RUN mkdir -p \
+      /etc/postfix /var/spool/postfix /var/lib/postfix /var/log/mail \
+      /etc/dovecot /var/lib/dovecot \
+      /etc/ssl/local \
+      /templates/postfix /templates/dovecot \
+    && chown -R postfix:postfix /var/spool/postfix /var/lib/postfix \
+    && chown -R dovecot:dovecot /var/lib/dovecot \
+    && chown -R syslog:adm /var/log/mail
 
-# Copy configuration and scripts
-COPY config/ /etc/postfix/
-COPY scripts/ /scripts/
+# Copy Postfix config templates (used for first-run seeding)
+COPY config/main.cf      /templates/postfix/main.cf.tmpl
+COPY config/master.cf    /templates/postfix/master.cf.tmpl
+COPY config/virtual      /templates/postfix/virtual.tmpl
+COPY config/virtual_domains /templates/postfix/virtual_domains.tmpl
 
-# Make entrypoint scripts executable
-RUN chmod +x /scripts/*.sh
+# If you have Dovecot config templates for seeding, copy here:
+# COPY ../dovecot/config/ /templates/dovecot/
 
-# Ensure spool directory exists and is owned by postfix
-RUN mkdir -p /var/spool/postfix \
-    && chown -R postfix:postfix /var/spool/postfix
+# Copy entrypoint script
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
-VOLUME ["/etc/postfix", "/var/spool/postfix", "/etc/ssl/private"]
+# Expose mail ports
+EXPOSE 25 465 587
 
-EXPOSE 25 587
+# Volumes for persistence & configs
+VOLUME ["/etc/postfix", "/var/spool/postfix", "/var/lib/postfix", "/var/log/mail", "/etc/ssl/local", "/etc/dovecot", "/var/lib/dovecot"]
 
-CMD ["/scripts/entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
