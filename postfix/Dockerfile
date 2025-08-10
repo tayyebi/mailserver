@@ -12,7 +12,6 @@ RUN apt-get update \
        postfix \
        postfix-pcre \
        postfix-mysql \
-       cyrus-sasl2 \
        libsasl2-modules \
        opendkim \
        bash \
