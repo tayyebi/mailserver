@@ -1,6 +1,5 @@
 # Secrets & env
 .env
-.env.*
 
 # SSL / TLS
 data/ssl/

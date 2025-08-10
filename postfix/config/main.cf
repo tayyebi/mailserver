@@ -1,0 +1,47 @@
+# Basic identity
+myhostname = ${MAIL_HOST}
+mydomain = ${MAIL_DOMAIN}
+myorigin = $mydomain
+
+# Network
+inet_interfaces = all
+inet_protocols = ipv4
+mydestination = localhost.$mydomain, localhost
+mynetworks = 127.0.0.0/8
+
+# Relay & queue
+relay_domains =
+home_mailbox = Maildir/
+
+# TLS
+smtpd_tls_cert_file = /etc/ssl/private/cert.pem
+smtpd_tls_key_file = /etc/ssl/private/key.pem
+smtpd_tls_security_level = may
+smtp_tls_security_level = may
+smtpd_tls_auth_only = yes
+
+# SASL
+smtpd_sasl_type = dovecot
+smtpd_sasl_path = private/auth
+smtpd_sasl_auth_enable = yes
+smtpd_sasl_security_options = noanonymous
+broken_sasl_auth_clients = yes
+
+# Milter (DKIM)
+milter_default_action = accept
+milter_protocol = 6
+smtpd_milters = inet:opendkim:8891
+non_smtpd_milters = inet:opendkim:8891
+
+# Virtual delivery
+virtual_transport = lmtp:unix:private/dovecot-lmtp
+virtual_mailbox_domains = hash:/etc/postfix/virtual_domains
+virtual_mailbox_maps = hash:/etc/postfix/virtual
+virtual_alias_maps = hash:/etc/postfix/virtual
+
+# Logging
+maillog_file = /dev/stdout
+
+# Limits
+smtpd_recipient_limit = 100
+message_size_limit = 30720000

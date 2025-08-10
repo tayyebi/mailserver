@@ -1,56 +1,56 @@
-version: "3.9"
+version: '3.8'
 
 services:
-  mail:
-    image: your-postfix-image:latest
-    container_name: mail
+
+  opendkim:
+    image: ghcr.io/your-namespace/opendkim:latest
+    container_name: opendkim
     restart: unless-stopped
-    ports:
-      - "25:25"
-      - "587:587"
-    environment:
-      - MAIL_HOST=${MAIL_HOST}
-      - MAIL_DOMAIN=${MAIL_DOMAIN}
+    networks: [mailnet]
     volumes:
-      # Postfix queue and config
-      - ./data/spool:/var/spool/postfix
+      - ./data/opendkim/conf:/etc/opendkim
+      - ./data/opendkim/keys:/etc/opendkim/keys
+    environment:
+      - TZ=${TZ}
+
+  dovecot:
+    image: ghcr.io/your-namespace/dovecot:latest
+    container_name: dovecot
+    restart: unless-stopped
+    hostname: ${MAIL_HOST}
+    networks: [mailnet]
+    ports:
+      - "143:143"     # IMAP
+      - "993:993"     # IMAPS
+    volumes:
+      - ./data/dovecot-conf:/etc/dovecot
+      - ./data/dovecot:/var/lib/dovecot
+      - ./data/mail:/mail
+      - ./data/ssl:/etc/ssl/private:ro
+    environment:
+      - TZ=${TZ}
+
+  postfix:
+    image: ghcr.io/your-namespace/postfix:latest
+    container_name: postfix
+    restart: unless-stopped
+    hostname: ${MAIL_HOST}
+    domainname: ${MAIL_DOMAIN}
+    networks: [mailnet]
+    ports:
+      - "25:25"       # SMTP
+      - "587:587"     # Submission
+    volumes:
       - ./data/postfix:/etc/postfix
-      # TLS certs (read-only)
-      - ./data/ssl:/certs:ro
-    # Postfix will use Dovecot SASL over TCP
-    # main.cf: smtpd_sasl_type = dovecot
-    # main.cf: smtpd_sasl_path = inet:dovecot:12345
+      - ./data/spool:/var/spool/postfix
+      - ./data/ssl:/etc/ssl/private:ro
+    environment:
+      - TZ=${TZ}
+      - SUBMISSION_USER=${SUBMISSION_USER}
+      - SUBMISSION_PASS=${SUBMISSION_PASS}
     depends_on:
       - opendkim
       - dovecot
-
-  opendkim:
-    image: your-opendkim-image:latest
-    container_name: opendkim
-    restart: unless-stopped
-    volumes:
-      - ./data/opendkim/keys:/keys
-      - ./data/opendkim/conf:/etc/opendkim
-    ports:
-      - "127.0.0.1:8891:8891"  # milter socket exposed to mail only via docker network
-
-  dovecot:
-    image: dovecot/dovecot:latest
-    container_name: dovecot
-    restart: unless-stopped
-    ports:
-      - "143:143"   # IMAP + STARTTLS
-      - "993:993"   # IMAPS
-    environment:
-      - MAIL_HOST=${MAIL_HOST}
-      - MAIL_DOMAIN=${MAIL_DOMAIN}
-    volumes:
-      # Mailboxes and Dovecot state
-      - ./data/mail:/var/mail/vhosts
-      - ./data/dovecot:/var/lib/dovecot
-      - ./data/dovecot-conf:/etc/dovecot
-      # TLS certs (read-only, shared with Postfix)
-      - ./data/ssl:/certs:ro
 
 networks:
   mailnet:

@@ -1,94 +1,64 @@
-# Mailserver automation Makefile
-# MohammadReza's build: persistent, idempotent, and batch‑safe.
-# Reads .env for MAIL_HOST/MAIL_DOMAIN and creds.
-
 SHELL := /bin/bash
-.ONESHELL:
-.SHELLFLAGS := -eu -o pipefail -c
-MAKEFLAGS += --no-builtin-rules
+.DEFAULT_GOAL := help
 
-ENV_FILE := .env
-SCRIPTS  := scripts
-DOCKER   := docker compose
+.PHONY: help install test send certs certs-force add-user add-domain reload restart logs
 
-include $(ENV_FILE)
-
-# Default help
 help:
-    @echo "Targets:"
-    @echo "  test           Run connectivity and TLS/auth checks"
-    @echo "  send           Send test mail via submission"
-    @echo "  certs          Generate self-signed certs (if missing)"
-    @echo "  certs-force    Force regenerate certs"
-    @echo "  restart        Restart mail container(s)"
-    @echo "  logs           Tail logs of mail + opendkim"
+    @echo "Available targets:"
+    @echo "  make install              Bootstrap all services and data"
+    @echo "  make test                 Run mailserver health checks"
+    @echo "  make send TO=addr         Send test email over submission"
+    @echo "  make certs                Generate TLS certs if missing"
+    @echo "  make certs-force          Regenerate TLS certs"
+    @echo "  make add-user USER=... PASS=...    Add/update a mailbox"
+    @echo "  make add-domain DOMAIN=...         Add new mail domain + DKIM"
+    @echo "  make reload               Reload services"
+    @echo "  make restart              Restart services"
+    @echo "  make logs                 Tail logs"
 
-install:
-    @echo ">>> Generating TLS certs (if missing)"
-    @$(SCRIPTS)/gen-certs.sh
-    @echo ">>> Starting containers"
-    @$(DOCKER) up -d
-    @echo ">>> Running connectivity checks"
-    @$(SCRIPTS)/test-mail.sh
-    @echo ">>> Install complete — see 'make send TO=m@tyyi.net' to test delivery"
+install: certs
+    @mkdir -p data/{ssl,postfix,spool,opendkim/{conf,keys},dovecot-conf,dovecot,mail}
+    @docker compose up -d
+    @$(MAKE) reload
+    @$(MAKE) test
 
 test:
-    @$(SCRIPTS)/test-mail.sh
+    @echo "Testing Postfix submission (STARTTLS) and Dovecot IMAPS..."
+    @echo "QUIT" | openssl s_client -connect 127.0.0.1:587 -starttls smtp -crlf
+    @echo "QUIT" | openssl s_client -connect 127.0.0.1:993
 
 send:
-    @[ -n "$$SUBMISSION_USER" ] && [ -n "$$SUBMISSION_PASS" ] && [ -n "$$TO" ] || \
-     (echo "Need SUBMISSION_USER, SUBMISSION_PASS in env and TO=m@tyyi.net" && exit 1)
-    @$(SCRIPTS)/test-mail.sh -u "$$SUBMISSION_USER" -p "$$SUBMISSION_PASS" -t "$$TO" -s -v
+    @[ -n "$(TO)" ] || (echo "Usage: make send TO=you@example.com SUBMISSION_USER=... SUBMISSION_PASS=..." && exit 1)
+    @docker exec postfix bash -c "swaks --server 127.0.0.1:587 \
+      --auth-user \"$(SUBMISSION_USER)\" \
+      --auth-password \"$(SUBMISSION_PASS)\" \
+      --tls --from \"$(SUBMISSION_USER)\" --to \"$(TO)\""
 
 certs:
-    @$(SCRIPTS)/gen-certs.sh
+    @[ -f data/ssl/cert.pem ] && echo "TLS cert exists" || $(MAKE) certs-force
 
 certs-force:
-    @$(SCRIPTS)/gen-certs.sh --force
+    @mkdir -p data/ssl
+    @openssl req -x509 -nodes -newkey rsa:2048 \
+      -subj "/CN=$(MAIL_HOST)" \
+      -keyout data/ssl/key.pem -out data/ssl/cert.pem -days 365
 
-restart:
-    @$(DOCKER) restart mail opendkim
-
-logs:
-    @$(DOCKER) logs -f mail & $(DOCKER) logs -f opendkim
-
-# Ensure dirs
-init-data:
-    @mkdir -p data/{mail,dovecot,dovecot-conf,spool,postfix,opendkim/{keys,conf},ssl,postfix/maps}
-    @touch data/opendkim/conf/{KeyTable,SigningTable,TrustedHosts}
-    @chmod 600 data/opendkim/conf/{KeyTable,SigningTable,TrustedHosts} || true
-
-# Add or update a mailbox user (creates maildir, hashes password)
-# Usage: make add-user USER=admin@example.com PASS='secret'
 add-user:
-    @[ -n "$$USER" ] && [ -n "$$PASS" ] || (echo "Need USER=user@domain and PASS=..." && exit 1)
-    @HASH=$$(openssl passwd -6 "$$PASS"); \
-    echo "$$USER:{SHA512-CRYPT}$$HASH" >> data/dovecot-conf/users
-    @mkdir -p "data/mail/$${USER#*@}/$${USER%@*}"/{cur,new,tmp}
-    @echo "User $$USER added."
+    @[ -n "$(USER)" ] && [ -n "$(PASS)" ] || (echo "Usage: make add-user USER=me@example.com PASS=secret" && exit 1)
+    @docker exec dovecot doveadm user add "$(USER)" "$(PASS)"
 
-# Add a domain: creates DKIM keys, updates DKIM tables and Postfix domains
-# Usage: make add-domain DOMAIN=example.com
 add-domain:
-    @[ -n "$$DOMAIN" ] || (echo "Need DOMAIN=example.com" && exit 1)
-    @mkdir -p "data/opendkim/keys/$$DOMAIN"
-    @if [ ! -f "data/opendkim/keys/$$DOMAIN/default.private" ]; then \
-      opendkim-genkey -r -s default -d "$$DOMAIN" -D "data/opendkim/keys/$$DOMAIN"; \
-      chmod 600 "data/opendkim/keys/$$DOMAIN"/default.private; \
-      echo "DKIM key generated for $$DOMAIN"; \
-    else echo "DKIM key exists for $$DOMAIN"; fi
-    @grep -q "$$DOMAIN" data/opendkim/conf/KeyTable || \
-      echo "default._domainkey.$$DOMAIN $$DOMAIN:default:/keys/$$DOMAIN/default.private" >> data/opendkim/conf/KeyTable
-    @grep -q "$$DOMAIN" data/opendkim/conf/SigningTable || \
-      echo "*@$$DOMAIN default._domainkey.$$DOMAIN" >> data/opendkim/conf/SigningTable
-    @mkdir -p data/postfix
-    @touch data/postfix/virtual_domains
-    @grep -q "^$$DOMAIN$$" data/postfix/virtual_domains || echo "$$DOMAIN" >> data/postfix/virtual_domains
-    @echo "Domain $$DOMAIN added. Publish the TXT record from data/opendkim/keys/$$DOMAIN/default.txt"
+    @[ -n "$(DOMAIN)" ] || (echo "Usage: make add-domain DOMAIN=example.net" && exit 1)
+    @docker exec opendkim bash -c "/scripts/add-domain.sh $(DOMAIN)"
+    @echo "Remember to add DNS records for $(DOMAIN)"
 
 reload:
+    @docker compose exec postfix postfix reload
     @docker compose exec opendkim pkill -HUP opendkim || true
-    @docker compose exec mail postfix reload || true
-    @docker compose exec dovecot dovecot reload || true
+    @docker compose exec dovecot dovecot reload
 
-.PHONY: help test send certs certs-force restart logs
+restart:
+    @docker compose restart
+
+logs:
+    @docker compose logs -f postfix opendkim dovecot
