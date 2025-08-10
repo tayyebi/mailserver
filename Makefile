@@ -18,7 +18,7 @@ help:
 
 install: certs
 	@mkdir -p data/{ssl,postfix,spool,opendkim/{conf,keys},dovecot-conf,dovecot,mail}
-	@docker compose up -d
+	@docker-compose up -d
 	@$(MAKE) reload
 	@$(MAKE) test
 
@@ -53,12 +53,12 @@ add-domain:
 	@echo "Remember to add DNS records for $(DOMAIN)"
 
 reload:
-	@docker compose exec postfix postfix reload
-	@docker compose exec opendkim pkill -HUP opendkim || true
-	@docker compose exec dovecot dovecot reload
+	@docker-compose exec postfix postfix reload
+	@docker-compose exec opendkim pkill -HUP opendkim || true
+	@docker-compose exec dovecot dovecot reload
 
 restart:
-	@docker compose restart
+	@docker-compose restart
 
 logs:
-	@docker compose logs -f postfix opendkim dovecot
+	@docker-compose logs -f postfix opendkim dovecot
