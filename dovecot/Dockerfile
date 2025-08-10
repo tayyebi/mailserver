@@ -27,10 +27,8 @@ RUN mkdir -p /etc/dovecot /var/lib/dovecot \
     && chown -R root:root /etc/dovecot \
     && chown -R dovecot:dovecot /var/lib/dovecot
 
-VOLUME [ "/etc/dovecot", "/var/lib/dovecot", "/mail" ]
+VOLUME ["/etc/dovecot", "/var/lib/dovecot", "/mail"]
 
-# Expose IMAP and IMAPS ports
 EXPOSE 143 993
 
-# Run in foreground
-CMD [ "dovecot", "-F" ]
+CMD ["dovecot", "-F"]

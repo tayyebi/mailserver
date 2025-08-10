@@ -24,10 +24,8 @@ RUN apt-get update \
 RUN mkdir -p /etc/opendkim/keys \
     && chown -R opendkim:opendkim /etc/opendkim
 
-VOLUME [ "/etc/opendkim/conf", "/etc/opendkim/keys" ]
+VOLUME ["/etc/opendkim/conf", "/etc/opendkim/keys"]
 
-# Expose control port if you use it (optional)
 EXPOSE 8891
 
-# Run in foreground with specified config
-ENTRYPOINT [ "opendkim", "-f", "-x", "/etc/opendkim.conf" ]
+ENTRYPOINT ["opendkim", "-f", "-x", "/etc/opendkim.conf"]
