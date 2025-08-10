@@ -1,9 +1,0 @@
-# Explicit mappings first
-postmaster   ${SUBMISSION_USER}
-abuse        ${SUBMISSION_USER}
-
-# Catch‑all for any local part in primary domain
-@${MAIL_DOMAIN}    ${SUBMISSION_USER}
-
-# Catch‑all for ALL other domains
-@*                 ${SUBMISSION_USER}

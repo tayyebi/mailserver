@@ -1,0 +1,6 @@
+# Format: full-email-address    domain.tld/full-email-address/
+# Maps email addresses to Maildir paths
+# Run `postmap /etc/postfix/virtual` after edits
+
+postmaster@gordarg.com   gordarg.com/postmaster@gordarg.com/
+m@tyyi.net    tyyi.net/m@tyyi.net/

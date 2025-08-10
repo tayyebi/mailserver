@@ -1,2 +1,0 @@
-virtual_alias_domains = $mydomain, hash:/etc/postfix/virtual_domains
-virtual_alias_maps = hash:/etc/postfix/virtual
