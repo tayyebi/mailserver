@@ -13,12 +13,13 @@ services:
     volumes:
       - ./data/opendkim/conf:/etc/opendkim
       - ./data/opendkim/keys:/etc/opendkim/keys
+      - ./opendkim/scripts:/scripts:ro
     environment:
       - TZ=${TZ}
     healthcheck:
-      test: ["CMD-SHELL", "pgrep opendkim || exit 1"]
+      test: ["CMD-SHELL", "pgrep -x opendkim >/dev/null || exit 1"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 5
     labels:
       com.mailserver.role: "dkim"
@@ -28,6 +29,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    expose:
+      - "8891"
 
   dovecot:
     build:
@@ -40,15 +43,17 @@ services:
     ports:
       - "143:143"
       - "993:993"
+    expose:
+      - "24"       # LMTP over TCP
+      - "12345"    # Auth over TCP (SASL)
     volumes:
-      - ./data/dovecot-conf:/etc/dovecot
-      - ./data/dovecot:/var/lib/dovecot
+      - ./dovecot/dovecot-conf:/etc/dovecot
       - ./data/mail:/mail
       - ./data/ssl:/etc/ssl/private:ro
     environment:
       - TZ=${TZ}
     healthcheck:
-      test: ["CMD-SHELL", "doveadm status || exit 1"]
+      test: ["CMD-SHELL", "echo -e \"a1 CAPABILITY\\na2 LOGOUT\" | openssl s_client -quiet -connect 127.0.0.1:993 -servername ${MAIL_HOST} 2>/dev/null | grep -q 'CAPABILITY'"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -81,8 +86,12 @@ services:
       - TZ=${TZ}
       - SUBMISSION_USER=${SUBMISSION_USER}
       - SUBMISSION_PASS=${SUBMISSION_PASS}
+      - DOVECOT_AUTH_HOST=dovecot
+      - DOVECOT_AUTH_PORT=12345
+      - DOVECOT_LMTP_HOST=dovecot
+      - DOVECOT_LMTP_PORT=24
     healthcheck:
-      test: ["CMD-SHELL", "postfix status | grep running || exit 1"]
+      test: ["CMD-SHELL", "postfix status | grep -qi running"]
       interval: 30s
       timeout: 10s
       retries: 5

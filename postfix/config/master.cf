@@ -5,7 +5,7 @@ submission inet n       -       y       -       -       smtpd
   -o smtpd_tls_security_level=encrypt
   -o smtpd_sasl_auth_enable=yes
   -o smtpd_sasl_type=dovecot
-  -o smtpd_sasl_path=private/auth
+  -o smtpd_sasl_path=inet:dovecot:12345
   -o smtpd_recipient_restrictions=permit_sasl_authenticated,reject
   -o milter_macro_daemon_name=ORIGINATING
 
@@ -35,8 +35,3 @@ virtual   unix  -       n       n       -       -       virtual
 lmtp      unix  -       -       y       -       -       lmtp
 anvil     unix  -       -       y       -       1       anvil
 scache    unix  -       -       y       -       1       scache
-
-# Dovecot LMTP socket
-dovecot-lmtp unix  -    -       y       -       -       lmtp
-  -o lmtp_send_xforward_command=yes
-  -o lmtp_connection_cache_on_demand=no

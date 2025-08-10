@@ -1,4 +1,4 @@
-# Basic identity
+# Identity
 myhostname = ${MAIL_HOST}
 mydomain = ${MAIL_DOMAIN}
 myorigin = $mydomain
@@ -9,9 +9,9 @@ inet_protocols = ipv4
 mydestination = localhost.$mydomain, localhost
 mynetworks = 127.0.0.0/8
 
-# Relay & queue
+# Relay & anti-relay
 relay_domains =
-home_mailbox = Maildir/
+smtpd_relay_restrictions = permit_mynetworks, permit_sasl_authenticated, defer_unauth_destination
 
 # TLS
 smtpd_tls_cert_file = /etc/ssl/private/cert.pem
@@ -21,8 +21,6 @@ smtp_tls_security_level = may
 smtpd_tls_auth_only = yes
 
 # SASL
-smtpd_sasl_type = dovecot
-smtpd_sasl_path = private/auth
 smtpd_sasl_auth_enable = yes
 smtpd_sasl_security_options = noanonymous
 broken_sasl_auth_clients = yes
@@ -33,13 +31,13 @@ milter_protocol = 6
 smtpd_milters = inet:opendkim:8891
 non_smtpd_milters = inet:opendkim:8891
 
-# Virtual delivery
-virtual_transport = lmtp:unix:private/dovecot-lmtp
-virtual_mailbox_domains = hash:/etc/postfix/virtual_domains
-virtual_mailbox_maps = hash:/etc/postfix/virtual
-virtual_alias_maps = hash:/etc/postfix/virtual
+# Virtual delivery via Dovecot LMTP
+virtual_mailbox_domains = *
+#virtual_mailbox_domains = hash:/etc/postfix/virtual_domains
+virtual_mailbox_maps = hash:/etc/postfix/vmailbox
+virtual_alias_maps = hash:/etc/postfix/virtual_aliases
 
-# Logging
+# Logging via syslog (container stdout)
 maillog_file = /dev/stdout
 
 # Limits
