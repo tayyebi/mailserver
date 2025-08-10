@@ -48,12 +48,14 @@ services:
       - "12345"    # Auth over TCP (SASL)
     volumes:
       - ./dovecot/dovecot-conf:/etc/dovecot
+      - ./data/dovecot:/var/lib/dovecot
       - ./data/mail:/mail
       - ./data/ssl:/etc/ssl/private:ro
     environment:
       - TZ=${TZ}
+      - MAIL_HOST=${MAIL_HOST}
     healthcheck:
-      test: ["CMD-SHELL", "echo -e \"a1 CAPABILITY\\na2 LOGOUT\" | openssl s_client -quiet -connect 127.0.0.1:993 -servername ${MAIL_HOST} 2>/dev/null | grep -q 'CAPABILITY'"]
+      test: ["CMD-SHELL", "SNI=${MAIL_HOST:-localhost}; echo -e \"a1 CAPABILITY\\na2 LOGOUT\" | openssl s_client -quiet -connect 127.0.0.1:993 -servername $$SNI 2>/dev/null | grep -q 'CAPABILITY'"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -84,8 +86,6 @@ services:
       - ./data/ssl:/etc/ssl/private:ro
     environment:
       - TZ=${TZ}
-      - SUBMISSION_USER=${SUBMISSION_USER}
-      - SUBMISSION_PASS=${SUBMISSION_PASS}
       - DOVECOT_AUTH_HOST=dovecot
       - DOVECOT_AUTH_PORT=12345
       - DOVECOT_LMTP_HOST=dovecot

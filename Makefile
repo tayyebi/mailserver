@@ -1,6 +1,11 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
+ifneq (,$(wildcard ./.env))
+include .env
+export
+endif
+
 .PHONY: help install test send certs certs-force add-user add-domain reload restart logs
 
 help:
@@ -24,8 +29,8 @@ install: certs
 
 test:
 	@echo "Testing Submission (587 STARTTLS) and IMAPS (993)..."
-	@echo "QUIT" | openssl s_client -connect 127.0.0.1:587 -starttls smtp -crlf -servername $${MAIL_HOST:-$$MAIL_HOST}
-	@echo "a1 CAPABILITY\na2 LOGOUT" | openssl s_client -quiet -connect 127.0.0.1:993 -servername $${MAIL_HOST:-$$MAIL_HOST}
+	@SNI="$${MAIL_HOST:-localhost}"; echo "QUIT" | openssl s_client -connect 127.0.0.1:587 -starttls smtp -crlf -servername "$$SNI"
+	@SNI="$${MAIL_HOST:-localhost}"; echo -e "a1 CAPABILITY\na2 LOGOUT" | openssl s_client -quiet -connect 127.0.0.1:993 -servername "$$SNI"
 
 send:
 	@[ -n "$(TO)" ] || (echo "Usage: make send TO=you@example.com SUBMISSION_USER=... SUBMISSION_PASS=..." && exit 1)
@@ -39,8 +44,9 @@ certs:
 
 certs-force:
 	@mkdir -p data/ssl
-	@openssl req -x509 -nodes -newkey rsa:2048 \
-	 -subj "/CN=$(MAIL_HOST)" \
+	@CN="$${MAIL_HOST:-localhost}"; \
+	openssl req -x509 -nodes -newkey rsa:2048 \
+	 -subj "/CN=$$CN" \
 	 -keyout data/ssl/key.pem -out data/ssl/cert.pem -days 365
 
 add-user:
