@@ -17,6 +17,7 @@ RUN apt-get update \
        bash \
        ca-certificates \
        tzdata \
+       swaks \
     && ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime \
     && dpkg-reconfigure -f noninteractive tzdata \
     && rm -rf /var/lib/apt/lists/*
