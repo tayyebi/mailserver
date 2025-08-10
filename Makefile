@@ -22,13 +22,13 @@ help:
 	@echo "  make logs							   Tail logs"
 
 install: certs
-    @mkdir -p data/{ssl,postfix,spool,opendkim/{conf,keys},dovecot-conf,dovecot,mail}
-    @for f in opendkim.conf KeyTable SigningTable TrustedHosts; do \
-        [ -f "data/opendkim/conf/$$f" ] || cp "opendkim/$$f" "data/opendkim/conf/$$f"; \
-    done
-    @docker-compose up -d
-    @$(MAKE) reload
-    @$(MAKE) test
+	@mkdir -p data/{ssl,postfix,spool,opendkim/{conf,keys},dovecot-conf,dovecot,mail}
+	@for f in opendkim.conf KeyTable SigningTable TrustedHosts; do \
+		[ -f "data/opendkim/conf/$$f" ] || cp "opendkim/$$f" "data/opendkim/conf/$$f"; \
+	done
+	@docker-compose up -d
+	@$(MAKE) reload
+	@$(MAKE) test
 
 test:
 	@echo "Testing Submission (587 STARTTLS) and IMAPS (993)..."
@@ -46,14 +46,14 @@ certs:
 	@[ -f data/ssl/cert.pem ] && echo "TLS cert exists" || $(MAKE) certs-force
 
 certs-force:
-    @mkdir -p data/ssl
-    @CN="$${MAIL_HOST:-localhost}"; \
-    openssl req -x509 -nodes -newkey rsa:2048 -sha256 \
-     -subj "/CN=$$CN" \
-     -addext "subjectAltName=DNS:$$CN" \
-     -keyout data/ssl/key.pem -out data/ssl/cert.pem -days 365
-    @chmod 600 data/ssl/key.pem
-    @chmod 644 data/ssl/cert.pem
+	@mkdir -p data/ssl
+	@CN="$${MAIL_HOST:-localhost}"; \
+	openssl req -x509 -nodes -newkey rsa:2048 -sha256 \
+	 -subj "/CN=$$CN" \
+	 -addext "subjectAltName=DNS:$$CN" \
+	 -keyout data/ssl/key.pem -out data/ssl/cert.pem -days 365
+	@chmod 600 data/ssl/key.pem
+	@chmod 644 data/ssl/cert.pem
 
 add-user:
 	@[ -n "$(USER)" ] && [ -n "$(PASS)" ] || (echo "Usage: make add-user USER=me@example.com PASS=secret" && exit 1)
