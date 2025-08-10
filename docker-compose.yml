@@ -81,9 +81,6 @@ services:
       - TZ=${TZ}
       - SUBMISSION_USER=${SUBMISSION_USER}
       - SUBMISSION_PASS=${SUBMISSION_PASS}
-    depends_on:
-      - opendkim
-      - dovecot
     healthcheck:
       test: ["CMD-SHELL", "postfix status | grep running || exit 1"]
       interval: 30s
