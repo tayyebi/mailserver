@@ -10,10 +10,6 @@ services:
     hostname: opendkim.${MAIL_DOMAIN}
     restart: unless-stopped
     networks: [mailnet]
-    volumes:
-      - ./data/opendkim/conf:/etc/opendkim
-      - ./data/opendkim/keys:/etc/opendkim/keys
-      - ./opendkim/scripts:/scripts:ro
     environment:
       - TZ=${TZ}
     healthcheck:
@@ -31,6 +27,11 @@ services:
         max-file: "3"
     expose:
       - "8891"
+    volumes:
+      - ./data/opendkim/conf:/etc/opendkim
+      - ./data/opendkim/keys:/etc/opendkim/keys
+      - ./opendkim/scripts:/scripts:ro
+
 
   dovecot:
     build:
@@ -77,6 +78,9 @@ services:
     domainname: ${MAIL_DOMAIN}
     restart: unless-stopped
     networks: [mailnet]
+    depends_on:
+      - opendkim
+      - dovecot
     ports:
       - "25:25"
       - "587:587"
@@ -103,6 +107,7 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
 
 networks:
   mailnet:

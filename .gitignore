@@ -7,6 +7,7 @@ data/ssl/
 *.pem
 *.crt
 *.csr
+data/opendkim/
 
 # Mail data & queues
 data/mail/
