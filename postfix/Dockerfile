@@ -11,8 +11,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       postfix \
       rsyslog \
-      dovecot-core dovecot-sasl \
-      dovecot-pop3d dovecot-imapd \
+      dovecot-core dovecot-pop3d dovecot-imapd \
       opendkim opendkim-tools \
       libsasl2-modules \
       openssl \
