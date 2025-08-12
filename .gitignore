@@ -23,6 +23,7 @@ tmp/
 
 # Editor/OS junk
 .vscode/
+!.vscode/setings.json
 .idea/
 *.swp
 .DS_Store

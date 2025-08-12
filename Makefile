@@ -1,46 +1,63 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
+# Support both docker-compose and the new docker compose CLI
+DOCKER_COMPOSE := $(shell command -v docker-compose 2>/dev/null || echo docker compose)
+
+# Verbose toggle: set VERBOSE=1 to echo every command
+VERBOSE ?= 0
+Q := $(if $(filter 1,$(VERBOSE)),,@)
+
 ifneq (,$(wildcard ./.env))
 include .env
 export
 endif
 
-.PHONY: help install test send certs certs-force add-user add-domain reload restart logs
+.PHONY: help validate install test send certs certs-force add-user add-domain reload restart logs backup-dkim
 
 help:
 	@echo "Available targets:"
-	@echo "  make install							Bootstrap all services and data"
-	@echo "  make test							   Run mailserver health checks"
-	@echo "  make send TO=addr					   Send test email over submission"
-	@echo "  make certs							  Generate TLS certs if missing"
-	@echo "  make certs-force						Regenerate TLS certs"
-	@echo "  make add-user USER=... PASS=...		 Add/update a mailbox (Dovecot passwd-file)"
-	@echo "  make add-domain DOMAIN=... [SELECTOR]   Add new mail domain + DKIM"
-	@echo "  make reload							 Reload services"
-	@echo "  make restart							Restart services"
-	@echo "  make logs							   Tail logs"
+	@echo "  make validate						  Check for required binaries"
+	@echo "  make install						   Bootstrap all services and data"
+	@echo "  make test							  Run mailserver health checks"
+	@echo "  make send TO=addr SUBMISSION_USER=..   Send test email over submission"
+	@echo "  make certs							 Generate TLS certs if missing"
+	@echo "  make certs-force					   Regenerate TLS certs"
+	@echo "  make add-user USER=.. PASS=..		  Add/update a mailbox"
+	@echo "  make add-domain DOMAIN=.. [SELECTOR]   Add new mail domain + DKIM"
+	@echo "  make reload							Reload services"
+	@echo "  make restart						   Restart services"
+	@echo "  make logs							  Tail logs"
+	@echo "  make backup-dkim					   Backup DKIM keys"
 
-install: certs
-	@mkdir -p data/{ssl,postfix,spool,opendkim/{conf,keys},dovecot-conf,dovecot,mail}
-	@for f in opendkim.conf KeyTable SigningTable TrustedHosts; do \
-		[ -f "data/opendkim/conf/$$f" ] || cp "opendkim/$$f" "data/opendkim/conf/$$f"; \
-	done
-	@docker-compose up -d
-	@$(MAKE) reload
-	@$(MAKE) test
+validate:
+	@command -v openssl >/dev/null || (echo "Missing: openssl" && exit 1)
+	@command -v swaks   >/dev/null || (echo "Missing: swaks"   && exit 1)
+	@echo "All required binaries present."
+
+install: validate certs
+	$(Q)mkdir -p data/{ssl,postfix,spool,opendkim/{conf,keys},dovecot-conf,dovecot,mail}
+	$(Q)for f in opendkim.conf KeyTable SigningTable TrustedHosts; do \
+		   [ -f "data/opendkim/conf/$$f" ] || cp "opendkim/$$f" "data/opendkim/conf/$$f"; \
+	   done
+	$(Q)$(DOCKER_COMPOSE) up -d
+	$(Q)$(MAKE) reload
+	$(Q)$(MAKE) test
 
 test:
 	@echo "Testing Submission (587 STARTTLS) and IMAPS (993)..."
-	@SNI="$${MAIL_HOST:-localhost}"; echo "QUIT" | openssl s_client -connect 127.0.0.1:587 -starttls smtp -crlf -servername "$$SNI"
-	@SNI="$${MAIL_HOST:-localhost}"; echo -e "a1 CAPABILITY\na2 LOGOUT" | openssl s_client -quiet -connect 127.0.0.1:993 -servername "$$SNI"
+	@SNI="$${MAIL_HOST:-localhost}"; echo "QUIT" | openssl s_client \
+	   -connect 127.0.0.1:587 -starttls smtp -crlf -servername "$$SNI"
+	@SNI="$${MAIL_HOST:-localhost}"; echo -e "a1 CAPABILITY\na2 LOGOUT" | openssl s_client \
+	   -quiet -connect 127.0.0.1:993 -servername "$$SNI"
 
 send:
-	@[ -n "$(TO)" ] || (echo "Usage: make send TO=you@example.com SUBMISSION_USER=... SUBMISSION_PASS=..." && exit 1)
-	@docker exec postfix bash -lc "swaks --server 127.0.0.1:587 \
-	 --auth-user '$(SUBMISSION_USER)' \
-	 --auth-password '$(SUBMISSION_PASS)' \
-	 --tls --from '$(SUBMISSION_USER)' --to '$(TO)'"
+	@[ -n "$(TO)" ] || (echo "Usage: make send TO=you@example.com SUBMISSION_USER=.. SUBMISSION_PASS=.." && exit 1)
+	$(Q)docker exec postfix bash -lc "\
+	   swaks --server 127.0.0.1:587 \
+			 --auth-user '$(SUBMISSION_USER)' \
+			 --auth-password '$(SUBMISSION_PASS)' \
+			 --tls --from '$(SUBMISSION_USER)' --to '$(TO)'"
 
 certs:
 	@[ -f data/ssl/cert.pem ] && echo "TLS cert exists" || $(MAKE) certs-force
@@ -48,32 +65,49 @@ certs:
 certs-force:
 	@mkdir -p data/ssl
 	@CN="$${MAIL_HOST:-localhost}"; \
-	openssl req -x509 -nodes -newkey rsa:2048 -sha256 \
-	 -subj "/CN=$$CN" \
-	 -addext "subjectAltName=DNS:$$CN" \
-	 -keyout data/ssl/key.pem -out data/ssl/cert.pem -days 365
+	 echo "[$$(date -u)] Generating TLS cert for CN=$$CN"; \
+	 openssl req -x509 -nodes -newkey rsa:2048 -sha256 \
+		   -subj "/CN=$$CN" \
+		   -addext "subjectAltName=DNS:$$CN" \
+		   -keyout data/ssl/key.pem -out data/ssl/cert.pem -days 365
 	@chmod 600 data/ssl/key.pem
 	@chmod 644 data/ssl/cert.pem
 
 add-user:
 	@[ -n "$(USER)" ] && [ -n "$(PASS)" ] || (echo "Usage: make add-user USER=me@example.com PASS=secret" && exit 1)
-	@docker exec dovecot bash -lc "HASH=\$$(doveadm pw -s SHA512-CRYPT -p '$(PASS)'); \
+	$(Q)HASH=$$(docker run --rm dovecot bash -lc "doveadm pw -s SHA512-CRYPT -p '$(PASS)'"); \
+	docker exec dovecot bash -lc "\
 	  touch /etc/dovecot/passwd; \
-	  grep -q '^$(USER):' /etc/dovecot/passwd && sed -i 's#^$(USER):.*#$(USER):'$${HASH}'#' /etc/dovecot/passwd || echo '$(USER):'$${HASH} >> /etc/dovecot/passwd; \
-	  chown dovecot:dovecot /etc/dovecot/passwd; chmod 640 /etc/dovecot/passwd"
+	  grep -q '^$(USER):' /etc/dovecot/passwd \
+		&& sed -i 's#^$(USER):.*#$(USER):'$${HASH}'#' /etc/dovecot/passwd \
+		|| echo '$(USER):'$${HASH} >> /etc/dovecot/passwd; \
+	  chown dovecot:dovecot /etc/dovecot/passwd; \
+	  chmod 640 /etc/dovecot/passwd"
+
+show-users:
+	$(Q)docker exec dovecot bash -lc "cat /etc/dovecot/passwd"
+
+remove-user:
+	@[ -n "$(USER)" ] || (echo "Usage: make remove-user USER=me@example.com" && exit 1)
+	$(Q)docker exec dovecot bash -lc "\
+	  sed -i '/^$(USER):/d' /etc/dovecot/passwd"
 
 add-domain:
 	@[ -n "$(DOMAIN)" ] || (echo "Usage: make add-domain DOMAIN=example.net [SELECTOR]" && exit 1)
-	@docker exec opendkim bash -lc "/scripts/add-domain.sh $(DOMAIN) $${SELECTOR:-default}"
+	$(Q)docker exec opendkim bash -lc "/scripts/add-domain.sh $(DOMAIN) $${SELECTOR:-default}"
 	@echo "Remember to add DNS records for $(DOMAIN)"
 
 reload:
-	@docker-compose exec postfix postfix reload
-	@docker-compose exec dovecot dovecot reload || true
-	@docker-compose exec opendkim pkill -HUP opendkim || true
+	$(Q)$(DOCKER_COMPOSE) exec postfix postfix reload
+	$(Q)$(DOCKER_COMPOSE) exec dovecot dovecot reload || true
+	$(Q)$(DOCKER_COMPOSE) exec opendkim pkill -HUP opendkim || true
 
 restart:
-	@docker-compose restart
+	$(Q)$(DOCKER_COMPOSE) restart
 
 logs:
-	@docker-compose logs -f postfix opendkim dovecot
+	$(Q)$(DOCKER_COMPOSE) logs -f postfix opendkim dovecot
+
+backup-dkim:
+	@tar czf dkim-backup-$$\(date +%Y%m%d_%H%M%S\).tgz -C data/opendkim keys
+	@echo "DKIM keys backed up to $$(ls -1 dkim-backup-*.tgz | tail -n1)"
