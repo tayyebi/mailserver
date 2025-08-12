@@ -32,7 +32,6 @@ services:
       - ./data/opendkim/keys:/etc/opendkim/keys
       - ./opendkim/scripts:/scripts:ro
 
-
   dovecot:
     build:
       context: ./dovecot
@@ -85,7 +84,6 @@ services:
       - "25:25"
       - "587:587"
     volumes:
-      - ./data/postfix:/etc/postfix
       - ./data/spool:/var/spool/postfix
       - ./data/ssl:/etc/ssl/private:ro
     env_file: .env

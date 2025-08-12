@@ -6,7 +6,7 @@ render_template() {
   envsubst < "$1" > "$2"
 }
 
-# 1. Render templates if missing
+# Render templates if missing
 if [ ! -s /etc/postfix/main.cf ]; then
   log "Rendering Postfix config"
   render_template /templates/postfix/main.cf.tmpl /etc/postfix/main.cf
@@ -24,29 +24,7 @@ if [ ! -s /etc/postfix/main.cf ]; then
   fi
 fi
 
-# 2. Render any map files if missing
-for f in virtual_aliases virtual_domains vmailbox; do
-  [ -s "/etc/postfix/$f" ] || render_template "/templates/postfix/${f}.tmpl" "/etc/postfix/$f"
-done
-
-# 3. Ensure no unresolved variables in the maps
-for f in virtual_aliases virtual_domains vmailbox; do
-  if grep '\${' "/etc/postfix/$f"; then
-    log "Unresolved variable in $f"
-    cat "/etc/postfix/$f"
-    exit 1
-  fi
-done
-
-# 4. Guarantee trailing newline in main.cf
-sed -i -e '$a\' /etc/postfix/main.cf
-
-# 5. Remove old keys to avoid appending invalid values
-for key in smtpd_sasl_type smtpd_sasl_path virtual_transport; do
-  postconf -X "$key" || true
-done
-
-# 6. Load environment defaults
+# Load environment defaults
 MAIL_DOMAIN="${MAIL_DOMAIN:-example.com}"
 MAIL_HOST="${MAIL_HOST:-mail.${MAIL_DOMAIN}}"
 TZ="${TZ:-UTC}"
@@ -60,11 +38,12 @@ DOVECOT_LMTP_PORT="${DOVECOT_LMTP_PORT:-24}"
 echo "$TZ" > /etc/timezone || true
 ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime
 
-# 7. Ensure file system layout & permissions
+# Ensure file system layout & permissions
 mkdir -p /etc/postfix /var/spool/postfix /var/lib/postfix /var/log/mail
 chown -R postfix:postfix /var/spool/postfix /var/lib/postfix
+chmod -R 755 /var/spool/postfix
 
-# 8. Seed configs if user-volume is empty
+# Seed configs if user-volume is empty
 if [ ! -s /etc/postfix/main.cf ]; then
   log "Seeding Postfix config from templates"
   cp /templates/postfix/main.cf.tmpl /etc/postfix/main.cf
@@ -74,29 +53,18 @@ fi
 [ -s /etc/postfix/virtual_domains ]  || cp /templates/postfix/virtual_domains.tmpl  /etc/postfix/virtual_domains
 [ -s /etc/postfix/vmailbox ]         || cp /templates/postfix/vmailbox.tmpl         /etc/postfix/vmailbox
 
-# 9. Apply dynamic Postfix settings
-postconf -e "myhostname=${MAIL_HOST}"
-postconf -e "mydomain=${MAIL_DOMAIN}"
-postconf -e "smtpd_tls_cert_file=/etc/ssl/private/cert.pem"
-postconf -e "smtpd_tls_key_file=/etc/ssl/private/key.pem"
-
-postconf -e "smtpd_sasl_type=dovecot"
-postconf -e "smtpd_sasl_path=inet:${DOVECOT_AUTH_HOST}:${DOVECOT_AUTH_PORT}"
-
-postconf -e "virtual_transport=lmtp:inet:${DOVECOT_LMTP_HOST}:${DOVECOT_LMTP_PORT}"
-
-# 10. Compile lookup tables
+# Compile lookup tables
 for f in virtual_aliases virtual_domains vmailbox; do
   postmap "/etc/postfix/$f" || true
 done
 
-# 12. Lint the entire Postfix configuration
+# Lint the entire Postfix configuration
 log "Running postfix check"
 if ! postfix check; then
   log "Postfix config validation failed"
   exit 1
 fi
 
-# 13. Launch Postfix in foreground
-log "Starting Postfix (foreground)"
+# Launch Postfix in foreground
+log "Starting Postfix"
 exec /usr/sbin/postfix -vvv start-fg
