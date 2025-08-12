@@ -95,20 +95,22 @@ log "Fixing queue directory permissions"
 # Base queue dir
 chown root:root /var/spool/postfix
 chmod 755 /var/spool/postfix
-# Public and maildrop: root:postdrop
+# Public and maildrop: owned by root, accessible by the postdrop group
 mkdir -p /var/spool/postfix/public
 chown root:postdrop /var/spool/postfix/public
 chmod 710 /var/spool/postfix/public
 mkdir -p /var/spool/postfix/maildrop
 chown root:postdrop /var/spool/postfix/maildrop
-chmod 730 /var/spool/postfix/maildrop
+# The 'maildrop' directory must be writable and executable by the 'postdrop' group,
+# which the 'postfix' user is a member of. This fixes your 'Permission denied' error.
+chmod 770 /var/spool/postfix/maildrop
 # Queue dirs owned by postfix
 for dir in active bounce corrupt defer deferred flush hold incoming saved trace; do
     mkdir -p "/var/spool/postfix/$dir"
     chown postfix:postfix "/var/spool/postfix/$dir"
     chmod 700 "/var/spool/postfix/$dir"
 done
-# Private sockets: root:postfix
+# Private sockets: owned by root, accessible by the postfix user
 mkdir -p /var/spool/postfix/private
 chown root:postfix /var/spool/postfix/private
 chmod 750 /var/spool/postfix/private
