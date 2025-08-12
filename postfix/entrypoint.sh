@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+sed -i -e '$a\' /etc/postfix/main.cf
 
 MAIL_DOMAIN="${MAIL_DOMAIN:-example.com}"
 MAIL_HOST="${MAIL_HOST:-mail.${MAIL_DOMAIN}}"
