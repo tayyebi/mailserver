@@ -5,7 +5,7 @@ submission inet n       -       y       -       -       smtpd
   -o smtpd_tls_security_level=encrypt
   -o smtpd_sasl_auth_enable=yes
   -o smtpd_sasl_type=dovecot
-  -o smtpd_sasl_path=inet:dovecot:12345
+  -o smtpd_sasl_path=inet:${DOVECOT_LMTP_HOST}:12345
   -o smtpd_recipient_restrictions=permit_sasl_authenticated,reject
   -o milter_macro_daemon_name=ORIGINATING
 

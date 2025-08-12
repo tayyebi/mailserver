@@ -48,11 +48,11 @@ RUN chown -R postfix:postfix /var/spool/postfix \
 RUN postfix check
 
 # Copy Postfix config templates
-COPY config/main.cf.tmpl			/templates/postfix/main.cf.tmpl
-COPY config/master.cf.tmpl			/templates/postfix/master.cf.tmpl
-COPY config/virtual_aliases.tmpl	/templates/postfix/virtual_aliases.tmpl
-COPY config/virtual_domains.tmpl	/templates/postfix/virtual_domains.tmpl
-COPY config/vmailbox.tmpl			/templates/postfix/vmailbox.tmpl
+COPY main.cf.tmpl			/templates/main.cf.tmpl
+COPY master.cf.tmpl			/templates/master.cf.tmpl
+COPY virtual_aliases.tmpl	/templates/virtual_aliases.tmpl
+COPY virtual_domains.tmpl	/templates/virtual_domains.tmpl
+COPY vmailbox.tmpl			/templates/vmailbox.tmpl
 
 # Add users and groups
 RUN if ! id -nG postfix | grep -qw postdrop; then \
