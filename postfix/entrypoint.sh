@@ -91,21 +91,24 @@ for f in virtual_aliases virtual_domains vmailbox; do
 done
 
 # 12. Postfix expects most directories to be owned by root and some subdirectories (like public and maildrop) to be owned by group postdrop
-log "Fixing queue directory permissions"
 # Base queue dir
 chown root:root /var/spool/postfix
 chmod 755 /var/spool/postfix
-# postdrop-accessible sockets
-chown root:postdrop /var/spool/postfix/public /var/spool/postfix/maildrop
-chmod 710 /var/spool/postfix/public
-chmod 730 /var/spool/postfix/maildrop
-# Postfix-owned queue dirs
-for dir in active bounce corrupt defer deferred flush hold incoming saved trace; do
-    mkdir -p "/var/spool/postfix/$dir"
-    chown postfix:postfix "/var/spool/postfix/$dir"
-    chmod 700 "/var/spool/postfix/$dir"
+# Sockets for postdrop
+for dir in public maildrop; do
+    mkdir -p /var/spool/postfix/$dir
+    chown root:postdrop /var/spool/postfix/$dir
+    chmod 71$( [ "$dir" = "maildrop" ] && echo 0 || echo 0 )  # 710 or 730
 done
-# Private sockets (root:postfix)
+chmod 730 /var/spool/postfix/maildrop
+chmod 710 /var/spool/postfix/public
+# Queue dirs owned by postfix
+for dir in active bounce corrupt defer deferred flush hold incoming saved trace; do
+    mkdir -p /var/spool/postfix/$dir
+    chown postfix:postfix /var/spool/postfix/$dir
+    chmod 700 /var/spool/postfix/$dir
+done
+# Private sockets
 mkdir -p /var/spool/postfix/private
 chown root:postfix /var/spool/postfix/private
 chmod 750 /var/spool/postfix/private
