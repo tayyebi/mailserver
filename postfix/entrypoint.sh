@@ -90,34 +90,13 @@ for f in virtual_aliases virtual_domains vmailbox; do
   postmap "/etc/postfix/$f" || true
 done
 
-# 12. Postfix expects most directories to be owned by root and some subdirectories (like public and maildrop) to be owned by group postdrop
-chown root:root /var/spool/postfix
-chown root:root /var/spool/postfix/pid
-chown postfix:postfix /var/spool/postfix/private
-chown postfix:postfix /var/spool/postfix/public
-chown postfix:postfix /var/spool/postfix/maildrop
-chown root:root /var/spool/postfix/etc
-chown root:root /var/spool/postfix/lib
-chown root:root /var/spool/postfix/usr
-chown root:root /var/spool/postfix/usr/lib
-chown root:root /var/spool/postfix/usr/lib/sasl2
-chown root:root /var/spool/postfix/usr/lib/zoneinfo
-
-chmod 755 /var/spool/postfix
-chmod 700 /var/spool/postfix/pid
-chmod 700 /var/spool/postfix/private
-
-chown postfix:postdrop /var/spool/postfix/public /var/spool/postfix/maildrop
-chmod 730 /var/spool/postfix/maildrop
-chmod 750 /var/spool/postfix/public
-
-# 13. Lint the entire Postfix configuration
+# 12. Lint the entire Postfix configuration
 log "Running postfix check"
 if ! postfix check; then
   log "Postfix config validation failed"
   exit 1
 fi
 
-# 14. Launch Postfix in foreground
+# 13. Launch Postfix in foreground
 log "Starting Postfix (foreground)"
 exec /usr/sbin/postfix -vvv start-fg
