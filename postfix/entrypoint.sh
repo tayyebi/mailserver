@@ -91,8 +91,10 @@ for f in virtual_aliases virtual_domains vmailbox; do
 done
 
 # 12. Postfix expects most directories to be owned by root and some subdirectories (like public and maildrop) to be owned by group postdrop
-find /var/spool/postfix -type d -exec chown root:root {} +
-chgrp postdrop /var/spool/postfix/public /var/spool/postfix/maildrop
+echo "[postfix] Fixing queue directory permissions"
+chown -R root:root /var/spool/postfix
+chown -R postfix:postfix /var/spool/postfix/defer
+chmod 700 /var/spool/postfix/defer
 
 # 13. Lint the entire Postfix configuration
 log "Running postfix check"
