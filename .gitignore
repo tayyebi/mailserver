@@ -2,12 +2,11 @@
 .env
 
 # SSL / TLS
-data/ssl/
+ssl/
 *.key
 *.pem
 *.crt
 *.csr
-data/opendkim/
 
 # Mail data & queues
 data/mail/

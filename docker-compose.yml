@@ -9,7 +9,6 @@ services:
     container_name: opendkim
     hostname: opendkim.${MAIL_DOMAIN}
     restart: unless-stopped
-    networks: [mailnet]
     env_file: .env
     environment:
       - TZ=${TZ}
@@ -32,6 +31,11 @@ services:
       - ./opendkim/KeyTable:/etc/opendkim/KeyTable:ro
       - ./opendkim/SigningTable:/etc/opendkim/SigningTable:ro
       - ./ssl/opendkim/keys:/etc/opendkim/keys:ro
+    dns:
+      - 127.0.0.11
+    networks:
+      mailnet:
+        ipv4_address: ${OPENDKIM_IP}
 
   dovecot:
     build:
@@ -40,22 +44,17 @@ services:
     container_name: dovecot
     hostname: dovecot.${MAIL_DOMAIN}
     restart: unless-stopped
-    networks: [mailnet]
-    ports:
-      - "143:143"
-      - "993:993"
-    expose:
-      - "24"       # LMTP over TCP
-      - "12345"    # Auth over TCP (SASL)
-    volumes:
-      - ./ssl/mailserver-cert.pem:/etc/ssl/private/cert.pem:ro
-      - ./ssl/mailserver-key.pem:/etc/ssl/private/key.pem:ro
     env_file: .env
     environment:
       - TZ=${TZ}
       - MAIL_HOST=${MAIL_HOST}
+      - DOVECOT_IP=${DOVECOT_IP}
     healthcheck:
-      test: ["CMD-SHELL", "SNI=${MAIL_HOST:-localhost}; echo -e \"a1 CAPABILITY\\na2 LOGOUT\" | openssl s_client -quiet -connect 127.0.0.1:993 -servername $$SNI 2>/dev/null | grep -q 'CAPABILITY'"]
+      test: >-
+        SNI=${MAIL_HOST:-localhost};
+        echo -e "a1 CAPABILITY\na2 LOGOUT" |
+        openssl s_client -quiet -connect ${DOVECOT_IP}:993 -servername $${SNI} \
+          2>/dev/null | grep -q 'CAPABILITY'
       interval: 30s
       timeout: 10s
       retries: 5
@@ -66,6 +65,17 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    ports:
+      - "143:143"
+      - "993:993"
+    expose:
+      - "24"
+      - "12345"
+    dns:
+      - 127.0.0.11
+    networks:
+      mailnet:
+        ipv4_address: ${DOVECOT_IP}
 
   postfix:
     build:
@@ -75,25 +85,12 @@ services:
     hostname: postfix.${MAIL_DOMAIN}
     domainname: ${MAIL_DOMAIN}
     restart: unless-stopped
-    networks: [mailnet]
-    depends_on:
-      dovecot:
-        condition: service_healthy
-      opendkim:
-        condition: service_started
-    ports:
-      - "25:25"
-      - "587:587"
-    volumes:
-      - ./data/spool:/var/spool/postfix
-      - ./ssl/mailserver-cert.pem:/etc/ssl/certs/postfix.pem:ro
-      - ./ssl/mailserver-key.pem:/etc/ssl/private/postfix.key:ro
     env_file: .env
     environment:
       - TZ=${TZ}
-      - DOVECOT_AUTH_HOST=dovecot
+      - DOVECOT_AUTH_HOST=${DOVECOT_IP}
       - DOVECOT_AUTH_PORT=12345
-      - DOVECOT_LMTP_HOST=dovecot
+      - DOVECOT_LMTP_HOST=${DOVECOT_IP}
       - DOVECOT_LMTP_PORT=24
     healthcheck:
       test: ["CMD-SHELL", "postfix status | grep -qi running"]
@@ -107,7 +104,29 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    ports:
+      - "25:25"
+      - "587:587"
+    volumes:
+      - ./data/spool:/var/spool/postfix
+      - ./ssl/mailserver-cert.pem:/etc/ssl/certs/postfix.pem:ro
+      - ./ssl/mailserver-key.pem:/etc/ssl/private/postfix.key:ro
+    dns:
+      - 127.0.0.11
+    depends_on:
+      dovecot:
+        condition: service_healthy
+      opendkim:
+        condition: service_started
+    networks:
+      mailnet:
+        ipv4_address: ${POSTFIX_IP}
 
 networks:
   mailnet:
     driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.18.0.0/16
+          gateway: 172.18.0.1

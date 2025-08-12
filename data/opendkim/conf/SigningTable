@@ -1,0 +1,6 @@
+# opendkim/SigningTable
+# Format:
+# address-pattern    signing-domain
+
+*@gordarg.com       default._domainkey.gordarg.com
+*@tyyi.net          default._domainkey.tyyi.net
