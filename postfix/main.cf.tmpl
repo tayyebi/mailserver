@@ -35,8 +35,7 @@ smtpd_sasl_auth_enable = yes
 smtpd_sasl_security_options = noanonymous
 broken_sasl_auth_clients = yes
 smtpd_sasl_type=dovecot
-#smtpd_sasl_path=inet:${DOVECOT_AUTH_HOST}:${DOVECOT_AUTH_PORT}
-smtpd_sasl_path=private/auth
+smtpd_sasl_path=inet:${DOVECOT_AUTH_HOST}:${DOVECOT_AUTH_PORT}
 
 # Milter (DKIM)
 milter_default_action = accept
@@ -46,8 +45,7 @@ non_smtpd_milters = inet:opendkim:8891
 
 # Virtual delivery via Dovecot LMTP
 virtual_transport=lmtp:inet:${DOVECOT_LMTP_HOST}:${DOVECOT_LMTP_PORT}
-virtual_mailbox_domains = *
-#virtual_mailbox_domains = hash:/etc/postfix/virtual_domains
+virtual_mailbox_domains = hash:/etc/postfix/virtual_domains
 virtual_mailbox_maps = hash:/etc/postfix/vmailbox
 virtual_alias_maps = hash:/etc/postfix/virtual_aliases
 

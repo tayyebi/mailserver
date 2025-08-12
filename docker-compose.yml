@@ -50,7 +50,6 @@ services:
     volumes:
       - ./ssl/mailserver-cert.pem:/etc/ssl/private/cert.pem:ro
       - ./ssl/mailserver-key.pem:/etc/ssl/private/key.pem:ro
-      - ./shared/auth:/var/spool/postfix/private
     env_file: .env
     environment:
       - TZ=${TZ}
@@ -87,7 +86,6 @@ services:
       - "587:587"
     volumes:
       - ./data/spool:/var/spool/postfix
-      - ./shared/auth:/var/spool/postfix/private
       - ./ssl/mailserver-cert.pem:/etc/ssl/certs/postfix.pem:ro
       - ./ssl/mailserver-key.pem:/etc/ssl/private/postfix.key:ro
     env_file: .env
