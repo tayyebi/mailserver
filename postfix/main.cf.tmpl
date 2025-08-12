@@ -21,7 +21,14 @@ smtpd_tls_cert_file = /etc/ssl/private/cert.pem
 smtpd_tls_key_file = /etc/ssl/private/key.pem
 smtpd_tls_security_level = may
 smtp_tls_security_level = may
+smtpd_use_tls = yes
 smtpd_tls_auth_only = yes
+
+# Restrict access
+smtpd_recipient_restrictions = 
+    permit_sasl_authenticated,
+    permit_mynetworks,
+    reject_unauth_destination
 
 # SASL
 smtpd_sasl_auth_enable = yes

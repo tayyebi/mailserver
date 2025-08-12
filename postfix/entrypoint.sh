@@ -9,8 +9,11 @@ render_template() {
 # Render templates if missing
 if [ ! -s /etc/postfix/main.cf ]; then
   log "Rendering Postfix config"
-  render_template /templates/postfix/main.cf.tmpl /etc/postfix/main.cf
-  render_template /templates/postfix/master.cf.tmpl /etc/postfix/master.cf
+  render_template /templates/main.cf.tmpl /etc/postfix/main.cf
+  render_template /templates/master.cf.tmpl /etc/postfix/master.cf
+  render_template /templates/virtual_aliases.tmpl /etc/postfix/virtual_aliases
+  render_template /templates/virtual_domains.tmpl /etc/postfix/virtual_domains
+  render_template /templates/vmailbox.tmpl /etc/postfix/vmailbox
 
   # Dump the result for debug
   log "----- /etc/postfix/main.cf -----"
