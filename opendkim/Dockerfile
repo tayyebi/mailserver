@@ -14,7 +14,8 @@ RUN apt-get update \
 RUN mkdir -p /etc/opendkim/keys \
  && chown -R opendkim:opendkim /etc/opendkim
 
-# Config and keys live directly under /etc/opendkim
+COPY opendkim.conf /etc/opendkim/opendkim.conf
+
 VOLUME ["/etc/opendkim", "/etc/opendkim/keys"]
 
 EXPOSE 8891

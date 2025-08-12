@@ -31,7 +31,7 @@ services:
       - ./opendkim/TrustedHosts:/etc/opendkim/TrustedHosts:ro
       - ./opendkim/KeyTable:/etc/opendkim/KeyTable:ro
       - ./opendkim/SigningTable:/etc/opendkim/SigningTable:ro
-      - ./opendkim/keys:/etc/opendkim/keys:ro
+      - ./ssl/opendkim/keys:/etc/opendkim/keys:ro
 
   dovecot:
     build:
