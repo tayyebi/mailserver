@@ -15,6 +15,9 @@ RUN mkdir -p /etc/dovecot /var/lib/dovecot /mail \
  && chown -R root:root /etc/dovecot \
  && chown -R dovecot:dovecot /var/lib/dovecot /mail
 
+COPY dovecot-conf/dovecot.conf /etc/dovecot/dovecot.conf
+COPY dovecot-conf/passwd /etc/dovecot/passwd
+
 VOLUME ["/etc/dovecot", "/var/lib/dovecot", "/mail"]
 
 EXPOSE 143 993 24 12345

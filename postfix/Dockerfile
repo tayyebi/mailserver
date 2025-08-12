@@ -10,7 +10,7 @@ ENV TZ=${TZ}
 
 # Install required packages
 RUN apt-get update \
-    && apt-get install -y \
+    && apt-get install -y --install-recommends \
         postfix \
         libsasl2-modules \
         openssl \
@@ -29,12 +29,23 @@ RUN mkdir -p /var/spool/postfix/active /var/spool/postfix/bounce /var/spool/post
         /var/spool/postfix/defer /var/spool/postfix/deferred /var/spool/postfix/flush \
         /var/spool/postfix/hold /var/spool/postfix/incoming /var/spool/postfix/private \
         /var/spool/postfix/maildrop /var/spool/postfix/pid /var/spool/postfix/public \
-        /var/spool/postfix/saved /var/spool/postfix/trace \
-        && chown -R postfix:postfix /var/spool/postfix \
-        && postfix set-permissions
-
+        /var/spool/postfix/saved /var/spool/postfix/trace
+RUN mkdir -p /usr/share/doc/postfix \
+    && touch /usr/share/doc/postfix/MAILLOG_README \
+    && touch /usr/share/doc/postfix/TLS_README \
+    && touch /usr/share/doc/postfix/SASL_README \
+    && touch /usr/share/doc/postfix/LDAP_README \
+    && touch /usr/share/doc/postfix/DB_README \
+    && touch /usr/share/doc/postfix/CYRUS_README \
+    && touch /usr/share/doc/postfix/UUCP_README \
+    && touch /usr/share/doc/postfix/QMQP_README \
+    && touch /usr/share/doc/postfix/SMTPD_POLICY_README \
+    && touch /usr/share/doc/postfix/RESTRICTION_CLASS_README \
+    && touch /usr/share/doc/postfix/SMTPUTF8_README \
+    && touch /usr/share/doc/postfix/POSTSCREEN_3_5_README
+RUN chown -R postfix:postfix /var/spool/postfix \
+    && postfix set-permissions
 RUN postfix check
-
 
 # Copy Postfix config templates
 COPY config/main.cf.tmpl			/templates/postfix/main.cf.tmpl
