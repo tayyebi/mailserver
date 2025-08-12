@@ -8,6 +8,23 @@ for key in smtpd_sasl_type smtpd_sasl_path virtual_transport; do
   postconf -X "$key" || true # remove key before adding it
 done
 
+# expand templates and validate
+if [ ! -s /etc/postfix/main.cf ]; then
+  log "Rendering Postfix config"
+  render_template /templates/postfix/main.cf.tmpl /etc/postfix/main.cf
+  render_template /templates/postfix/master.cf.tmpl /etc/postfix/master.cf
+fi
+for f in virtual_aliases virtual_domains vmailbox; do
+  [ -s "/etc/postfix/$f" ] || render_template "/templates/postfix/${f}.tmpl" "/etc/postfix/$f"
+done
+for f in virtual_aliases virtual_domains vmailbox; do
+  grep '\${' "/etc/postfix/$f" && {
+    log "Unresolved variable in $f"
+    cat "/etc/postfix/$f"
+    exit 1
+  }
+done
+
 
 MAIL_DOMAIN="${MAIL_DOMAIN:-example.com}"
 MAIL_HOST="${MAIL_HOST:-mail.${MAIL_DOMAIN}}"
