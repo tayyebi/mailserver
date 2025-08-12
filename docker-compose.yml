@@ -28,8 +28,10 @@ services:
     expose:
       - "8891"
     volumes:
-      - ./ssl/opendkim:/etc/opendkim:ro
-      - ./opendkim/scripts:/scripts:ro
+      - ./opendkim/TrustedHosts:/etc/opendkim/TrustedHosts:ro
+      - ./opendkim/KeyTable:/etc/opendkim/KeyTable:ro
+      - ./opendkim/SigningTable:/etc/opendkim/SigningTable:ro
+      - ./opendkim/keys:/etc/opendkim/keys:ro
 
   dovecot:
     build:
@@ -103,7 +105,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
 
 networks:
   mailnet:
