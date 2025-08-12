@@ -111,3 +111,9 @@ logs:
 backup-dkim:
 	@tar czf dkim-backup-$$\(date +%Y%m%d_%H%M%S\).tgz -C data/opendkim keys
 	@echo "DKIM keys backed up to $$(ls -1 dkim-backup-*.tgz | tail -n1)"
+
+render-maps:
+	$(Q)$(DOCKER_COMPOSE) exec postfix bash -c "\
+		postmap /etc/postfix/virtual_aliases && \
+		postmap /etc/postfix/virtual_domains && \
+		postmap /etc/postfix/vmailbox"
