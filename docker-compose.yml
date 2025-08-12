@@ -28,8 +28,7 @@ services:
     expose:
       - "8891"
     volumes:
-      - ./data/opendkim/conf:/etc/opendkim
-      - ./data/opendkim/keys:/etc/opendkim/keys
+      - ./ssl/opendkim:/etc/opendkim:ro
       - ./opendkim/scripts:/scripts:ro
 
   dovecot:
@@ -47,8 +46,8 @@ services:
       - "24"       # LMTP over TCP
       - "12345"    # Auth over TCP (SASL)
     volumes:
-      - ./data/mail:/mail
-      - ./data/ssl:/etc/ssl/private:ro
+      - ./ssl/mailserver-cert.pem:/etc/ssl/private/cert.pem:ro
+      - ./ssl/mailserver-key.pem:/etc/ssl/private/key.pem:ro
     env_file: .env
     environment:
       - TZ=${TZ}
@@ -83,7 +82,8 @@ services:
       - "587:587"
     volumes:
       - ./data/spool:/var/spool/postfix
-      - ./data/ssl:/etc/ssl/private:ro
+      - ./ssl/mailserver-cert.pem:/etc/ssl/certs/postfix-cert.pem:ro
+      - ./ssl/mailserver-key.pem:/etc/ssl/private/postfix-key.pem:ro
     env_file: .env
     environment:
       - TZ=${TZ}
