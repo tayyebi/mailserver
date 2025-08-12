@@ -47,8 +47,6 @@ services:
       - "24"       # LMTP over TCP
       - "12345"    # Auth over TCP (SASL)
     volumes:
-      - ./dovecot/dovecot-conf:/etc/dovecot
-      - ./data/dovecot:/var/lib/dovecot
       - ./data/mail:/mail
       - ./data/ssl:/etc/ssl/private:ro
     env_file: .env
