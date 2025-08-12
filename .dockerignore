@@ -10,7 +10,7 @@ Makefile
 .env.*
 
 # SSL keys & certs (mount at runtime instead)
-data/ssl/
+ssl/
 *.pem
 *.key
 *.crt
@@ -35,6 +35,6 @@ tmp/
 .DS_Store
 Thumbs.db
 
-# Exclude scripts if not used in build
-scripts/test-mail.sh
-scripts/gen-certs.sh
+# Runtime
+shared/
+data/
