@@ -43,6 +43,9 @@ for f in virtual_aliases virtual_domains vmailbox; do
   postmap "/etc/postfix/$f" || true
 done
 
+# auto upgrade postfix configuration to match the current version
+postfix upgrade-configuration
+
 # Lint the entire Postfix configuration
 log "Running postfix check"
 if ! postfix check; then
