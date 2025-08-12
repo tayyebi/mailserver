@@ -6,7 +6,8 @@ ARG TZ=UTC
 ENV TZ=${TZ}
 
 RUN apt-get update \
- && apt-get install -y dovecot-core dovecot-imapd dovecot-lmtpd tzdata openssl \
+ && apt-get install -y dovecot-core dovecot-imapd dovecot-lmtpd dovecot-pop3d \
+ 	tzdata openssl \
  && ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime \
  && dpkg-reconfigure -f noninteractive tzdata
 
