@@ -2,6 +2,7 @@
 set -euo pipefail
 
 log() { echo "[postfix] $*"; }
+render_template() { envsubst < "$1" > "$2" }
 
 # 1. Render templates if missing
 if [ ! -s /etc/postfix/main.cf ]; then
