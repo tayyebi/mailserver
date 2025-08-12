@@ -46,16 +46,6 @@ mkdir -p /etc/postfix /var/spool/postfix /var/lib/postfix /var/log/mail
 chown -R postfix:postfix /var/spool/postfix /var/lib/postfix
 chmod -R 755 /var/spool/postfix
 
-# Seed configs if user-volume is empty
-if [ ! -s /etc/postfix/main.cf ]; then
-  log "Seeding Postfix config from templates"
-  cp /templates/postfix/main.cf.tmpl /etc/postfix/main.cf
-  cp /templates/postfix/master.cf.tmpl /etc/postfix/master.cf
-fi
-[ -s /etc/postfix/virtual_aliases ] || cp /templates/postfix/virtual_aliases.tmpl /etc/postfix/virtual_aliases
-[ -s /etc/postfix/virtual_domains ]  || cp /templates/postfix/virtual_domains.tmpl  /etc/postfix/virtual_domains
-[ -s /etc/postfix/vmailbox ]         || cp /templates/postfix/vmailbox.tmpl         /etc/postfix/vmailbox
-
 # Compile lookup tables
 for f in virtual_aliases virtual_domains vmailbox; do
   postmap "/etc/postfix/$f" || true
