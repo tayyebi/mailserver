@@ -9,9 +9,7 @@ ssl/
 *.csr
 
 # Mail data & queues
-data/mail/
-data/dovecot/
-data/spool/
+data/
 
 # Logs
 logs/
