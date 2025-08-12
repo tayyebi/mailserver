@@ -36,6 +36,12 @@ COPY config/virtual_aliases.tmpl	/templates/postfix/virtual_aliases.tmpl
 COPY config/virtual_domains.tmpl	/templates/postfix/virtual_domains.tmpl
 COPY config/vmailbox.tmpl			/templates/postfix/vmailbox.tmpl
 
+# Add users and groups
+RUN if ! id -nG postfix | grep -qw postdrop; then \
+        echo "Adding postfix to postdrop group"; \
+        usermod -aG postdrop postfix; \
+    fi
+
 # Copy entrypoint
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

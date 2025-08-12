@@ -91,29 +91,25 @@ for f in virtual_aliases virtual_domains vmailbox; do
 done
 
 # 12. Postfix expects most directories to be owned by root and some subdirectories (like public and maildrop) to be owned by group postdrop
-log "Fixing queue directory permissions"
-# Base queue dir
 chown root:root /var/spool/postfix
+chown root:root /var/spool/postfix/pid
+chown postfix:postfix /var/spool/postfix/private
+chown postfix:postfix /var/spool/postfix/public
+chown postfix:postfix /var/spool/postfix/maildrop
+chown root:root /var/spool/postfix/etc
+chown root:root /var/spool/postfix/lib
+chown root:root /var/spool/postfix/usr
+chown root:root /var/spool/postfix/usr/lib
+chown root:root /var/spool/postfix/usr/lib/sasl2
+chown root:root /var/spool/postfix/usr/lib/zoneinfo
+
 chmod 755 /var/spool/postfix
-# Public and maildrop: owned by root, accessible by the postdrop group
-mkdir -p /var/spool/postfix/public
-chown root:postdrop /var/spool/postfix/public
-chmod 710 /var/spool/postfix/public
-mkdir -p /var/spool/postfix/maildrop
-chown root:postdrop /var/spool/postfix/maildrop
-# The 'maildrop' directory must be writable and executable by the 'postdrop' group,
-# which the 'postfix' user is a member of. This fixes your 'Permission denied' error.
-chmod 770 /var/spool/postfix/maildrop
-# Queue dirs owned by postfix
-for dir in active bounce corrupt defer deferred flush hold incoming saved trace; do
-    mkdir -p "/var/spool/postfix/$dir"
-    chown postfix:postfix "/var/spool/postfix/$dir"
-    chmod 700 "/var/spool/postfix/$dir"
-done
-# Private sockets: owned by root, accessible by the postfix user
-mkdir -p /var/spool/postfix/private
-chown root:postfix /var/spool/postfix/private
-chmod 750 /var/spool/postfix/private
+chmod 700 /var/spool/postfix/pid
+chmod 700 /var/spool/postfix/private
+
+chown postfix:postdrop /var/spool/postfix/public /var/spool/postfix/maildrop
+chmod 730 /var/spool/postfix/maildrop
+chmod 750 /var/spool/postfix/public
 
 # 13. Lint the entire Postfix configuration
 log "Running postfix check"
@@ -124,4 +120,4 @@ fi
 
 # 14. Launch Postfix in foreground
 log "Starting Postfix (foreground)"
-exec /usr/sbin/postfix start-fg
+exec /usr/sbin/postfix -vvv start-fg
