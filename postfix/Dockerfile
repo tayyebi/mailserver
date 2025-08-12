@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim
+FROM debian:bookworm
 
 LABEL maintainer="Mohammad R. Tayyebi <m@tyyi.net>"
 LABEL description="Postfix mail server with Dovecot SASL & DKIM support"
@@ -10,24 +10,31 @@ ENV TZ=${TZ}
 
 # Install required packages
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends \
-		postfix \
-		libsasl2-modules \
-		openssl \
-		bash \
-		ca-certificates \
-		tzdata \
-		swaks \
-		gettext \
+    && apt-get install -y \
+        postfix \
+        libsasl2-modules \
+        openssl \
+        bash \
+        ca-certificates \
+        tzdata \
+        swaks \
+        gettext \
+        man-db \
+        postfix-doc \
 	&& ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime \
-	&& dpkg-reconfigure -f noninteractive tzdata \
-	&& rm -rf /var/lib/apt/lists/*
+	&& dpkg-reconfigure -f noninteractive tzdata
 
 # Create directories
-RUN mkdir -p \
-		/etc/postfix /var/spool/postfix /var/lib/postfix /var/log/mail \
-		/templates/postfix \
-	&& chown -R postfix:postfix /var/spool/postfix /var/lib/postfix
+RUN mkdir -p /var/spool/postfix/active /var/spool/postfix/bounce /var/spool/postfix/corrupt \
+        /var/spool/postfix/defer /var/spool/postfix/deferred /var/spool/postfix/flush \
+        /var/spool/postfix/hold /var/spool/postfix/incoming /var/spool/postfix/private \
+        /var/spool/postfix/maildrop /var/spool/postfix/pid /var/spool/postfix/public \
+        /var/spool/postfix/saved /var/spool/postfix/trace \
+        && chown -R postfix:postfix /var/spool/postfix \
+        && postfix set-permissions
+
+RUN postfix check
+
 
 # Copy Postfix config templates
 COPY config/main.cf.tmpl			/templates/postfix/main.cf.tmpl
