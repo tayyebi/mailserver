@@ -1,12 +1,12 @@
 # Identity
 myhostname = ${MAIL_HOST}
 mydomain = ${MAIL_DOMAIN}
-myorigin = $mydomain
+myorigin = ${MAIL_DOMAIN}
 
 # Network
 inet_interfaces = all
 inet_protocols = ipv4
-mydestination = localhost.$mydomain, localhost
+mydestination = localhost.${MAIL_DOMAIN}, localhost
 mynetworks = 127.0.0.0/8
 
 # Relay & anti-relay
