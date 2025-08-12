@@ -37,9 +37,6 @@ validate:
 
 install: validate certs
 	$(Q)mkdir -p data/{ssl,postfix,spool,opendkim/{conf,keys},dovecot-conf,dovecot,mail}
-	$(Q)for f in opendkim.conf KeyTable SigningTable TrustedHosts; do \
-		   [ -f "data/opendkim/conf/$$f" ] || cp "opendkim/$$f" "data/opendkim/conf/$$f"; \
-	   done
 	$(Q)$(DOCKER_COMPOSE) up -d
 	$(Q)$(MAKE) reload
 	$(Q)$(MAKE) test
