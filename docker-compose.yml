@@ -63,6 +63,7 @@ services:
     volumes:
       - ./ssl/mailserver-cert.pem:/etc/ssl/private/cert.pem:ro
       - ./ssl/mailserver-key.pem:/etc/ssl/private/key.pem:ro
+      - ./data/mail:/mail
     logging:
       driver: "json-file"
       options:
