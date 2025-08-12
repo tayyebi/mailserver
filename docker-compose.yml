@@ -19,7 +19,6 @@ services:
       retries: 5
     labels:
       com.mailserver.role: "dkim"
-      com.mailserver.maintainer: "MohammadReza"
     logging:
       driver: "json-file"
       options:
@@ -62,7 +61,6 @@ services:
       retries: 5
     labels:
       com.mailserver.role: "imap"
-      com.mailserver.maintainer: "MohammadReza"
     logging:
       driver: "json-file"
       options:
@@ -101,7 +99,6 @@ services:
       retries: 5
     labels:
       com.mailserver.role: "smtp"
-      com.mailserver.maintainer: "MohammadReza"
     logging:
       driver: "json-file"
       options:

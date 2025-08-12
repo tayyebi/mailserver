@@ -1,5 +1,5 @@
 FROM debian:bookworm-slim
-LABEL maintainer="MohammadReza" description="OpenDKIM signing service" version="1.1"
+LABEL maintainer="Mohammad R. Tayyebi <m@tyyi.net>" description="OpenDKIM signing service" version="1.1"
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TZ=UTC
