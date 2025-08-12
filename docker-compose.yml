@@ -84,8 +84,8 @@ services:
       - "587:587"
     volumes:
       - ./data/spool:/var/spool/postfix
-      - ./ssl/mailserver-cert.pem:/etc/ssl/certs/postfix-cert.pem:ro
-      - ./ssl/mailserver-key.pem:/etc/ssl/private/postfix-key.pem:ro
+      - ./ssl/mailserver-cert.pem:/etc/ssl/certs/postfix.pem:ro
+      - ./ssl/mailserver-key.pem:/etc/ssl/private/postfix.key:ro
     env_file: .env
     environment:
       - TZ=${TZ}
