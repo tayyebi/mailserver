@@ -25,7 +25,7 @@ services:
         max-size: "10m"
         max-file: "3"
     expose:
-      - "8891"
+      - "8891"        # DKIM milter socket — used internally by Postfix
     volumes:
       - ./opendkim/TrustedHosts:/etc/opendkim/TrustedHosts:ro
       - ./opendkim/KeyTable:/etc/opendkim/KeyTable:ro
@@ -69,11 +69,12 @@ services:
         max-size: "10m"
         max-file: "3"
     ports:
-      - "143:143"
-      - "993:993"
+      - "143:143"     # IMAP (unencrypted) — used for STARTTLS upgrade
+      - "993:993"     # IMAP over SSL/TLS — secure IMAP access
+      - "995:995"     # POP3 over SSL/TLS — secure POP3 access
     expose:
-      - "24"
-      - "12345"
+      - "24"          # LMTP listener for Postfix delivery (internal only)
+      - "12345"       # SASL auth listener for Postfix (internal only)
     dns:
       - 127.0.0.11
     networks:
@@ -108,8 +109,9 @@ services:
         max-size: "10m"
         max-file: "3"
     ports:
-      - "25:25"
-      - "587:587"
+      - "25:25"       # SMTP (unencrypted) — used for mail relay between servers
+      - "587:587"     # SMTP with STARTTLS — secure submission from clients
+      # - "465:465"     # SMTP over SSL/TLS — legacy secure SMTP (less common)
     volumes:
       - ./data/spool:/var/spool/postfix
       - ./ssl/mailserver-cert.pem:/etc/ssl/certs/postfix.pem:ro
