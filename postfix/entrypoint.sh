@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
+
+# guards for main.cf file
 sed -i -e '$a\' /etc/postfix/main.cf
+for key in smtpd_sasl_type smtpd_sasl_path virtual_transport; do
+  postconf -X "$key" || true # remove key before adding it
+done
+
 
 MAIL_DOMAIN="${MAIL_DOMAIN:-example.com}"
 MAIL_HOST="${MAIL_HOST:-mail.${MAIL_DOMAIN}}"
