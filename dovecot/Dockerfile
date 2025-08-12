@@ -8,8 +8,7 @@ ENV TZ=${TZ}
 RUN apt-get update \
  && apt-get install -y dovecot-core dovecot-imapd dovecot-lmtpd tzdata openssl \
  && ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime \
- && dpkg-reconfigure -f noninteractive tzdata \
- && rm -rf /var/lib/apt/lists/*
+ && dpkg-reconfigure -f noninteractive tzdata
 
 RUN mkdir -p /etc/dovecot /var/lib/dovecot /mail \
  && chown -R root:root /etc/dovecot \
@@ -18,7 +17,7 @@ RUN mkdir -p /etc/dovecot /var/lib/dovecot /mail \
 COPY dovecot-conf/dovecot.conf /etc/dovecot/dovecot.conf
 COPY dovecot-conf/passwd /etc/dovecot/passwd
 
-VOLUME ["/etc/dovecot", "/var/lib/dovecot", "/mail"]
+VOLUME ["/mail"]
 
 EXPOSE 143 993 24 12345
 CMD ["dovecot", "-F"]
