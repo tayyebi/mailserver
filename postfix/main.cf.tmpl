@@ -17,12 +17,12 @@ relay_domains =
 smtpd_relay_restrictions = permit_mynetworks, permit_sasl_authenticated, defer_unauth_destination
 
 # TLS
-smtpd_tls_cert_file = /etc/ssl/private/cert.pem
-smtpd_tls_key_file = /etc/ssl/private/key.pem
+smtpd_tls_cert_file = /etc/ssl/certs/postfix.pem
+smtpd_tls_key_file = /etc/ssl/private/postfix.key
 smtpd_tls_security_level = may
-smtp_tls_security_level = may
-smtpd_use_tls = yes
 smtpd_tls_auth_only = yes
+smtpd_tls_protocols = !SSLv2, !SSLv3
+smtpd_tls_loglevel = 1
 
 # Restrict access
 smtpd_recipient_restrictions = 
