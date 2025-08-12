@@ -10,6 +10,7 @@ services:
     hostname: opendkim.${MAIL_DOMAIN}
     restart: unless-stopped
     networks: [mailnet]
+    env_file: .env
     environment:
       - TZ=${TZ}
     healthcheck:
@@ -51,6 +52,7 @@ services:
       - ./data/dovecot:/var/lib/dovecot
       - ./data/mail:/mail
       - ./data/ssl:/etc/ssl/private:ro
+    env_file: .env
     environment:
       - TZ=${TZ}
       - MAIL_HOST=${MAIL_HOST}
@@ -86,6 +88,7 @@ services:
       - ./data/postfix:/etc/postfix
       - ./data/spool:/var/spool/postfix
       - ./data/ssl:/etc/ssl/private:ro
+    env_file: .env
     environment:
       - TZ=${TZ}
       - DOVECOT_AUTH_HOST=dovecot
