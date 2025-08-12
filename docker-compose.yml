@@ -61,8 +61,8 @@ services:
     labels:
       com.mailserver.role: "imap"
     volumes:
-      - ./ssl/mailserver-cert.pem:/etc/ssl/private/cert.pem
-      - ./ssl/mailserver-key.pem:/etc/ssl/private/key.pem
+      - ./ssl/mailserver-cert.pem:/etc/ssl/private/cert.pem:ro
+      - ./ssl/mailserver-key.pem:/etc/ssl/private/key.pem:ro
     logging:
       driver: "json-file"
       options:
@@ -128,7 +128,6 @@ services:
 networks:
   mailnet:
     driver: bridge
-    internal: true
     ipam:
       config:
         - subnet: 172.18.0.0/16
