@@ -114,7 +114,7 @@ services:
       - "587:587"     # SMTP with STARTTLS — secure submission from clients
       # - "465:465"     # SMTP over SSL/TLS — legacy secure SMTP (less common)
     volumes:
-      - ./data/spool:/var/spool/postfix
+      - /var/spool/postfix
       - ./ssl/mailserver-cert.pem:/etc/ssl/certs/postfix.pem:ro
       - ./ssl/mailserver-key.pem:/etc/ssl/private/postfix.key:ro
     dns:
