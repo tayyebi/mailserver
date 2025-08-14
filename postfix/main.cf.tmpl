@@ -10,15 +10,15 @@ mydomain = ${MAIL_DOMAIN}
 myorigin = ${MAIL_DOMAIN}
 
 # Network
-smtp_dns_support_level = disabled
+smtp_dns_support_level = enabled
 inet_interfaces = all
 inet_protocols = ipv4
-mydestination = localhost.${MAIL_DOMAIN}, localhost
-mynetworks = 127.0.0.0/8
+mydestination = ${MAIL_HOST}, localhost.${MAIL_DOMAIN}, localhost, ${MAIL_DOMAIN}
 
 # Relay & anti-relay
 relay_domains =
 smtpd_relay_restrictions = permit_mynetworks, permit_sasl_authenticated, defer_unauth_destination
+mynetworks = 127.0.0.0/8
 
 # TLS
 smtpd_tls_cert_file = /etc/ssl/certs/postfix.pem
@@ -27,12 +27,6 @@ smtpd_tls_security_level = may
 smtpd_tls_auth_only = yes
 smtpd_tls_protocols = !SSLv2, !SSLv3
 smtpd_tls_loglevel = 1
-
-# Restrict access
-smtpd_recipient_restrictions = 
-    permit_sasl_authenticated,
-    permit_mynetworks,
-    reject_unauth_destination
 
 # SASL
 smtpd_sasl_auth_enable = yes
