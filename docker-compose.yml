@@ -97,7 +97,7 @@ services:
       - DOVECOT_LMTP_HOST=${DOVECOT_IP}
       - DOVECOT_LMTP_PORT=24
     healthcheck:
-      test: ["CMD-SHELL", "postfix status | grep -qi running"]
+      test: ["CMD-SHELL", "postfix status | grep -qi running && echo | openssl s_client -connect cloudflare.com:443 -servername cloudflare.com -verify_return_error -brief >/dev/null 2>&1"]
       interval: 60s
       timeout: 10s
       retries: 1
