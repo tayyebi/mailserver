@@ -43,8 +43,7 @@ RUN mkdir -p /usr/share/doc/postfix \
     && touch /usr/share/doc/postfix/RESTRICTION_CLASS_README \
     && touch /usr/share/doc/postfix/SMTPUTF8_README \
     && touch /usr/share/doc/postfix/POSTSCREEN_3_5_README
-RUN chown -R postfix:postfix /var/spool/postfix \
-    && postfix set-permissions
+RUN postfix set-permissions
 RUN postfix check
 
 # Copy Postfix config templates
@@ -63,9 +62,3 @@ RUN if ! id -nG postfix | grep -qw postdrop; then \
 # Copy entrypoint
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
-
-EXPOSE 25 587
-
-VOLUME ["/etc/postfix", "/var/spool/postfix", "/var/lib/postfix"]
-
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
