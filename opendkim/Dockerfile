@@ -15,9 +15,3 @@ RUN mkdir -p /etc/opendkim/keys \
  && chown -R opendkim:opendkim /etc/opendkim
 
 COPY opendkim.conf /etc/opendkim/opendkim.conf
-
-VOLUME ["/etc/opendkim", "/etc/opendkim/keys"]
-
-EXPOSE 8891
-
-ENTRYPOINT ["opendkim", "-f", "-x", "/etc/opendkim/opendkim.conf"]

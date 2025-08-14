@@ -36,7 +36,8 @@ services:
     networks:
       mailnet:
         ipv4_address: ${OPENDKIM_IP}
-
+    entrypoint: ["opendkim", "-f", "-x", "/etc/opendkim/opendkim.conf"]
+    
   dovecot:
     build:
       context: ./dovecot
@@ -64,6 +65,7 @@ services:
       - ./ssl/mailserver-cert.pem:/etc/ssl/private/cert.pem:ro
       - ./ssl/mailserver-key.pem:/etc/ssl/private/key.pem:ro
       - ./data/mail:/mail
+      - ./dovecot/passwd:/etc/dovecot/passwd
     logging:
       driver: "json-file"
       options:
@@ -81,6 +83,7 @@ services:
     networks:
       mailnet:
         ipv4_address: ${DOVECOT_IP}
+    command: ["dovecot", "-F"]
 
   postfix:
     build:
@@ -127,6 +130,7 @@ services:
     networks:
       mailnet:
         ipv4_address: ${POSTFIX_IP}
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
 
 networks:
   mailnet:

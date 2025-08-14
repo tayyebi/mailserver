@@ -33,13 +33,6 @@ DOVECOT_LMTP_PORT="${DOVECOT_LMTP_PORT:-24}"
 echo "$TZ" > /etc/timezone || true
 ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime
 
-# Ensure file system layout & permissions
-chown root:root /var/spool/postfix
-chown root:root /var/spool/postfix/{etc,lib,usr,pid}
-chown postfix:postdrop /var/spool/postfix/{public,maildrop}
-
-
-
 # Compile lookup tables
 for f in virtual_aliases virtual_domains vmailbox; do
   postmap "/etc/postfix/$f" || true
