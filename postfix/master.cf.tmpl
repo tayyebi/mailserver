@@ -25,6 +25,11 @@ rewrite   unix  -       -       y       -       -       trivial-rewrite
 bounce    unix  -       -       y       -       0       bounce
 verify    unix  -       -       y       -       1       verify
 flush     unix  n       -       y       1000    0       flush
+defer     unix  -       -       n       -       -       error
+  flags=4.4.3
+retry     unix  -       -       n       -       -       error
+  flags=4.4.1
+
 
 # External lookups and proxies
 proxymap  unix  -       -       n       -       -       proxymap
