@@ -34,10 +34,10 @@ echo "$TZ" > /etc/timezone || true
 ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime
 
 # Ensure file system layout & permissions
-chown -R postfix:postfix /var/lib/postfix
-chown -R postfix:postfix /var/spool/postfix
-chown postfix:postdrop /var/spool/postfix/maildrop
-chown postfix:postdrop /var/spool/postfix/public
+chown root:root /var/spool/postfix
+chown root:root /var/spool/postfix/{etc,lib,usr,pid}
+chown postfix:postdrop /var/spool/postfix/{public,maildrop}
+
 
 
 # Compile lookup tables
