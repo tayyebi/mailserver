@@ -59,6 +59,9 @@ RUN if ! id -nG postfix | grep -qw postdrop; then \
         usermod -aG postdrop postfix; \
     fi
 
+# Copy HealthCheck Script
+COPY healthcheck.sh /usr/local/bin/healthcheck.sh
+
 # Copy entrypoint
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

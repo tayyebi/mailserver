@@ -97,7 +97,7 @@ services:
       - DOVECOT_LMTP_HOST=${DOVECOT_IP}
       - DOVECOT_LMTP_PORT=24
     healthcheck:
-      test: ["CMD-SHELL", "postfix status | grep -qi running && echo | openssl s_client -connect cloudflare.com:443 -servername cloudflare.com -verify_return_error -brief >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "postfix status | grep -qi running && /usr/local/bin/healthcheck.sh"]
       interval: 60s
       timeout: 10s
       retries: 1
@@ -113,6 +113,7 @@ services:
       - "587:587"     # SMTP with STARTTLS — secure submission from clients
       # - "465:465"     # SMTP over SSL/TLS — legacy secure SMTP (less common)
     volumes:
+      - ./resolv.conf:/etc/resolv.conf:ro
       - /var/spool/postfix
       - ./ssl/mailserver-cert.pem:/etc/ssl/certs/postfix.pem:ro
       - ./ssl/mailserver-key.pem:/etc/ssl/private/postfix.key:ro
