@@ -48,12 +48,6 @@ if ! postfix check; then
   exit 1
 fi
 
-# wait for resolver
-until getent hosts dovecot; do
-  echo "Waiting for DNS..."
-  sleep 2
-done
-
 # Launch Postfix in foreground
 log "Starting Postfix"
 exec /usr/sbin/postfix -vvv start-fg
