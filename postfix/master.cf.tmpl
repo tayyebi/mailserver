@@ -1,3 +1,5 @@
+# service  type  private  unprivileged  chroot  wakeup-time  maxproc  command + args
+
 postlog   unix-dgram n  -       n       -       1       postlogd
 
 submission inet n       -       y       -       -       smtpd
@@ -16,7 +18,7 @@ qmgr      unix  n       -       n       300     1       qmgr
 tlsmgr    unix  -       -       y       1000?   1       tlsmgr
 rewrite   unix  -       -       y       -       -       trivial-rewrite
 bounce    unix  -       -       y       -       0       bounce
-defer     unix  -       -       y       -       0       defer
+defer     unix  -       -       y       -       0       bounce
 trace     unix  -       -       y       -       0       bounce
 verify    unix  -       -       y       -       1       verify
 flush     unix  n       -       y       1000?   0       flush
