@@ -24,6 +24,10 @@ RUN apt-get update \
 	&& ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime \
 	&& dpkg-reconfigure -f noninteractive tzdata
 
+# Copy address resolver configurations
+COPY resolv.conf /var/spool/postfix/etc/resolv.conf
+COPY resolv.conf /etc/resolv.conf
+
 # Create directories
 RUN mkdir -p /var/spool/postfix/active /var/spool/postfix/bounce /var/spool/postfix/corrupt \
         /var/spool/postfix/defer /var/spool/postfix/deferred /var/spool/postfix/flush \
