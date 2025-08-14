@@ -36,7 +36,7 @@ ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime
 # Ensure file system layout & permissions
 mkdir -p /etc/postfix /var/spool/postfix /var/lib/postfix /var/log/mail
 chown -R root:root /var/spool/postfix /var/lib/postfix
-sudo chown -R postfix:postdrop /var/spool/postfix/public /var/spool/postfix/maildrop
+chown -R postfix:postdrop /var/spool/postfix/public /var/spool/postfix/maildrop
 chmod -R 755 /var/spool/postfix
 
 # Compile lookup tables
