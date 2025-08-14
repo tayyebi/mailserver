@@ -6,11 +6,7 @@ postlog   unix-dgram   n    -    n    -     1       postlogd
 # Submission (port 587) with enforced TLS and Dovecot SASL
 submission inet        n    -    y    -     -       smtpd
   -o syslog_name=postfix/submission
-  -o smtpd_tls_security_level=encrypt
   -o smtpd_tls_wrappermode=no
-  -o smtpd_sasl_auth_enable=yes
-  -o smtpd_sasl_type=dovecot
-  -o smtpd_sasl_path=unix:/var/run/dovecot/auth.sock
   -o smtpd_recipient_restrictions=permit_sasl_authenticated,reject
   -o milter_macro_daemon_name=ORIGINATING
 
@@ -37,7 +33,7 @@ proxywrite unix -       -       n       -       1       proxymap
 # Outbound SMTP
 smtp      unix  -       -       y       -       -       smtp
 relay     unix  -       -       y       -       -       smtp
-  -o syslog_name=postfix/$service_name
+  -o syslog_name=postfix/submission
   -o smtp_fallback_relay=
   -o smtp_mx_session_limit=2
 
