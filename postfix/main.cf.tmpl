@@ -44,8 +44,8 @@ smtpd_sasl_path=inet:${DOVECOT_AUTH_HOST}:${DOVECOT_AUTH_PORT}
 # Milter (DKIM)
 milter_default_action = accept
 milter_protocol = 6
-smtpd_milters = inet:opendkim:8891
-non_smtpd_milters = inet:opendkim:8891
+smtpd_milters = inet:${OPENDKIM_IP}:8891
+non_smtpd_milters = inet:${OPENDKIM_IP}:8891
 
 # Virtual delivery via Dovecot LMTP
 virtual_transport=lmtp:inet:${DOVECOT_LMTP_HOST}:${DOVECOT_LMTP_PORT}
