@@ -1,40 +1,54 @@
-# service  type  private  unprivileged  chroot  wakeup-time  maxproc  command + args
+# service  type  private unprivileged chroot wakeup-time maxproc command + args
 
-postlog   unix-dgram n  -       n       -       1       postlogd
+# postlog for logging
+postlog   unix-dgram   n    -    n    -     1       postlogd
 
-submission inet n       -       y       -       -       smtpd
+# Submission (port 587) with enforced TLS and Dovecot SASL
+submission inet        n    -    y    -     -       smtpd
+  -o syslog_name=postfix/submission
   -o smtpd_tls_security_level=encrypt
   -o smtpd_tls_wrappermode=no
   -o smtpd_sasl_auth_enable=yes
   -o smtpd_sasl_type=dovecot
-  -o smtpd_sasl_path=inet:${DOVECOT_AUTH_HOST}:${DOVECOT_AUTH_PORT}
+  -o smtpd_sasl_path=unix:/var/run/dovecot/auth.sock
   -o smtpd_recipient_restrictions=permit_sasl_authenticated,reject
   -o milter_macro_daemon_name=ORIGINATING
 
-
+# Standard incoming pickup and cleanup
 pickup    unix  n       -       y       60      1       pickup
 cleanup   unix  n       -       y       -       0       cleanup
+
+# Queue manager
 qmgr      unix  n       -       n       300     1       qmgr
-tlsmgr    unix  -       -       y       1000?   1       tlsmgr
+
+# TLS session cache manager
+tlsmgr    unix  -       -       y       1000    1       tlsmgr
+
+# Rewrites and delivery error handlers
 rewrite   unix  -       -       y       -       -       trivial-rewrite
 bounce    unix  -       -       y       -       0       bounce
-defer     unix  -       -       y       -       0       bounce
-trace     unix  -       -       y       -       0       bounce
 verify    unix  -       -       y       -       1       verify
-flush     unix  n       -       y       1000?   0       flush
+flush     unix  n       -       y       1000    0       flush
+
+# External lookups and proxies
 proxymap  unix  -       -       n       -       -       proxymap
 proxywrite unix -       -       n       -       1       proxymap
+
+# Outbound SMTP
 smtp      unix  -       -       y       -       -       smtp
 relay     unix  -       -       y       -       -       smtp
-        -o syslog_name=postfix/$service_name
-        -o smtp_fallback_relay=
-        -o smtp_mx_session_limit=2
+  -o syslog_name=postfix/$service_name
+  -o smtp_fallback_relay=
+  -o smtp_mx_session_limit=2
+
+# Mail queue utilities
 showq     unix  n       -       y       -       -       showq
 error     unix  -       -       y       -       -       error
-retry     unix  -       -       y       -       -       error
 discard   unix  -       -       y       -       -       discard
-local     unix  -       n       n       -       -       local
-virtual   unix  -       n       n       -       -       virtual
+
+# LMTP delivery to Dovecot
 lmtp      unix  -       -       y       -       -       lmtp
+
+# Performance and caching daemons
 anvil     unix  -       -       y       -       1       anvil
 scache    unix  -       -       y       -       1       scache
