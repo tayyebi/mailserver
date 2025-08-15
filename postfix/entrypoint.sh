@@ -35,7 +35,7 @@ ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime
 
 # Compile lookup tables
 for f in virtual_aliases virtual_domains vmailbox; do
-  postmap "/etc/postfix/$f" || true
+  postmap "/etc/postfix/$f"
 done
 
 # auto upgrade postfix configuration to match the current version
