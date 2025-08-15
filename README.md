@@ -30,12 +30,12 @@ Verify: `make --version`
 
 ```bash
 # Clone and enter
-git clone <your-repo-url> mailserver
+git clone https://github.com/tayyebi/mailserver mailserver
 cd mailserver
 
 # Create config from template
 cp .env.example .env
-# Edit: MAIL_DOMAIN, MAIL_HOST, SUBMISSION_USER, SUBMISSION_PASS, TZ
+# Edit: MAIL_DOMAIN, MAIL_HOST, TZ
 
 # One‑shot bootstrap (idempotent)
 make install
@@ -46,27 +46,6 @@ make install
 - Generate self‑signed TLS certs if missing
 - Start opendkim, dovecot, and postfix
 - Run health checks
-
----
-
-## Make targets
-
-- install — bootstrap: init data, certs, up, test
-- test — connectivity, STARTTLS, SASL checks
-- send — send a test email over submission (requires SUBMISSION_USER, SUBMISSION_PASS, TO)
-- certs / certs-force — generate or regenerate TLS certs
-- add-user USER=user@domain PASS='secret' — add/update mailbox and create Maildir
-- add-domain DOMAIN=example.com — add domain for inbound + DKIM
-- reload — reload opendkim, postfix, and dovecot
-- restart — restart containers
-- logs — tail mail and opendkim logs
-
-Examples:
-```bash
-make add-domain DOMAIN=example.net
-make add-user USER=admin@example.com PASS='StrongPass123!'
-make send TO=you@example.net SUBMISSION_USER=admin@example.com SUBMISSION_PASS='StrongPass123!'
-```
 
 ---
 
