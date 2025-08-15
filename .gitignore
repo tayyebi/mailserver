@@ -1,5 +1,6 @@
 # Secrets & env
 .env
+dovecot/passwd
 
 # SSL / TLS
 ssl/
