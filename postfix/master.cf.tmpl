@@ -1,9 +1,10 @@
-# service  type  private unprivileged chroot wakeup-time maxproc command + args
+# Port 25 listener — standard SMTP for inter‑server mail relay
+smtp      inet  n       -       y       -       -       smtpd
 
 # postlog for logging
 postlog   unix-dgram   n    -    n    -     1       postlogd
 
-# Submission (port 587) with enforced TLS and Dovecot SASL
+# Submission (port 587) with enforced TLS and Dovecot SASL
 submission inet        n    -    y    -     -       smtpd
   -o syslog_name=postfix/submission
   -o smtpd_tls_wrappermode=no
