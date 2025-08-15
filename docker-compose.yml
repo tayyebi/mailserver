@@ -69,6 +69,11 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    ports:
+      - "143:143"     # IMAP (unencrypted) — used for STARTTLS upgrade
+      - "993:993"     # IMAP over SSL/TLS — secure IMAP access
+      - "110:110"     # POP3 - POP3 access
+      - "995:995"     # POP3 over SSL/TLS — secure POP3 access
     expose:
       - "24"          # LMTP listener for Postfix delivery (internal only)
       - "12345"       # SASL auth listener for Postfix (internal only)
@@ -108,10 +113,6 @@ services:
       - "25:25"       # SMTP (unencrypted) — used for mail relay between servers
       - "587:587"     # SMTP with STARTTLS — secure submission from clients
       - "465:465"     # SMTP over SSL/TLS — legacy secure SMTP (less common)
-      - "143:143"     # IMAP (unencrypted) — used for STARTTLS upgrade
-      - "993:993"     # IMAP over SSL/TLS — secure IMAP access
-      - "110:110"     # POP3 - POP3 access
-      - "995:995"     # POP3 over SSL/TLS — secure POP3 access
     volumes:
       - /var/spool/postfix
       - ./ssl/mailserver-cert.pem:/etc/ssl/certs/postfix.pem:ro
