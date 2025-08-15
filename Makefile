@@ -48,14 +48,6 @@ test:
 	@SNI="$${MAIL_HOST:-localhost}"; echo -e "a1 CAPABILITY\na2 LOGOUT" | openssl s_client \
 	   -quiet -connect 127.0.0.1:993 -servername "$$SNI"
 
-send:
-	@[ -n "$(TO)" ] || (echo "Usage: make send TO=you@example.com SUBMISSION_USER=.. SUBMISSION_PASS=.." && exit 1)
-	$(Q)docker exec postfix bash -lc "\
-	   swaks --server 127.0.0.1:587 \
-			 --auth-user '$(SUBMISSION_USER)' \
-			 --auth-password '$(SUBMISSION_PASS)' \
-			 --tls --from '$(SUBMISSION_USER)' --to '$(TO)'"
-
 certs:
 	@[ -f data/ssl/cert.pem ] && echo "TLS cert exists" || $(MAKE) certs-force
 
