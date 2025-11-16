@@ -62,6 +62,7 @@ services:
     volumes:
       - ./ssl/mailserver-cert.pem:/etc/ssl/private/cert.pem:ro
       - ./ssl/mailserver-key.pem:/etc/ssl/private/key.pem:ro
+      - /var/log/dovecot.log:/var/log/mail.log
       - ./data/mail:/mail
       - ./dovecot/passwd:/etc/dovecot/passwd
     logging:
@@ -93,9 +94,7 @@ services:
     env_file: .env
     environment:
       - TZ=${TZ}
-      - DOVECOT_AUTH_HOST=${DOVECOT_IP}
       - DOVECOT_AUTH_PORT=12345
-      - DOVECOT_LMTP_HOST=${DOVECOT_IP}
       - DOVECOT_LMTP_PORT=24
     healthcheck:
       test: ["CMD-SHELL", "postfix status | grep -qi running && /usr/local/bin/healthcheck.sh"]
@@ -117,6 +116,7 @@ services:
       - /var/spool/postfix
       - ./ssl/mailserver-cert.pem:/etc/ssl/certs/postfix.pem:ro
       - ./ssl/mailserver-key.pem:/etc/ssl/private/postfix.key:ro
+      - /var/log/postfix.log:/var/log/mail.log
     depends_on:
       dovecot:
         condition: service_healthy

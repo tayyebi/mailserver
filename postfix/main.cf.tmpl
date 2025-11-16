@@ -32,7 +32,7 @@ smtpd_sasl_auth_enable = yes
 smtpd_sasl_security_options = noanonymous
 broken_sasl_auth_clients = yes
 smtpd_sasl_type=dovecot
-smtpd_sasl_path=inet:${DOVECOT_AUTH_HOST}:${DOVECOT_AUTH_PORT}
+smtpd_sasl_path=inet:${DOVECOT_IP}:${DOVECOT_AUTH_PORT}
 
 # Milter (DKIM)
 milter_default_action = accept
@@ -41,13 +41,14 @@ smtpd_milters = inet:${OPENDKIM_IP}:8891
 non_smtpd_milters = inet:${OPENDKIM_IP}:8891
 
 # Virtual delivery via Dovecot LMTP
-virtual_transport=lmtp:inet:${DOVECOT_LMTP_HOST}:${DOVECOT_LMTP_PORT}
+virtual_transport=lmtp:inet:${DOVECOT_IP}:${DOVECOT_LMTP_PORT}
 virtual_mailbox_domains = hash:/etc/postfix/virtual_domains
 virtual_mailbox_maps = hash:/etc/postfix/vmailbox
 virtual_alias_maps = hash:/etc/postfix/virtual_aliases
 
-# Logging via syslog (container stdout)
-maillog_file = /dev/stdout
+# Logging
+# maillog_file = /dev/stdout
+maillog_file = /var/log/mail.log
 
 # Limits
 smtpd_recipient_limit = 100
@@ -56,3 +57,43 @@ message_size_limit = 30720000
 # Optional hardening
 smtpd_helo_required = yes
 disable_vrfy_command = yes
+
+# Never bounce to backsetters
+soft_bounce = no
+bounce_queue_lifetime = 0
+delay_notice_recipient =
+# double_bounce_sender =
+bounce_notice_recipient = postmaster@gordarg.com
+
+#smtpd_recipient_restrictions =
+#    permit_mynetworks,
+#    permit_sasl_authenticated,
+#    reject_unauth_destination,
+#    warn_if_reject reject_rbl_client zen.spamhaus.org,
+#    warn_if_reject reject_rbl_client bl.spamcop.net,
+#    warn_if_reject reject_rbl_client b.barracudacentral.org
+
+postscreen_dnsbl_sites =
+  wl.mailspike.net=127.0.0.18*-2
+  wl.mailspike.net=127.0.0.19*-2
+  wl.mailspike.net=127.0.0.20*-2
+  hostkarma.junkemailfilter.com=127.0.0.1*-2
+  list.dnswl.org=127.0.[0..255].0*-2
+  list.dnswl.org=127.0.[0..255].1*-4
+  list.dnswl.org=127.0.[0..255].2*-6
+  list.dnswl.org=127.0.[0..255].3*-8
+  bl.spamcop.net*2
+  bl.suomispam.net*2
+  hostkarma.junkemailfilter.com=127.0.0.2*3
+  hostkarma.junkemailfilter.com=127.0.0.4*2
+  hostkarma.junkemailfilter.com=127.0.1.2*1
+  backscatter.spameatingmonkey.net*2
+  bl.ipv6.spameatingmonkey.net*2
+  bl.spameatingmonkey.net*2
+  b.barracudacentral.org=127.0.0.2*7
+  bl.mailspike.net=127.0.0.2*5
+  bl.mailspike.net=127.0.0.[10;11;12]*4
+#  zen.spamhaus.org=127.0.0.[10;11]*8
+#  zen.spamhaus.org=127.0.0.[4..7]*6
+#  zen.spamhaus.org=127.0.0.3*4
+#  zen.spamhaus.org=127.0.0.2*3
