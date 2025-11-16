@@ -37,7 +37,7 @@ smtpd_sasl_path=inet:${DOVECOT_IP}:${DOVECOT_AUTH_PORT}
 # Milter (DKIM)
 milter_default_action = accept
 milter_protocol = 6
-smtpd_milters = inet:${OPENDKIM_IP}:8891
+smtpd_milters = inet:${OPENDKIM_IP}:8891,unix:/var/run/pixelmilter/pixel.sock
 non_smtpd_milters = inet:${OPENDKIM_IP}:8891
 
 # Virtual delivery via Dovecot LMTP
@@ -93,7 +93,7 @@ postscreen_dnsbl_sites =
   b.barracudacentral.org=127.0.0.2*7
   bl.mailspike.net=127.0.0.2*5
   bl.mailspike.net=127.0.0.[10;11;12]*4
-#  zen.spamhaus.org=127.0.0.[10;11]*8
-#  zen.spamhaus.org=127.0.0.[4..7]*6
-#  zen.spamhaus.org=127.0.0.3*4
-#  zen.spamhaus.org=127.0.0.2*3
+  zen.spamhaus.org=127.0.0.[10;11]*8
+  zen.spamhaus.org=127.0.0.[4..7]*6
+  zen.spamhaus.org=127.0.0.3*4
+  zen.spamhaus.org=127.0.0.2*3

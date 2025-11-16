@@ -13,7 +13,7 @@ include .env
 export
 endif
 
-.PHONY: help validate install test send certs certs-force add-user add-domain reload restart logs backup-dkim
+.PHONY: help validate install test send certs certs-force add-user add-domain reload restart logs backup-dkim reports view-reports tail-reports
 
 help:
 	@echo "Available targets:"
@@ -36,7 +36,7 @@ validate:
 	@echo "All required binaries present."
 
 install: validate certs
-	$(Q)mkdir -p data/{ssl,postfix,spool,opendkim/{conf,keys},dovecot-conf,dovecot,mail}
+	$(Q)mkdir -p data/{ssl,postfix,spool,opendkim/{conf,keys},dovecot-conf,dovecot,mail,pixel/socket}
 	$(Q)$(DOCKER_COMPOSE) up -d
 	$(Q)$(MAKE) reload
 	$(Q)$(MAKE) test
@@ -106,3 +106,19 @@ render-maps:
 		postmap /etc/postfix/virtual_aliases && \
 		postmap /etc/postfix/virtual_domains && \
 		postmap /etc/postfix/vmailbox"
+
+reports:
+    @PAGE=$${PAGE:-1}; PER=$${PER:-50}; \
+    URL="https://${MAIL_HOST:-localhost}:8443/reports?page=$$PAGE&per=$$PER&format=html"; \
+    echo "Fetching $$URL"; \
+    curl -k --silent "$$URL" | sed -n '1,300p'
+
+view-reports:
+    @PAGE=$${PAGE:-1}; PER=$${PER:-50}; \
+    URL="https://${MAIL_HOST:-localhost}:8443/reports?page=$$PAGE&per=$$PER"; \
+    echo "GET $$URL"; \
+    curl -k --silent "$$URL" | jq .
+
+tail-reports:
+    @LOG=data/pixel/requests.log; \
+    if [ -f "$$LOG" ]; then tail -n 200 "$$LOG" || true; else echo "No log file at $$LOG"; fi
