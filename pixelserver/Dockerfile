@@ -1,18 +1,33 @@
-FROM perl:5.36-slim
+FROM debian:bookworm-slim
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget ca-certificates \
-    libmojolicious-perl \
-    libjson-maybexs-perl \
-    libfile-slurp-perl \
-    libfile-path-perl \
-  && rm -rf /var/lib/apt/lists/*
+      perl \
+      libmojolicious-perl \
+      libjson-maybexs-perl \
+      libfile-slurp-perl \
+      libfile-path-perl \
+      ca-certificates \
+      openssl \
+      tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create pixelserver user
+RUN useradd -r -s /usr/sbin/nologin pixelserver \
+    && mkdir -p /opt/pixelserver /data/pixel \
+    && chown -R pixelserver:pixelserver /opt/pixelserver /data/pixel
 
 WORKDIR /opt/pixelserver
+
 COPY app.pl /opt/pixelserver/app.pl
 RUN chmod +x /opt/pixelserver/app.pl
 
-VOLUME ["/data/pixel"]
+ENV PIXEL_TLS_CERT="/etc/ssl/certs/pixelserver.crt"
+ENV PIXEL_TLS_KEY="/etc/ssl/private/pixelserver.key"
+
 EXPOSE 8443
+
+USER pixelserver
+
 CMD ["perl", "/opt/pixelserver/app.pl"]
