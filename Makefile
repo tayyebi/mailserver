@@ -38,8 +38,6 @@ validate:
 install: validate certs
 	$(Q)mkdir -p data/{ssl,postfix,spool,opendkim/{conf,keys},dovecot-conf,dovecot,mail,pixel/socket}
 	$(Q)$(DOCKER_COMPOSE) up -d
-	$(Q)$(MAKE) reload
-	$(Q)$(MAKE) test
 
 test:
 	@echo "Testing Submission (587 STARTTLS) and IMAPS (993)..."
