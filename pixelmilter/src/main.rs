@@ -7,7 +7,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 mod milter;
@@ -125,26 +125,51 @@ impl PixelMilter {
     }
 
     async fn save_message_metadata(&self, message: &MessageState) -> Result<()> {
+        debug!(
+            message_id = %message.id,
+            data_dir = ?self.config.data_dir,
+            "Starting to save message metadata"
+        );
+
         let message_dir = self.config.data_dir.join(&message.id);
+        debug!(message_dir = ?message_dir, "Creating message directory");
         fs::create_dir_all(&message_dir)
             .with_context(|| format!("Failed to create directory: {:?}", message_dir))?;
+        info!(message_dir = ?message_dir, "Message directory created");
 
         // Save headers
         let headers_file = message_dir.join("headers.txt");
+        let headers_size = message.raw_headers.len();
+        debug!(
+            message_id = %message.id,
+            headers_file = ?headers_file,
+            headers_size = headers_size,
+            "Writing headers file"
+        );
         fs::write(&headers_file, &message.raw_headers)
             .with_context(|| format!("Failed to write headers to: {:?}", headers_file))?;
+        debug!(message_id = %message.id, "Headers file written successfully");
 
         // Save body
         let body_file = message_dir.join("body.txt");
+        let body_size = message.body.len();
+        debug!(
+            message_id = %message.id,
+            body_file = ?body_file,
+            body_size = body_size,
+            "Writing body file"
+        );
         fs::write(&body_file, &message.body)
             .with_context(|| format!("Failed to write body to: {:?}", body_file))?;
+        debug!(message_id = %message.id, "Body file written successfully");
 
         // Save metadata
+        let total_size = message.raw_headers.len() + message.body.len();
         let metadata = MessageMetadata {
             id: message.id.clone(),
             created: Utc::now(),
             sender: message.sender.clone(),
-            size: message.raw_headers.len() + message.body.len(),
+            size: total_size,
             tracking_enabled: message.should_track,
             opened: false,
             open_count: 0,
@@ -154,8 +179,18 @@ impl PixelMilter {
         };
 
         let meta_file = message_dir.join("meta.json");
+        debug!(
+            message_id = %message.id,
+            meta_file = ?meta_file,
+            "Serializing metadata"
+        );
         let meta_json = serde_json::to_string_pretty(&metadata)
             .context("Failed to serialize metadata")?;
+        debug!(
+            message_id = %message.id,
+            meta_json_size = meta_json.len(),
+            "Writing metadata file"
+        );
         fs::write(&meta_file, meta_json)
             .with_context(|| format!("Failed to write metadata to: {:?}", meta_file))?;
 
@@ -163,7 +198,10 @@ impl PixelMilter {
             message_id = %message.id,
             sender = %message.sender,
             tracking_enabled = message.should_track,
-            "Message metadata saved"
+            total_size = total_size,
+            headers_size = headers_size,
+            body_size = body_size,
+            "Message metadata saved successfully"
         );
 
         Ok(())
@@ -172,55 +210,103 @@ impl PixelMilter {
 
 #[async_trait::async_trait]
 impl MilterCallbacks for PixelMilter {
-    async fn connect(&self, ctx_id: &str, hostname: &str, _addr: &str) -> MilterResult {
-        info!(ctx_id = %ctx_id, hostname = %hostname, "New connection");
+    async fn connect(&self, ctx_id: &str, hostname: &str, addr: &str) -> MilterResult {
+        debug!(
+            ctx_id = %ctx_id,
+            hostname = %hostname,
+            addr = %addr,
+            "Processing connect callback"
+        );
+        info!(
+            ctx_id = %ctx_id,
+            hostname = %hostname,
+            addr = %addr,
+            "New milter connection established"
+        );
         MilterResult::Continue
     }
 
     async fn mail_from(&self, ctx_id: &str, sender: &str) -> MilterResult {
+        debug!(
+            ctx_id = %ctx_id,
+            sender = %sender,
+            "Processing mail_from callback"
+        );
         let message = MessageState::new(sender.to_string());
+        debug!(
+            ctx_id = %ctx_id,
+            message_id = %message.id,
+            "Created new message state"
+        );
+
+        let mut connections = self.connections.write().await;
+        let connection_count = connections.len();
+        connections.insert(ctx_id.to_string(), message.clone());
         info!(
             ctx_id = %ctx_id,
             message_id = %message.id,
             sender = %sender,
-            "New message"
+            active_connections = connections.len(),
+            previous_connections = connection_count,
+            "New message received"
         );
-
-        let mut connections = self.connections.write().await;
-        connections.insert(ctx_id.to_string(), message);
 
         MilterResult::Continue
     }
 
     async fn header(&self, ctx_id: &str, name: &str, value: &str) -> MilterResult {
+        debug!(
+            ctx_id = %ctx_id,
+            header_name = %name,
+            header_value_len = value.len(),
+            "Processing header callback"
+        );
         let mut connections = self.connections.write().await;
         if let Some(message) = connections.get_mut(ctx_id) {
             message.raw_headers.push_str(&format!("{}: {}\n", name, value));
             message.headers.insert(name.to_lowercase(), value.to_string());
+            debug!(
+                ctx_id = %ctx_id,
+                message_id = %message.id,
+                header_name = %name,
+                total_headers = message.headers.len(),
+                "Header added to message"
+            );
 
             // Check for opt-in header
             if self.config.require_opt_in && name.to_lowercase() == self.config.opt_in_header.to_lowercase() {
+                let previous_tracking = message.should_track;
                 message.should_track = matches!(value.to_lowercase().as_str(), "yes" | "true" | "1" | "on");
                 info!(
                     ctx_id = %ctx_id,
                     message_id = %message.id,
                     header = %name,
                     value = %value,
-                    tracking = message.should_track,
-                    "Opt-in header found"
+                    tracking_enabled = message.should_track,
+                    previous_tracking = previous_tracking,
+                    "Opt-in header found and processed"
                 );
             }
+        } else {
+            warn!(
+                ctx_id = %ctx_id,
+                "Received header for unknown connection context"
+            );
         }
 
         MilterResult::Continue
     }
 
     async fn end_of_headers(&self, ctx_id: &str) -> MilterResult {
+        debug!(ctx_id = %ctx_id, "Processing end_of_headers callback");
         let mut connections = self.connections.write().await;
         if let Some(message) = connections.get_mut(ctx_id) {
             message.raw_headers.push('\n');
+            let header_count = message.headers.len();
+            let headers_size = message.raw_headers.len();
 
             // If opt-in is not required, enable tracking by default
+            let previous_tracking = message.should_track;
             if !self.config.require_opt_in {
                 message.should_track = true;
             }
@@ -229,7 +315,16 @@ impl MilterCallbacks for PixelMilter {
                 ctx_id = %ctx_id,
                 message_id = %message.id,
                 tracking_enabled = message.should_track,
-                "End of headers"
+                previous_tracking = previous_tracking,
+                require_opt_in = self.config.require_opt_in,
+                header_count = header_count,
+                headers_size = headers_size,
+                "End of headers reached"
+            );
+        } else {
+            warn!(
+                ctx_id = %ctx_id,
+                "Received end_of_headers for unknown connection context"
             );
         }
 
@@ -237,18 +332,58 @@ impl MilterCallbacks for PixelMilter {
     }
 
     async fn body(&self, ctx_id: &str, chunk: &[u8]) -> MilterResult {
+        let chunk_size = chunk.len();
+        debug!(
+            ctx_id = %ctx_id,
+            chunk_size = chunk_size,
+            "Processing body chunk"
+        );
         let mut connections = self.connections.write().await;
         if let Some(message) = connections.get_mut(ctx_id) {
+            let previous_size = message.body.len();
             message.body.extend_from_slice(chunk);
+            let new_size = message.body.len();
+            debug!(
+                ctx_id = %ctx_id,
+                message_id = %message.id,
+                chunk_size = chunk_size,
+                previous_body_size = previous_size,
+                new_body_size = new_size,
+                "Body chunk appended"
+            );
+        } else {
+            warn!(
+                ctx_id = %ctx_id,
+                chunk_size = chunk_size,
+                "Received body chunk for unknown connection context"
+            );
         }
 
         MilterResult::Continue
     }
 
     async fn end_of_message(&self, ctx_id: &str) -> MilterResult {
+        debug!(ctx_id = %ctx_id, "Processing end_of_message callback");
         let mut connections = self.connections.write().await;
         if let Some(message) = connections.remove(ctx_id) {
+            let message_size = message.raw_headers.len() + message.body.len();
+            info!(
+                ctx_id = %ctx_id,
+                message_id = %message.id,
+                sender = %message.sender,
+                message_size = message_size,
+                headers_size = message.raw_headers.len(),
+                body_size = message.body.len(),
+                tracking_enabled = message.should_track,
+                "End of message reached"
+            );
+
             // Save message metadata
+            debug!(
+                ctx_id = %ctx_id,
+                message_id = %message.id,
+                "Saving message metadata"
+            );
             if let Err(e) = self.save_message_metadata(&message).await {
                 error!(
                     ctx_id = %ctx_id,
@@ -261,12 +396,24 @@ impl MilterCallbacks for PixelMilter {
 
             // Inject pixel if tracking is enabled
             if message.should_track {
+                debug!(
+                    ctx_id = %ctx_id,
+                    message_id = %message.id,
+                    body_size = message.body.len(),
+                    "Attempting to inject tracking pixel"
+                );
                 match self.injector.inject_pixel(&message.body, &message.id) {
                     Ok(modified_body) => {
+                        let original_size = message.body.len();
+                        let modified_size = modified_body.len();
                         if modified_body != message.body {
+                            let size_diff = modified_size as i64 - original_size as i64;
                             info!(
                                 ctx_id = %ctx_id,
                                 message_id = %message.id,
+                                original_size = original_size,
+                                modified_size = modified_size,
+                                size_increase = size_diff,
                                 "Pixel injected successfully"
                             );
                             return MilterResult::ReplaceBody(modified_body);
@@ -274,6 +421,7 @@ impl MilterCallbacks for PixelMilter {
                             info!(
                                 ctx_id = %ctx_id,
                                 message_id = %message.id,
+                                body_size = original_size,
                                 "No HTML content found for pixel injection"
                             );
                         }
@@ -291,17 +439,36 @@ impl MilterCallbacks for PixelMilter {
                 info!(
                     ctx_id = %ctx_id,
                     message_id = %message.id,
-                    "Tracking disabled for message"
+                    "Tracking disabled for message, skipping pixel injection"
                 );
             }
+        } else {
+            warn!(
+                ctx_id = %ctx_id,
+                "Received end_of_message for unknown connection context"
+            );
         }
 
+        debug!(ctx_id = %ctx_id, "Accepting message");
         MilterResult::Accept
     }
 
     async fn close(&self, ctx_id: &str) -> MilterResult {
+        debug!(ctx_id = %ctx_id, "Processing close callback");
         let mut connections = self.connections.write().await;
-        connections.remove(ctx_id);
+        let removed = connections.remove(ctx_id);
+        if removed.is_some() {
+            info!(
+                ctx_id = %ctx_id,
+                remaining_connections = connections.len(),
+                "Connection closed and cleaned up"
+            );
+        } else {
+            debug!(
+                ctx_id = %ctx_id,
+                "Close called for non-existent connection"
+            );
+        }
         MilterResult::Continue
     }
 }
@@ -346,19 +513,27 @@ async fn main() -> Result<()> {
     info!("Data Directory: {:?}", args.data_dir);
 
     // Ensure data directory exists
+    debug!(data_dir = ?args.data_dir, "Checking data directory");
     fs::create_dir_all(&args.data_dir)
         .with_context(|| format!("Failed to create data directory: {:?}", args.data_dir))?;
+    info!(data_dir = ?args.data_dir, "Data directory ready");
 
     // Ensure socket directory exists
     if let Some(socket_dir) = args.socket.parent() {
+        debug!(socket_dir = ?socket_dir, "Checking socket directory");
         fs::create_dir_all(socket_dir)
             .with_context(|| format!("Failed to create socket directory: {:?}", socket_dir))?;
+        info!(socket_dir = ?socket_dir, "Socket directory ready");
     }
 
     // Remove existing socket
     if args.socket.exists() {
+        warn!(socket = ?args.socket, "Removing existing socket file");
         fs::remove_file(&args.socket)
             .with_context(|| format!("Failed to remove existing socket: {:?}", args.socket))?;
+        info!(socket = ?args.socket, "Existing socket file removed");
+    } else {
+        debug!(socket = ?args.socket, "Socket file does not exist, will create new one");
     }
 
     let config = PixelMilterConfig {
@@ -370,10 +545,19 @@ async fn main() -> Result<()> {
         data_dir: args.data_dir,
     };
 
-    let milter = PixelMilter::new(config);
+    debug!("Creating PixelMilter instance");
+    let milter = PixelMilter::new(config.clone());
+    debug!("Creating MilterServer instance");
     let server = MilterServer::new(milter);
 
-    info!("Pixel Milter started successfully");
+    info!(
+        pixel_base_url = %config.pixel_base_url,
+        require_opt_in = config.require_opt_in,
+        opt_in_header = %config.opt_in_header,
+        disclosure_header = %config.disclosure_header,
+        inject_disclosure = config.inject_disclosure,
+        "Pixel Milter initialized successfully"
+    );
 
     // Set up signal handling for graceful shutdown
     let socket_path = args.socket.clone();
@@ -386,8 +570,13 @@ async fn main() -> Result<()> {
         std::process::exit(0);
     });
 
-    server.run(&args.socket).await
-        .context("Failed to run milter server")?;
+    // Run the server - this should never return unless there's an error
+    if let Err(e) = server.run(&args.socket).await {
+        error!(error = %e, "Fatal error running milter server");
+        return Err(e).context("Failed to run milter server");
+    }
 
+    // This should never be reached, but if it is, log it
+    error!("Milter server exited unexpectedly");
     Ok(())
 }

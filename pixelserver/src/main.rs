@@ -15,7 +15,7 @@ use std::net::SocketAddr;
 use std::path::{Path as FsPath, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 mod pixel;
 mod stats;
@@ -146,24 +146,43 @@ async fn main() -> Result<()> {
     info!("Development Mode: {}", args.dev_mode);
 
     // Ensure data directory exists
+    debug!(data_dir = ?args.data_dir, "Checking data directory");
     fs::create_dir_all(&args.data_dir)
         .with_context(|| format!("Failed to create data directory: {:?}", args.data_dir))?;
+    info!(data_dir = ?args.data_dir, "Data directory ready");
 
-    let state = AppState::new(args.data_dir);
+    debug!("Creating application state");
+    let state = AppState::new(args.data_dir.clone());
+    info!("Application state created");
 
+    debug!("Creating application router");
     let app = create_app(state);
+    info!("Application router created");
 
     if !use_tls {
-        info!("Starting server in development mode (HTTP)");
+        info!(
+            bind_address = %args.bind_address,
+            "Starting server in development mode (HTTP)"
+        );
         axum::Server::bind(&args.bind_address)
             .serve(app.into_make_service())
             .await?;
     } else {
-        info!("Starting server with TLS");
+        info!(
+            bind_address = %args.bind_address,
+            tls_cert = ?args.tls_cert,
+            tls_key = ?args.tls_key,
+            "Loading TLS configuration"
+        );
         let config = RustlsConfig::from_pem_file(&args.tls_cert, &args.tls_key)
             .await
             .context("Failed to load TLS configuration")?;
+        info!("TLS configuration loaded successfully");
 
+        info!(
+            bind_address = %args.bind_address,
+            "Starting server with TLS"
+        );
         axum_server::bind_rustls(args.bind_address, config)
             .serve(app.into_make_service_with_connect_info::<SocketAddr>())
             .await?;
@@ -216,33 +235,69 @@ async fn pixel_handler(
     headers: HeaderMap,
     Extension(state): Extension<AppState>,
 ) -> Response {
+    debug!("Received pixel request");
     let client_ip = extract_client_ip(&headers);
     let user_agent = extract_user_agent(&headers);
+    debug!(
+        client_ip = %client_ip,
+        user_agent_len = user_agent.len(),
+        "Extracted client information"
+    );
 
     let message_id = match params.id {
-        Some(id) if is_valid_message_id(&id) => id,
+        Some(id) if is_valid_message_id(&id) => {
+            debug!(message_id = %id, "Message ID validated");
+            id
+        }
         Some(id) => {
-            warn!(message_id = %id, client_ip = %client_ip, "Invalid message ID format");
+            warn!(
+                message_id = %id,
+                client_ip = %client_ip,
+                "Invalid message ID format"
+            );
             return serve_pixel_response();
         }
         None => {
-            warn!(client_ip = %client_ip, "Pixel request without ID");
+            warn!(
+                client_ip = %client_ip,
+                "Pixel request without ID parameter"
+            );
             return serve_pixel_response();
         }
     };
 
-    info!(message_id = %message_id, client_ip = %client_ip, "Pixel request");
+    info!(
+        message_id = %message_id,
+        client_ip = %client_ip,
+        user_agent = %user_agent,
+        "Processing pixel request"
+    );
 
     // Update tracking data
+    debug!(
+        message_id = %message_id,
+        "Updating tracking data"
+    );
     if let Err(e) = update_tracking(&state.data_dir, &message_id, &client_ip, &user_agent).await {
-        error!(message_id = %message_id, error = %e, "Failed to update tracking data");
+        error!(
+            message_id = %message_id,
+            error = %e,
+            "Failed to update tracking data"
+        );
+    } else {
+        debug!(
+            message_id = %message_id,
+            "Tracking data updated successfully"
+        );
     }
 
     // Update stats
+    debug!(message_id = %message_id, "Updating statistics");
     {
         let mut stats = state.stats.write().await;
         stats.record_pixel_request(&message_id, &client_ip);
     }
+    debug!(message_id = %message_id, "Statistics updated");
 
     serve_pixel_response()
 }
@@ -251,7 +306,13 @@ async fn message_meta_handler(
     Path(id): Path<String>,
     Extension(state): Extension<AppState>,
 ) -> Result<Json<MessageMetadata>, (StatusCode, Json<ErrorResponse>)> {
+    debug!(message_id = %id, "Received message metadata request");
+    
     if !is_valid_message_id(&id) {
+        warn!(
+            message_id = %id,
+            "Invalid message ID format in metadata request"
+        );
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
@@ -262,8 +323,18 @@ async fn message_meta_handler(
     }
 
     let meta_file = state.data_dir.join(&id).join("meta.json");
+    debug!(
+        message_id = %id,
+        meta_file = ?meta_file,
+        "Checking metadata file"
+    );
     
     if !meta_file.exists() {
+        warn!(
+            message_id = %id,
+            meta_file = ?meta_file,
+            "Metadata file not found"
+        );
         return Err((
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
@@ -273,22 +344,53 @@ async fn message_meta_handler(
         ));
     }
 
+    debug!(
+        message_id = %id,
+        "Reading metadata file"
+    );
     match fs::read_to_string(&meta_file) {
-        Ok(content) => match serde_json::from_str::<MessageMetadata>(&content) {
-            Ok(metadata) => Ok(Json(metadata)),
-            Err(e) => {
-                error!(message_id = %id, error = %e, "Failed to parse metadata");
-                Err((
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: "Failed to parse metadata".to_string(),
-                        timestamp: Utc::now(),
-                    }),
-                ))
+        Ok(content) => {
+            debug!(
+                message_id = %id,
+                content_size = content.len(),
+                "Parsing metadata JSON"
+            );
+            match serde_json::from_str::<MessageMetadata>(&content) {
+                Ok(metadata) => {
+                    info!(
+                        message_id = %id,
+                        sender = %metadata.sender,
+                        tracking_enabled = metadata.tracking_enabled,
+                        opened = metadata.opened,
+                        open_count = metadata.open_count,
+                        "Metadata retrieved successfully"
+                    );
+                    Ok(Json(metadata))
+                }
+                Err(e) => {
+                    error!(
+                        message_id = %id,
+                        error = %e,
+                        content_size = content.len(),
+                        "Failed to parse metadata JSON"
+                    );
+                    Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse {
+                            error: "Failed to parse metadata".to_string(),
+                            timestamp: Utc::now(),
+                        }),
+                    ))
+                }
             }
-        },
+        }
         Err(e) => {
-            error!(message_id = %id, error = %e, "Failed to read metadata file");
+            error!(
+                message_id = %id,
+                error = %e,
+                meta_file = ?meta_file,
+                "Failed to read metadata file"
+            );
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
@@ -369,17 +471,34 @@ async fn update_tracking(
     user_agent: &str,
 ) -> Result<()> {
     let meta_file = data_dir.join(message_id).join("meta.json");
+    debug!(
+        message_id = %message_id,
+        meta_file = ?meta_file,
+        client_ip = %client_ip,
+        "Starting tracking update"
+    );
     
     if !meta_file.exists() {
+        debug!(
+            message_id = %message_id,
+            meta_file = ?meta_file,
+            "Metadata file does not exist, skipping update"
+        );
         return Ok(()); // Message doesn't exist, ignore
     }
 
+    debug!(
+        message_id = %message_id,
+        "Reading existing metadata"
+    );
     let content = fs::read_to_string(&meta_file)
         .context("Failed to read metadata file")?;
     
     let mut metadata: MessageMetadata = serde_json::from_str(&content)
         .context("Failed to parse metadata")?;
 
+    let previous_open_count = metadata.open_count;
+    let previous_opened = metadata.opened;
     let now = Utc::now();
     
     metadata.opened = true;
@@ -387,28 +506,57 @@ async fn update_tracking(
     metadata.last_open = Some(now);
     metadata.last_open_str = Some(now.format("%Y-%m-%d %H:%M:%S UTC").to_string());
     
-    if metadata.first_open.is_none() {
+    let is_first_open = metadata.first_open.is_none();
+    if is_first_open {
+        debug!(
+            message_id = %message_id,
+            "First open detected"
+        );
         metadata.first_open = Some(now);
         metadata.first_open_str = Some(now.format("%Y-%m-%d %H:%M:%S UTC").to_string());
     }
     
+    let event_count_before = metadata.tracking_events.len();
     metadata.tracking_events.push(TrackingEvent {
         timestamp: now,
         timestamp_str: now.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
         client_ip: client_ip.to_string(),
         user_agent: user_agent.to_string(),
     });
+    debug!(
+        message_id = %message_id,
+        previous_open_count = previous_open_count,
+        new_open_count = metadata.open_count,
+        event_count = metadata.tracking_events.len(),
+        is_first_open = is_first_open,
+        "Tracking event added"
+    );
     
+    debug!(
+        message_id = %message_id,
+        "Serializing updated metadata"
+    );
     let updated_content = serde_json::to_string_pretty(&metadata)
         .context("Failed to serialize metadata")?;
     
+    debug!(
+        message_id = %message_id,
+        content_size = updated_content.len(),
+        "Writing updated metadata to file"
+    );
     fs::write(&meta_file, updated_content)
         .context("Failed to write updated metadata")?;
 
     info!(
         message_id = %message_id,
+        client_ip = %client_ip,
         open_count = metadata.open_count,
-        "Tracking data updated"
+        previous_open_count = previous_open_count,
+        previous_opened = previous_opened,
+        is_first_open = is_first_open,
+        total_events = metadata.tracking_events.len(),
+        event_count_before = event_count_before,
+        "Tracking data updated successfully"
     );
 
     Ok(())

@@ -4,7 +4,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use tracing::{debug, error};
+use tracing::{debug, error, info, warn};
 
 use crate::MessageMetadata;
 
@@ -52,35 +52,79 @@ impl StatsCollector {
     }
 
     pub fn record_pixel_request(&mut self, message_id: &str, client_ip: &str) {
+        debug!(
+            message_id = %message_id,
+            client_ip = %client_ip,
+            "Recording pixel request"
+        );
+        
         let request = PixelRequest {
             timestamp: Utc::now(),
             client_ip: client_ip.to_string(),
         };
 
+        let previous_count = self.pixel_requests
+            .get(message_id)
+            .map(|v| v.len())
+            .unwrap_or(0);
+        
         self.pixel_requests
             .entry(message_id.to_string())
             .or_insert_with(Vec::new)
             .push(request);
 
+        let new_count = self.pixel_requests
+            .get(message_id)
+            .map(|v| v.len())
+            .unwrap_or(0);
+
+        debug!(
+            message_id = %message_id,
+            previous_count = previous_count,
+            new_count = new_count,
+            "Pixel request recorded"
+        );
+
         // Keep only recent requests (last 1000 per message)
         if let Some(requests) = self.pixel_requests.get_mut(message_id) {
             if requests.len() > 1000 {
-                requests.drain(0..requests.len() - 1000);
+                let removed = requests.len() - 1000;
+                requests.drain(0..removed);
+                debug!(
+                    message_id = %message_id,
+                    removed_count = removed,
+                    remaining_count = requests.len(),
+                    "Trimmed old requests for message"
+                );
             }
         }
 
         // Limit total messages tracked in memory
-        if self.pixel_requests.len() > 10000 {
+        let total_messages = self.pixel_requests.len();
+        if total_messages > 10000 {
+            let to_remove = total_messages - 9000;
+            warn!(
+                total_messages = total_messages,
+                to_remove = to_remove,
+                "Memory limit reached, removing oldest message entries"
+            );
             // Remove oldest entries
             let mut keys: Vec<_> = self.pixel_requests.keys().cloned().collect();
             keys.sort();
-            for key in keys.iter().take(self.pixel_requests.len() - 9000) {
+            for key in keys.iter().take(to_remove) {
                 self.pixel_requests.remove(key);
             }
+            info!(
+                remaining_messages = self.pixel_requests.len(),
+                removed_messages = to_remove,
+                "Cleaned up old message entries"
+            );
         }
     }
 
     pub async fn compute_stats(&self, data_dir: &PathBuf) -> Value {
+        info!(data_dir = ?data_dir, "Starting statistics computation");
+        
         let mut stats = SystemStats {
             total_messages: 0,
             tracked_messages: 0,
@@ -94,7 +138,10 @@ impl StatsCollector {
         let mut all_ips = std::collections::HashSet::new();
         let mut user_agent_counts: HashMap<String, u32> = HashMap::new();
         let mut recent_events = Vec::new();
+        let mut processed_count = 0u32;
+        let mut error_count = 0u32;
 
+        debug!(data_dir = ?data_dir, "Scanning data directory for message metadata");
         // Scan data directory for message metadata
         if let Ok(entries) = fs::read_dir(data_dir) {
             for entry in entries.flatten() {
@@ -103,24 +150,71 @@ impl StatsCollector {
                     let meta_file = message_dir.join("meta.json");
 
                     if meta_file.exists() {
+                        processed_count += 1;
                         match self.process_message_metadata(&meta_file, &mut stats, &mut all_ips, &mut user_agent_counts, &mut recent_events) {
-                            Ok(_) => {}
+                            Ok(_) => {
+                                debug!(
+                                    meta_file = ?meta_file,
+                                    processed_count = processed_count,
+                                    "Processed metadata file"
+                                );
+                            }
                             Err(e) => {
-                                error!(file = ?meta_file, error = %e, "Failed to process metadata file");
+                                error_count += 1;
+                                error!(
+                                    file = ?meta_file,
+                                    error = %e,
+                                    processed_count = processed_count,
+                                    error_count = error_count,
+                                    "Failed to process metadata file"
+                                );
                             }
                         }
+                    } else {
+                        debug!(
+                            message_dir = ?message_dir,
+                            "Directory found but no meta.json file"
+                        );
                     }
                 }
             }
+        } else {
+            warn!(
+                data_dir = ?data_dir,
+                "Failed to read data directory"
+            );
         }
 
+        debug!(
+            processed_count = processed_count,
+            error_count = error_count,
+            total_messages = stats.total_messages,
+            "Finished scanning directory"
+        );
+
         stats.unique_ips = all_ips.len() as u32;
+        debug!(
+            unique_ips = stats.unique_ips,
+            "Computed unique IPs"
+        );
 
         // Sort and limit recent activity
+        debug!(
+            recent_events_count = recent_events.len(),
+            "Sorting recent activity"
+        );
         recent_events.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
         stats.recent_activity = recent_events.into_iter().take(50).collect();
+        debug!(
+            recent_activity_count = stats.recent_activity.len(),
+            "Limited recent activity"
+        );
 
         // Sort user agents by count
+        debug!(
+            user_agent_count = user_agent_counts.len(),
+            "Sorting user agents"
+        );
         let mut ua_vec: Vec<_> = user_agent_counts.into_iter().collect();
         ua_vec.sort_by(|a, b| b.1.cmp(&a.1));
         stats.top_user_agents = ua_vec
@@ -131,15 +225,26 @@ impl StatsCollector {
                 count,
             })
             .collect();
-
         debug!(
+            top_user_agents_count = stats.top_user_agents.len(),
+            "Limited top user agents"
+        );
+
+        info!(
             total_messages = stats.total_messages,
             tracked_messages = stats.tracked_messages,
             opened_messages = stats.opened_messages,
-            "Computed statistics"
+            total_opens = stats.total_opens,
+            unique_ips = stats.unique_ips,
+            processed_count = processed_count,
+            error_count = error_count,
+            "Statistics computation completed"
         );
 
-        serde_json::to_value(stats).unwrap_or_else(|_| serde_json::json!({}))
+        serde_json::to_value(stats).unwrap_or_else(|_| {
+            error!("Failed to serialize statistics");
+            serde_json::json!({})
+        })
     }
 
     fn process_message_metadata(
@@ -150,10 +255,23 @@ impl StatsCollector {
         user_agent_counts: &mut HashMap<String, u32>,
         recent_events: &mut Vec<RecentActivity>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        debug!(meta_file = ?meta_file, "Reading metadata file");
         let content = fs::read_to_string(meta_file)?;
+        debug!(
+            meta_file = ?meta_file,
+            content_size = content.len(),
+            "Parsing metadata JSON"
+        );
         let metadata: MessageMetadata = serde_json::from_str(&content)?;
 
         stats.total_messages += 1;
+        debug!(
+            message_id = %metadata.id,
+            tracking_enabled = metadata.tracking_enabled,
+            opened = metadata.opened,
+            open_count = metadata.open_count,
+            "Processing message metadata"
+        );
 
         if metadata.tracking_enabled {
             stats.tracked_messages += 1;
@@ -161,10 +279,23 @@ impl StatsCollector {
             if metadata.opened {
                 stats.opened_messages += 1;
                 stats.total_opens += metadata.open_count;
+                debug!(
+                    message_id = %metadata.id,
+                    open_count = metadata.open_count,
+                    event_count = metadata.tracking_events.len(),
+                    "Processing tracking events"
+                );
 
                 // Process tracking events
                 for event in &metadata.tracking_events {
-                    all_ips.insert(event.client_ip.clone());
+                    let ip_added = all_ips.insert(event.client_ip.clone());
+                    if ip_added {
+                        debug!(
+                            message_id = %metadata.id,
+                            client_ip = %event.client_ip,
+                            "New unique IP added"
+                        );
+                    }
 
                     // Count user agents
                     let ua = if event.user_agent.len() > 100 {
@@ -172,7 +303,14 @@ impl StatsCollector {
                     } else {
                         event.user_agent.clone()
                     };
-                    *user_agent_counts.entry(ua).or_insert(0) += 1;
+                    let count = user_agent_counts.entry(ua.clone()).or_insert(0);
+                    *count += 1;
+                    debug!(
+                        message_id = %metadata.id,
+                        user_agent = %ua,
+                        count = *count,
+                        "Updated user agent count"
+                    );
 
                     // Add to recent activity
                     recent_events.push(RecentActivity {
@@ -182,7 +320,22 @@ impl StatsCollector {
                         user_agent: event.user_agent.clone(),
                     });
                 }
+                debug!(
+                    message_id = %metadata.id,
+                    events_processed = metadata.tracking_events.len(),
+                    "Finished processing tracking events"
+                );
+            } else {
+                debug!(
+                    message_id = %metadata.id,
+                    "Message tracked but not opened"
+                );
             }
+        } else {
+            debug!(
+                message_id = %metadata.id,
+                "Message not tracked"
+            );
         }
 
         Ok(())

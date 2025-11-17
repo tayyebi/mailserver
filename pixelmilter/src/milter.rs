@@ -41,13 +41,16 @@ impl<T: MilterCallbacks + 'static> MilterServer<T> {
     }
 
     pub async fn run(&self, socket_path: &Path) -> Result<()> {
+        info!("Attempting to bind to socket: {:?}", socket_path);
+        
         let listener = UnixListener::bind(socket_path)
-            .with_context(|| format!("Failed to bind to socket: {:?}", socket_path))?;
+            .with_context(|| format!("Failed to bind to socket: {:?}. Check permissions and ensure the directory exists.", socket_path))?;
 
         info!("Milter server listening on: {:?}", socket_path);
 
         let callbacks = std::sync::Arc::new(self.callbacks.clone());
         
+        // This loop should never exit - it runs forever accepting connections
         loop {
             match listener.accept().await {
                 Ok((stream, _)) => {
@@ -60,6 +63,7 @@ impl<T: MilterCallbacks + 'static> MilterServer<T> {
                 }
                 Err(e) => {
                     error!("Failed to accept connection: {}", e);
+                    // Continue the loop - don't exit on connection errors
                 }
             }
         }
@@ -71,47 +75,97 @@ async fn handle_connection<T: MilterCallbacks>(
     callbacks: &T,
 ) -> Result<()> {
     let ctx_id = uuid::Uuid::new_v4().to_string();
-    debug!(ctx_id = %ctx_id, "New milter connection");
+    info!(ctx_id = %ctx_id, "New milter connection handler started");
 
     let mut buffer = vec![0u8; 4096];
     let mut message_buffer = Vec::new();
     let mut current_state = MilterState::WaitingForConnect;
+    let mut command_count = 0u64;
 
     loop {
+        debug!(ctx_id = %ctx_id, "Waiting for data from stream");
         match stream.read(&mut buffer).await {
             Ok(0) => {
-                debug!(ctx_id = %ctx_id, "Connection closed");
+                info!(
+                    ctx_id = %ctx_id,
+                    total_commands = command_count,
+                    "Connection closed by peer (EOF)"
+                );
                 let _ = callbacks.close(&ctx_id).await;
                 break;
             }
             Ok(n) => {
+                debug!(
+                    ctx_id = %ctx_id,
+                    bytes_read = n,
+                    buffer_size = message_buffer.len(),
+                    "Read data from stream"
+                );
                 message_buffer.extend_from_slice(&buffer[..n]);
                 
                 while let Some((command, data)) = parse_milter_message(&mut message_buffer)? {
+                    command_count += 1;
+                    let command_char = command as char;
+                    debug!(
+                        ctx_id = %ctx_id,
+                        command = command_char,
+                        command_byte = command,
+                        data_size = data.len(),
+                        command_number = command_count,
+                        "Processing milter command"
+                    );
+                    
                     match process_milter_command(&ctx_id, command, data, callbacks, &mut current_state).await {
                         Ok(Some(response)) => {
+                            debug!(
+                                ctx_id = %ctx_id,
+                                response_size = response.len(),
+                                "Sending response to client"
+                            );
                             if let Err(e) = stream.write_all(&response).await {
-                                error!(ctx_id = %ctx_id, error = %e, "Failed to write response");
+                                error!(
+                                    ctx_id = %ctx_id,
+                                    error = %e,
+                                    total_commands = command_count,
+                                    "Failed to write response"
+                                );
                                 break;
                             }
+                            debug!(ctx_id = %ctx_id, "Response sent successfully");
                         }
                         Ok(None) => {
-                            // No response needed
+                            debug!(ctx_id = %ctx_id, "No response needed for command");
                         }
                         Err(e) => {
-                            error!(ctx_id = %ctx_id, error = %e, "Error processing command");
+                            error!(
+                                ctx_id = %ctx_id,
+                                error = %e,
+                                command = command_char,
+                                total_commands = command_count,
+                                "Error processing command"
+                            );
                             break;
                         }
                     }
                 }
             }
             Err(e) => {
-                error!(ctx_id = %ctx_id, error = %e, "Failed to read from stream");
+                error!(
+                    ctx_id = %ctx_id,
+                    error = %e,
+                    total_commands = command_count,
+                    "Failed to read from stream"
+                );
                 break;
             }
         }
     }
 
+    info!(
+        ctx_id = %ctx_id,
+        total_commands = command_count,
+        "Connection handler finished"
+    );
     Ok(())
 }
 
@@ -124,22 +178,46 @@ enum MilterState {
 
 fn parse_milter_message(buffer: &mut Vec<u8>) -> Result<Option<(u8, Vec<u8>)>> {
     if buffer.len() < 5 {
+        debug!(
+            buffer_size = buffer.len(),
+            "Buffer too small for milter message header"
+        );
         return Ok(None);
     }
 
     // Read message length (4 bytes, big-endian)
     let length = u32::from_be_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]) as usize;
+    debug!(
+        buffer_size = buffer.len(),
+        message_length = length,
+        "Parsing milter message"
+    );
     
     if buffer.len() < 4 + length {
+        debug!(
+            buffer_size = buffer.len(),
+            required_size = 4 + length,
+            "Incomplete milter message in buffer"
+        );
         return Ok(None);
     }
 
     // Extract command and data
     let command = buffer[4];
     let data = buffer[5..4 + length].to_vec();
+    let original_buffer_size = buffer.len();
     
     // Remove processed message from buffer
     buffer.drain(..4 + length);
+    
+    debug!(
+        command = command,
+        command_char = command as char,
+        data_size = data.len(),
+        original_buffer_size = original_buffer_size,
+        remaining_buffer_size = buffer.len(),
+        "Milter message parsed successfully"
+    );
     
     Ok(Some((command, data)))
 }
@@ -151,19 +229,45 @@ async fn process_milter_command<T: MilterCallbacks>(
     callbacks: &T,
     state: &mut MilterState,
 ) -> Result<Option<Vec<u8>>> {
+    let previous_state = format!("{:?}", state);
     match command {
         b'O' => {
             // SMFIC_OPTNEG - Option negotiation
-            debug!(ctx_id = %ctx_id, "Option negotiation");
+            debug!(
+                ctx_id = %ctx_id,
+                data_size = data.len(),
+                previous_state = %previous_state,
+                "Processing option negotiation"
+            );
             *state = MilterState::Connected;
+            info!(
+                ctx_id = %ctx_id,
+                new_state = "Connected",
+                "Option negotiation completed"
+            );
             Ok(Some(create_response(b'O', &[0, 0, 0, 0, 0, 0])))
         }
         b'C' => {
             // SMFIC_CONNECT
+            debug!(ctx_id = %ctx_id, data_size = data.len(), "Parsing connect data");
             let (hostname, addr) = parse_connect_data(&data)?;
-            debug!(ctx_id = %ctx_id, hostname = %hostname, addr = %addr, "Connect");
+            debug!(
+                ctx_id = %ctx_id,
+                hostname = %hostname,
+                addr = %addr,
+                previous_state = %previous_state,
+                "Processing connect command"
+            );
             
-            match callbacks.connect(ctx_id, &hostname, &addr).await {
+            let result = callbacks.connect(ctx_id, &hostname, &addr).await;
+            let result_str = format!("{:?}", result);
+            debug!(
+                ctx_id = %ctx_id,
+                result = %result_str,
+                "Connect callback completed"
+            );
+            
+            match result {
                 MilterResult::Continue => Ok(Some(create_response(b'c', &[]))),
                 MilterResult::Accept => Ok(Some(create_response(b'a', &[]))),
                 MilterResult::Reject => Ok(Some(create_response(b'r', &[]))),
@@ -173,11 +277,26 @@ async fn process_milter_command<T: MilterCallbacks>(
         }
         b'M' => {
             // SMFIC_MAIL - MAIL FROM
+            debug!(ctx_id = %ctx_id, data_size = data.len(), "Parsing mail from data");
             let sender = parse_string_data(&data)?;
-            debug!(ctx_id = %ctx_id, sender = %sender, "Mail from");
+            debug!(
+                ctx_id = %ctx_id,
+                sender = %sender,
+                previous_state = %previous_state,
+                "Processing mail from command"
+            );
             *state = MilterState::InMessage;
             
-            match callbacks.mail_from(ctx_id, &sender).await {
+            let result = callbacks.mail_from(ctx_id, &sender).await;
+            let result_str = format!("{:?}", result);
+            debug!(
+                ctx_id = %ctx_id,
+                result = %result_str,
+                new_state = "InMessage",
+                "Mail from callback completed"
+            );
+            
+            match result {
                 MilterResult::Continue => Ok(Some(create_response(b'c', &[]))),
                 MilterResult::Accept => Ok(Some(create_response(b'a', &[]))),
                 MilterResult::Reject => Ok(Some(create_response(b'r', &[]))),
@@ -187,10 +306,23 @@ async fn process_milter_command<T: MilterCallbacks>(
         }
         b'R' => {
             // SMFIC_RCPT - RCPT TO
+            debug!(ctx_id = %ctx_id, data_size = data.len(), "Parsing rcpt to data");
             let recipient = parse_string_data(&data)?;
-            debug!(ctx_id = %ctx_id, recipient = %recipient, "Rcpt to");
+            debug!(
+                ctx_id = %ctx_id,
+                recipient = %recipient,
+                "Processing rcpt to command"
+            );
             
-            match callbacks.rcpt_to(ctx_id, &recipient).await {
+            let result = callbacks.rcpt_to(ctx_id, &recipient).await;
+            let result_str = format!("{:?}", result);
+            debug!(
+                ctx_id = %ctx_id,
+                result = %result_str,
+                "Rcpt to callback completed"
+            );
+            
+            match result {
                 MilterResult::Continue => Ok(Some(create_response(b'c', &[]))),
                 MilterResult::Accept => Ok(Some(create_response(b'a', &[]))),
                 MilterResult::Reject => Ok(Some(create_response(b'r', &[]))),
@@ -200,10 +332,24 @@ async fn process_milter_command<T: MilterCallbacks>(
         }
         b'L' => {
             // SMFIC_HEADER
+            debug!(ctx_id = %ctx_id, data_size = data.len(), "Parsing header data");
             let (name, value) = parse_header_data(&data)?;
-            debug!(ctx_id = %ctx_id, name = %name, value = %value, "Header");
+            debug!(
+                ctx_id = %ctx_id,
+                name = %name,
+                value_len = value.len(),
+                "Processing header command"
+            );
             
-            match callbacks.header(ctx_id, &name, &value).await {
+            let result = callbacks.header(ctx_id, &name, &value).await;
+            let result_str = format!("{:?}", result);
+            debug!(
+                ctx_id = %ctx_id,
+                result = %result_str,
+                "Header callback completed"
+            );
+            
+            match result {
                 MilterResult::Continue => Ok(Some(create_response(b'c', &[]))),
                 MilterResult::Accept => Ok(Some(create_response(b'a', &[]))),
                 MilterResult::Reject => Ok(Some(create_response(b'r', &[]))),
@@ -213,9 +359,21 @@ async fn process_milter_command<T: MilterCallbacks>(
         }
         b'N' => {
             // SMFIC_EOH - End of headers
-            debug!(ctx_id = %ctx_id, "End of headers");
+            debug!(
+                ctx_id = %ctx_id,
+                previous_state = %previous_state,
+                "Processing end of headers command"
+            );
             
-            match callbacks.end_of_headers(ctx_id).await {
+            let result = callbacks.end_of_headers(ctx_id).await;
+            let result_str = format!("{:?}", result);
+            debug!(
+                ctx_id = %ctx_id,
+                result = %result_str,
+                "End of headers callback completed"
+            );
+            
+            match result {
                 MilterResult::Continue => Ok(Some(create_response(b'c', &[]))),
                 MilterResult::Accept => Ok(Some(create_response(b'a', &[]))),
                 MilterResult::Reject => Ok(Some(create_response(b'r', &[]))),
@@ -225,9 +383,21 @@ async fn process_milter_command<T: MilterCallbacks>(
         }
         b'B' => {
             // SMFIC_BODY
-            debug!(ctx_id = %ctx_id, size = data.len(), "Body chunk");
+            debug!(
+                ctx_id = %ctx_id,
+                chunk_size = data.len(),
+                "Processing body chunk command"
+            );
             
-            match callbacks.body(ctx_id, &data).await {
+            let result = callbacks.body(ctx_id, &data).await;
+            let result_str = format!("{:?}", result);
+            debug!(
+                ctx_id = %ctx_id,
+                result = %result_str,
+                "Body callback completed"
+            );
+            
+            match result {
                 MilterResult::Continue => Ok(Some(create_response(b'c', &[]))),
                 MilterResult::Accept => Ok(Some(create_response(b'a', &[]))),
                 MilterResult::Reject => Ok(Some(create_response(b'r', &[]))),
@@ -237,16 +407,32 @@ async fn process_milter_command<T: MilterCallbacks>(
         }
         b'E' => {
             // SMFIC_BODYEOB - End of message
-            debug!(ctx_id = %ctx_id, "End of message");
+            debug!(
+                ctx_id = %ctx_id,
+                previous_state = %previous_state,
+                "Processing end of message command"
+            );
             
-            match callbacks.end_of_message(ctx_id).await {
+            let result = callbacks.end_of_message(ctx_id).await;
+            let result_str = format!("{:?}", result);
+            debug!(
+                ctx_id = %ctx_id,
+                result = %result_str,
+                "End of message callback completed"
+            );
+            
+            match result {
                 MilterResult::Continue => Ok(Some(create_response(b'c', &[]))),
                 MilterResult::Accept => Ok(Some(create_response(b'a', &[]))),
                 MilterResult::Reject => Ok(Some(create_response(b'r', &[]))),
                 MilterResult::TempFail => Ok(Some(create_response(b't', &[]))),
                 MilterResult::Discard => Ok(Some(create_response(b'd', &[]))),
                 MilterResult::ReplaceBody(body) => {
-                    // Send replace body response
+                    info!(
+                        ctx_id = %ctx_id,
+                        replacement_body_size = body.len(),
+                        "Replacing message body"
+                    );
                     Ok(Some(create_response(b'b', &body)))
                 }
                 _ => Ok(Some(create_response(b'a', &[]))),
@@ -254,12 +440,18 @@ async fn process_milter_command<T: MilterCallbacks>(
         }
         b'Q' => {
             // SMFIC_QUIT
-            debug!(ctx_id = %ctx_id, "Quit");
+            info!(ctx_id = %ctx_id, "Processing quit command");
             let _ = callbacks.close(ctx_id).await;
             Ok(None)
         }
         _ => {
-            warn!(ctx_id = %ctx_id, command = command, "Unknown milter command");
+            warn!(
+                ctx_id = %ctx_id,
+                command = command,
+                command_char = command as char,
+                data_size = data.len(),
+                "Unknown milter command received"
+            );
             Ok(Some(create_response(b'c', &[])))
         }
     }
