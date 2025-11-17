@@ -73,7 +73,7 @@ struct TrackingEvent {
     user_agent: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct MessageState {
     id: String,
     sender: String,

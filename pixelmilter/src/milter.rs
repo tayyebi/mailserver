@@ -105,10 +105,10 @@ async fn handle_connection<T: MilterCallbacks>(
                 
                 while let Some((command, data)) = parse_milter_message(&mut message_buffer)? {
                     command_count += 1;
-                    let command_char = command as char;
+                    let command_char = format!("{}", command as char);
                     debug!(
                         ctx_id = %ctx_id,
-                        command = command_char,
+                        command = %command_char,
                         command_byte = command,
                         data_size = data.len(),
                         command_number = command_count,
@@ -140,7 +140,7 @@ async fn handle_connection<T: MilterCallbacks>(
                             error!(
                                 ctx_id = %ctx_id,
                                 error = %e,
-                                command = command_char,
+                                command = %command_char,
                                 total_commands = command_count,
                                 "Error processing command"
                             );
@@ -212,7 +212,7 @@ fn parse_milter_message(buffer: &mut Vec<u8>) -> Result<Option<(u8, Vec<u8>)>> {
     
     debug!(
         command = command,
-        command_char = command as char,
+        command_char = %format!("{}", command as char),
         data_size = data.len(),
         original_buffer_size = original_buffer_size,
         remaining_buffer_size = buffer.len(),
@@ -448,7 +448,7 @@ async fn process_milter_command<T: MilterCallbacks>(
             warn!(
                 ctx_id = %ctx_id,
                 command = command,
-                command_char = command as char,
+                command_char = %format!("{}", command as char),
                 data_size = data.len(),
                 "Unknown milter command received"
             );
