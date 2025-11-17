@@ -601,12 +601,17 @@ fn setup_logging(level: &str) -> Result<()> {
         _ => "info",
     };
 
+    // Configure tracing to write to stderr (which Docker captures via entrypoint 2>&1)
+    // The default writer is stderr, which the entrypoint script redirects to stdout
+    // Use with_ansi(false) for better Docker log compatibility
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(false)
         .with_thread_ids(true)
         .with_file(true)
         .with_line_number(true)
+        .with_ansi(false) // Disable ANSI colors for Docker logs
+        // Default writer is stderr - entrypoint redirects stderr to stdout for docker logs
         .init();
 
     Ok(())
