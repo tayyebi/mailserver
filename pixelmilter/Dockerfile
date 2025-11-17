@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
       gosu \
       tzdata \
-    && cpanm --notest Mail::Milter::Server \
+    && cpanm --notest Sendmail::PMilter \
     && apt-get remove -y cpanminus build-essential \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/* /root/.cpanm
