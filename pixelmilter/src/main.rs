@@ -28,7 +28,7 @@ struct Args {
     pixel_base_url: String,
 
     /// Require opt-in header to enable tracking
-    #[arg(long, env = "REQUIRE_OPT_IN", default_value = "false")]
+    #[arg(long, env = "REQUIRE_OPT_IN", default_value = "false", value_parser = parse_bool)]
     require_opt_in: bool,
 
     /// Header name for opt-in
@@ -40,7 +40,7 @@ struct Args {
     disclosure_header: String,
 
     /// Add disclosure header to tracked emails
-    #[arg(long, env = "INJECT_DISCLOSURE", default_value = "true")]
+    #[arg(long, env = "INJECT_DISCLOSURE", default_value = "true", value_parser = parse_bool)]
     inject_disclosure: bool,
 
     /// Data directory for storing tracking information
@@ -473,6 +473,17 @@ impl MilterCallbacks for PixelMilter {
     }
 }
 
+fn parse_bool(s: &str) -> Result<bool, String> {
+    match s.to_lowercase().as_str() {
+        "true" | "1" | "yes" | "on" | "t" | "y" => Ok(true),
+        "false" | "0" | "no" | "off" | "f" | "n" => Ok(false),
+        _ => Err(format!(
+            "Invalid boolean value: '{}'. Expected one of: true, false, 1, 0, yes, no, on, off",
+            s
+        )),
+    }
+}
+
 fn generate_message_id() -> String {
     let now = Utc::now();
     let uuid = Uuid::new_v4();
@@ -502,9 +513,20 @@ fn setup_logging(level: &str) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args = Args::parse();
+    // Parse arguments first - this may exit with code 2 on parse errors
+    let args = match Args::try_parse() {
+        Ok(args) => args,
+        Err(e) => {
+            eprintln!("Error parsing arguments: {}", e);
+            std::process::exit(2);
+        }
+    };
 
-    setup_logging(&args.log_level)?;
+    // Setup logging - if this fails, we can't log, so print to stderr
+    if let Err(e) = setup_logging(&args.log_level) {
+        eprintln!("Failed to setup logging: {}", e);
+        std::process::exit(1);
+    }
 
     info!("Starting Pixel Milter");
     info!("Socket: {:?}", args.socket);
@@ -514,23 +536,44 @@ async fn main() -> Result<()> {
 
     // Ensure data directory exists
     debug!(data_dir = ?args.data_dir, "Checking data directory");
-    fs::create_dir_all(&args.data_dir)
-        .with_context(|| format!("Failed to create data directory: {:?}", args.data_dir))?;
+    if let Err(e) = fs::create_dir_all(&args.data_dir) {
+        error!(
+            data_dir = ?args.data_dir,
+            error = %e,
+            "Failed to create data directory"
+        );
+        eprintln!("Failed to create data directory {:?}: {}", args.data_dir, e);
+        std::process::exit(1);
+    }
     info!(data_dir = ?args.data_dir, "Data directory ready");
 
     // Ensure socket directory exists
     if let Some(socket_dir) = args.socket.parent() {
         debug!(socket_dir = ?socket_dir, "Checking socket directory");
-        fs::create_dir_all(socket_dir)
-            .with_context(|| format!("Failed to create socket directory: {:?}", socket_dir))?;
+        if let Err(e) = fs::create_dir_all(socket_dir) {
+            error!(
+                socket_dir = ?socket_dir,
+                error = %e,
+                "Failed to create socket directory"
+            );
+            eprintln!("Failed to create socket directory {:?}: {}", socket_dir, e);
+            std::process::exit(1);
+        }
         info!(socket_dir = ?socket_dir, "Socket directory ready");
     }
 
     // Remove existing socket
     if args.socket.exists() {
         warn!(socket = ?args.socket, "Removing existing socket file");
-        fs::remove_file(&args.socket)
-            .with_context(|| format!("Failed to remove existing socket: {:?}", args.socket))?;
+        if let Err(e) = fs::remove_file(&args.socket) {
+            error!(
+                socket = ?args.socket,
+                error = %e,
+                "Failed to remove existing socket"
+            );
+            eprintln!("Failed to remove existing socket {:?}: {}", args.socket, e);
+            std::process::exit(1);
+        }
         info!(socket = ?args.socket, "Existing socket file removed");
     } else {
         debug!(socket = ?args.socket, "Socket file does not exist, will create new one");
@@ -573,10 +616,11 @@ async fn main() -> Result<()> {
     // Run the server - this should never return unless there's an error
     if let Err(e) = server.run(&args.socket).await {
         error!(error = %e, "Fatal error running milter server");
-        return Err(e).context("Failed to run milter server");
+        eprintln!("Fatal error: {}", e);
+        std::process::exit(1);
     }
 
     // This should never be reached, but if it is, log it
     error!("Milter server exited unexpectedly");
-    Ok(())
+    std::process::exit(1);
 }
