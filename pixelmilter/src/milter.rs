@@ -4,7 +4,6 @@ use tokio::net::{UnixListener, TcpListener};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::{error, info, warn, debug};
-use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)] // These variants are part of the milter protocol and may be used in the future
@@ -105,14 +104,14 @@ impl<T: MilterCallbacks + 'static> MilterServer<T> {
 }
 
 async fn handle_unix_connection<T: MilterCallbacks>(
-    mut stream: tokio::net::UnixStream,
+    stream: tokio::net::UnixStream,
     callbacks: &T,
 ) -> Result<()> {
     handle_connection_impl(stream, callbacks).await
 }
 
 async fn handle_tcp_connection<T: MilterCallbacks>(
-    mut stream: tokio::net::TcpStream,
+    stream: tokio::net::TcpStream,
     callbacks: &T,
 ) -> Result<()> {
     handle_connection_impl(stream, callbacks).await
@@ -511,6 +510,34 @@ async fn process_milter_command<T: MilterCallbacks>(
                 }
                 _ => Ok(Some(create_response(b'a', &[]))),
             }
+        }
+        b'H' => {
+            // SMFIC_HELO
+            debug!(ctx_id = %ctx_id, data_size = data.len(), "Parsing helo data");
+            let helo_name = parse_string_data(&data)?;
+            debug!(
+                ctx_id = %ctx_id,
+                helo_name = %helo_name,
+                "Processing helo command"
+            );
+            // For now, just continue - we don't have a helo callback
+            Ok(Some(create_response(b'c', &[])))
+        }
+        b'D' => {
+            // SMFIC_MACRO - Macro definitions (usually ignored by milters)
+            debug!(
+                ctx_id = %ctx_id,
+                data_size = data.len(),
+                "Processing macro command (ignored)"
+            );
+            // Macros are typically ignored by milters, just continue
+            Ok(Some(create_response(b'c', &[])))
+        }
+        b'A' => {
+            // SMFIC_ABORT - Abort current message
+            info!(ctx_id = %ctx_id, "Processing abort command");
+            let _ = callbacks.close(ctx_id).await;
+            Ok(Some(create_response(b'c', &[])))
         }
         b'Q' => {
             // SMFIC_QUIT
