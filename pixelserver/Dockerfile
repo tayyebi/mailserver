@@ -4,6 +4,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       perl \
+      cpanminus \
+      build-essential \
+      libssl-dev \
       libmojolicious-perl \
       libjson-maybexs-perl \
       libfile-slurp-perl \
@@ -13,7 +16,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       openssl \
       curl \
       tzdata \
-    && rm -rf /var/lib/apt/lists/*
+    && cpanm --notest IO::Socket::SSL \
+    && apt-get remove -y cpanminus build-essential libssl-dev \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/* /root/.cpanm
 
 # Create pixelserver user
 RUN useradd -r -s /usr/sbin/nologin pixelserver \
