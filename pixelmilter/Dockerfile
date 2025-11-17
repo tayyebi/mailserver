@@ -11,6 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libfile-slurp-perl \
       libfile-path-perl \
       libio-socket-ssl-perl \
+      libio-string-perl \
+      libencode-perl \
       ca-certificates \
       gosu \
       tzdata \

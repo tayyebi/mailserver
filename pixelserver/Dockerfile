@@ -8,8 +8,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libjson-maybexs-perl \
       libfile-slurp-perl \
       libfile-path-perl \
+      libencode-perl \
       ca-certificates \
       openssl \
+      curl \
       tzdata \
     && rm -rf /var/lib/apt/lists/*
 
