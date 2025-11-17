@@ -1,27 +1,32 @@
+# Multi-stage build for Rust
+FROM rust:1.75-bookworm as builder
+
+WORKDIR /app
+
+# Copy Cargo files
+COPY Cargo.toml Cargo.lock ./
+
+# Create a dummy main.rs to build dependencies
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+
+# Build dependencies
+RUN cargo build --release && rm -rf src
+
+# Copy source code
+COPY src ./src
+
+# Build the application
+RUN cargo build --release
+
+# Runtime stage
 FROM debian:bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      perl \
-      cpanminus \
-      build-essential \
-      libmail-milter-perl \
-      libmime-tools-perl \
-      libdata-uuid-perl \
-      libjson-maybexs-perl \
-      libfile-slurp-perl \
-      libfile-path-perl \
-      libio-socket-ssl-perl \
-      libio-string-perl \
-      libencode-perl \
       ca-certificates \
-      gosu \
       tzdata \
-    && cpanm --notest Sendmail::PMilter \
-    && apt-get remove -y cpanminus build-essential \
-    && apt-get autoremove -y \
-    && rm -rf /var/lib/apt/lists/* /root/.cpanm
+    && rm -rf /var/lib/apt/lists/*
 
 # Create pixel user
 RUN useradd -r -s /usr/sbin/nologin pixel \
@@ -30,10 +35,23 @@ RUN useradd -r -s /usr/sbin/nologin pixel \
 
 WORKDIR /opt/pixelmilter
 
-COPY pixelmilter.pl /usr/local/bin/pixelmilter.pl
+# Copy the binary from builder stage
+COPY --from=builder /app/target/release/pixelmilter /usr/local/bin/pixelmilter
+
+# Copy entrypoint script
 COPY pixelmilter-entrypoint.sh /usr/local/bin/pixelmilter-entrypoint.sh
 
-RUN chmod +x /usr/local/bin/pixelmilter.pl /usr/local/bin/pixelmilter-entrypoint.sh
+RUN chmod +x /usr/local/bin/pixelmilter /usr/local/bin/pixelmilter-entrypoint.sh
+
+# Set default environment variables
+ENV PIXEL_BASE_URL="https://localhost:8443/pixel?id="
+ENV REQUIRE_OPT_IN="false"
+ENV OPT_IN_HEADER="X-Track-Open"
+ENV DISCLOSURE_HEADER="X-Tracking-Notice"
+ENV INJECT_DISCLOSURE="true"
+ENV DATA_DIR="/data/pixel"
+ENV LOG_LEVEL="info"
+ENV PIXEL_MILTER_SOCKET="/var/run/pixelmilter/pixel.sock"
 
 ENTRYPOINT ["/usr/local/bin/pixelmilter-entrypoint.sh"]
-CMD ["/usr/local/bin/pixelmilter.pl"]
+CMD ["/usr/local/bin/pixelmilter"]

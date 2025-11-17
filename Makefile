@@ -13,7 +13,7 @@ include .env
 export
 endif
 
-.PHONY: help validate install test send certs certs-force add-user add-domain reload restart logs backup-dkim reports view-reports tail-reports
+.PHONY: help validate install test send certs certs-force add-user add-domain reload restart logs backup-dkim reports view-reports tail-reports build-rust test-pixel pixel-stats pixel-health pixel-logs pixel-debug
 
 help:
 	@echo "Available targets:"
@@ -29,11 +29,22 @@ help:
 	@echo "  make restart						   Restart services"
 	@echo "  make logs							  Tail logs"
 	@echo "  make backup-dkim					   Backup DKIM keys"
+	@echo ""
+	@echo "Pixel Tracking Commands:"
+	@echo "  make build-rust						Build Rust pixel tracking components"
+	@echo "  make test-pixel						Test pixel tracking system"
+	@echo "  make pixel-health					  Check pixel server health"
+	@echo "  make pixel-stats					   View pixel tracking statistics"
 
 validate:
-	@command -v openssl >/dev/null || (echo "Missing: openssl" && exit 1)
-	@command -v swaks   >/dev/null || (echo "Missing: swaks"   && exit 1)
-	@echo "All required binaries present."
+	@echo "Checking required dependencies..."
+	@command -v openssl >/dev/null || (echo "ERROR: Missing openssl (required for TLS certificates)" && exit 1)
+	@command -v docker >/dev/null || (echo "ERROR: Missing docker (required for containers)" && exit 1)
+	@$(DOCKER_COMPOSE) version >/dev/null 2>&1 || (echo "ERROR: Missing docker-compose or 'docker compose' (required for orchestration)" && exit 1)
+	@echo "✓ All required dependencies present"
+	@echo "Optional tools:"
+	@command -v swaks >/dev/null && echo "✓ swaks (for email testing)" || echo "⚠ swaks missing (install for email testing: apt install swaks)"
+	@command -v jq >/dev/null && echo "✓ jq (for JSON parsing)" || echo "⚠ jq missing (install for better reports: apt install jq)"
 
 install: validate certs
 	$(Q)mkdir -p data/{ssl,postfix,spool,opendkim/{conf,keys},dovecot-conf,dovecot,mail,pixel/socket}
@@ -118,5 +129,58 @@ view-reports:
     curl -k --silent "$$URL" | jq .
 
 tail-reports:
-    @LOG=data/pixel/requests.log; \
-    if [ -f "$$LOG" ]; then tail -n 200 "$$LOG" || true; else echo "No log file at $$LOG"; fi
+	@LOG=data/pixel/requests.log; \
+	if [ -f "$$LOG" ]; then tail -n 200 "$$LOG" || true; else echo "No log file at $$LOG"; fi
+
+# Rust Pixel Tracking Targets
+build-rust:
+	@echo "Building Rust pixel tracking components..."
+	$(Q)$(DOCKER_COMPOSE) build pixelmilter pixelserver
+	@echo "✓ Rust components built successfully"
+
+test-pixel:
+	@echo "Testing pixel tracking system..."
+	@echo "1. Checking pixelserver health..."
+	@curl -k -s "https://${MAIL_HOST:-localhost}:8443/health" | jq . 2>/dev/null || \
+		curl -k -s "https://${MAIL_HOST:-localhost}:8443/health" || \
+		echo "⚠ Health check failed - ensure pixelserver is running"
+	@echo ""
+	@echo "2. Testing pixel endpoint..."
+	@curl -k -s -w "HTTP Status: %{http_code}\n" "https://${MAIL_HOST:-localhost}:8443/pixel?id=test-$(shell date +%s)" -o /dev/null || \
+		echo "⚠ Pixel endpoint test failed"
+	@echo ""
+	@echo "3. Checking container status..."
+	@$(DOCKER_COMPOSE) ps pixelmilter pixelserver
+
+pixel-health:
+	@echo "Pixel Server Health Check:"
+	@curl -k -s "https://${MAIL_HOST:-localhost}:8443/health" | jq . 2>/dev/null || \
+		curl -k -s "https://${MAIL_HOST:-localhost}:8443/health" || \
+		echo "ERROR: Cannot reach pixel server health endpoint"
+
+pixel-stats:
+	@echo "Pixel Tracking Statistics:"
+	@curl -k -s "https://${MAIL_HOST:-localhost}:8443/stats" | jq . 2>/dev/null || \
+		curl -k -s "https://${MAIL_HOST:-localhost}:8443/stats" || \
+		echo "ERROR: Cannot reach pixel server stats endpoint"
+
+pixel-logs:
+	@echo "Recent pixel tracking logs:"
+	@$(DOCKER_COMPOSE) logs --tail=50 pixelmilter pixelserver
+
+pixel-debug:
+	@echo "Pixel Tracking Debug Information:"
+	@echo "=== Container Status ==="
+	@$(DOCKER_COMPOSE) ps pixelmilter pixelserver
+	@echo ""
+	@echo "=== Pixelmilter Logs (last 20 lines) ==="
+	@$(DOCKER_COMPOSE) logs --tail=20 pixelmilter
+	@echo ""
+	@echo "=== Pixelserver Logs (last 20 lines) ==="
+	@$(DOCKER_COMPOSE) logs --tail=20 pixelserver
+	@echo ""
+	@echo "=== Socket Status ==="
+	@ls -la data/pixel/socket/ 2>/dev/null || echo "Socket directory not found"
+	@echo ""
+	@echo "=== Data Directory ==="
+	@ls -la data/pixel/ 2>/dev/null | head -10 || echo "Data directory not found"
