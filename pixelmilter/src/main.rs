@@ -47,6 +47,10 @@ struct Args {
     #[arg(long, env = "DATA_DIR", default_value = "/data/pixel")]
     data_dir: PathBuf,
 
+    /// Path to domain-wide footer HTML file
+    #[arg(long, env = "FOOTER_HTML_FILE", default_value = "/opt/pixelmilter/domain-wide-footer.html")]
+    footer_html_file: PathBuf,
+
     /// Log level
     #[arg(long, env = "LOG_LEVEL", default_value = "info")]
     log_level: String,
@@ -106,6 +110,7 @@ struct PixelMilterConfig {
     disclosure_header: String,
     inject_disclosure: bool,
     data_dir: PathBuf,
+    footer_html_file: PathBuf,
 }
 
 #[derive(Clone)]
@@ -116,12 +121,47 @@ struct PixelMilter {
 }
 
 impl PixelMilter {
-    fn new(config: PixelMilterConfig) -> Self {
-        Self {
-            injector: PixelInjector::new(config.pixel_base_url.clone()),
+    fn new(config: PixelMilterConfig) -> Result<Self> {
+        // Load footer HTML if file exists
+        let footer_html = if config.footer_html_file.exists() {
+            debug!(footer_file = ?config.footer_html_file, "Loading footer HTML file");
+            match fs::read_to_string(&config.footer_html_file) {
+                Ok(content) => {
+                    info!(
+                        footer_file = ?config.footer_html_file,
+                        footer_size = content.len(),
+                        "Footer HTML loaded successfully"
+                    );
+                    Some(content)
+                }
+                Err(e) => {
+                    warn!(
+                        footer_file = ?config.footer_html_file,
+                        error = %e,
+                        "Failed to load footer HTML file, continuing without footer"
+                    );
+                    None
+                }
+            }
+        } else {
+            debug!(
+                footer_file = ?config.footer_html_file,
+                "Footer HTML file does not exist, continuing without footer"
+            );
+            None
+        };
+
+        let injector = if let Some(footer) = footer_html {
+            PixelInjector::with_footer(config.pixel_base_url.clone(), footer)
+        } else {
+            PixelInjector::new(config.pixel_base_url.clone())
+        };
+
+        Ok(Self {
+            injector,
             config,
             connections: Arc::new(RwLock::new(HashMap::new())),
-        }
+        })
     }
 
     async fn save_message_metadata(&self, message: &MessageState) -> Result<()> {
@@ -396,44 +436,70 @@ impl MilterCallbacks for PixelMilter {
 
             // Inject pixel if tracking is enabled
             if message.should_track {
+                // Check Content-Type header to determine if it's HTML
+                let content_type = message.headers
+                    .get("content-type")
+                    .map(|s| s.to_lowercase())
+                    .unwrap_or_default();
+                
+                let is_html = content_type.contains("text/html");
+                
                 debug!(
                     ctx_id = %ctx_id,
                     message_id = %message.id,
+                    content_type = %content_type,
+                    is_html = is_html,
                     body_size = message.body.len(),
-                    "Attempting to inject tracking pixel"
+                    "Checking Content-Type for pixel injection"
                 );
-                match self.injector.inject_pixel(&message.body, &message.id) {
-                    Ok(modified_body) => {
-                        let original_size = message.body.len();
-                        let modified_size = modified_body.len();
-                        if modified_body != message.body {
-                            let size_diff = modified_size as i64 - original_size as i64;
-                            info!(
+
+                if is_html {
+                    debug!(
+                        ctx_id = %ctx_id,
+                        message_id = %message.id,
+                        body_size = message.body.len(),
+                        "HTML Content-Type detected, attempting to inject tracking pixel"
+                    );
+                    match self.injector.inject_pixel(&message.body, &message.id, true) {
+                        Ok(modified_body) => {
+                            let original_size = message.body.len();
+                            let modified_size = modified_body.len();
+                            if modified_body != message.body {
+                                let size_diff = modified_size as i64 - original_size as i64;
+                                info!(
+                                    ctx_id = %ctx_id,
+                                    message_id = %message.id,
+                                    original_size = original_size,
+                                    modified_size = modified_size,
+                                    size_increase = size_diff,
+                                    "Pixel injected successfully"
+                                );
+                                return MilterResult::ReplaceBody(modified_body);
+                            } else {
+                                info!(
+                                    ctx_id = %ctx_id,
+                                    message_id = %message.id,
+                                    body_size = original_size,
+                                    "Pixel injection completed but body unchanged"
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            error!(
                                 ctx_id = %ctx_id,
                                 message_id = %message.id,
-                                original_size = original_size,
-                                modified_size = modified_size,
-                                size_increase = size_diff,
-                                "Pixel injected successfully"
-                            );
-                            return MilterResult::ReplaceBody(modified_body);
-                        } else {
-                            info!(
-                                ctx_id = %ctx_id,
-                                message_id = %message.id,
-                                body_size = original_size,
-                                "No HTML content found for pixel injection"
+                                error = %e,
+                                "Failed to inject pixel"
                             );
                         }
                     }
-                    Err(e) => {
-                        error!(
-                            ctx_id = %ctx_id,
-                            message_id = %message.id,
-                            error = %e,
-                            "Failed to inject pixel"
-                        );
-                    }
+                } else {
+                    info!(
+                        ctx_id = %ctx_id,
+                        message_id = %message.id,
+                        content_type = %content_type,
+                        "Non-HTML Content-Type, skipping pixel injection"
+                    );
                 }
             } else {
                 info!(
@@ -586,10 +652,12 @@ async fn main() -> Result<()> {
         disclosure_header: args.disclosure_header,
         inject_disclosure: args.inject_disclosure,
         data_dir: args.data_dir,
+        footer_html_file: args.footer_html_file,
     };
 
     debug!("Creating PixelMilter instance");
-    let milter = PixelMilter::new(config.clone());
+    let milter = PixelMilter::new(config.clone())
+        .context("Failed to create PixelMilter instance")?;
     debug!("Creating MilterServer instance");
     let server = MilterServer::new(milter);
 
