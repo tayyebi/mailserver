@@ -9,20 +9,14 @@ COPY Cargo.toml ./
 # Create a dummy main.rs to build dependencies
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 
-# Build dependencies with cache mount
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/app/target \
-    cargo build --release && rm -rf src
+# Build dependencies
+RUN cargo build --release && rm -rf src
 
 # Copy source code
 COPY src ./src
 
-# Build the application with cache mount
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/app/target \
-    cargo build --release && \
+# Build the application
+RUN cargo build --release && \
     cp /app/target/release/pixelmilter /tmp/pixelmilter
 
 # Runtime stage
