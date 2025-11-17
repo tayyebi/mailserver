@@ -13,7 +13,7 @@ include .env
 export
 endif
 
-.PHONY: help validate install test send certs certs-force add-user add-domain reload restart logs backup-dkim reports view-reports tail-reports build-rust test-pixel pixel-stats pixel-health pixel-logs pixel-debug
+.PHONY: help validate install test send certs certs-force add-user add-domain reload restart logs backup-dkim reports view-reports tail-reports build-rust test-pixel pixel-stats pixel-health pixel-logs pixel-debug verify-pixelmilter update-config
 
 help:
 	@echo "Available targets:"
@@ -35,6 +35,11 @@ help:
 	@echo "  make test-pixel						Test pixel tracking system"
 	@echo "  make pixel-health					  Check pixel server health"
 	@echo "  make pixel-stats					   View pixel tracking statistics"
+	@echo "  make verify-pixelmilter				Verify pixelmilter is correctly configured"
+	@echo ""
+	@echo "Configuration Management:"
+	@echo "  make update-config					Rebuild and reload services after config changes"
+	@echo "  make reload							Reload services (use after editing .cf templates)"
 
 validate:
 	@echo "Checking required dependencies..."
@@ -184,3 +189,90 @@ pixel-debug:
 	@echo ""
 	@echo "=== Data Directory ==="
 	@ls -la data/pixel/ 2>/dev/null | head -10 || echo "Data directory not found"
+
+verify-pixelmilter:
+	@echo "Verifying pixelmilter configuration..."
+	@echo ""
+	@echo "1. Checking pixelmilter container status..."
+	@if $(DOCKER_COMPOSE) ps pixelmilter | grep -q "Up"; then \
+		echo "✓ pixelmilter container is running"; \
+	else \
+		echo "✗ pixelmilter container is not running"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "2. Checking pixelmilter socket..."
+	@if [ -S "data/pixel/socket/pixel.sock" ]; then \
+		echo "✓ Socket file exists: data/pixel/socket/pixel.sock"; \
+		ls -lh data/pixel/socket/pixel.sock; \
+	else \
+		echo "✗ Socket file not found: data/pixel/socket/pixel.sock"; \
+		echo "  Note: Socket is created when pixelmilter starts"; \
+	fi
+	@echo ""
+	@echo "3. Checking Postfix configuration for pixelmilter..."
+	@if $(DOCKER_COMPOSE) exec -T postfix grep -q "pixelmilter" /etc/postfix/main.cf 2>/dev/null; then \
+		echo "✓ pixelmilter found in Postfix main.cf"; \
+		$(DOCKER_COMPOSE) exec -T postfix grep "smtpd_milters\|non_smtpd_milters" /etc/postfix/main.cf | grep -v "^#" || true; \
+	else \
+		echo "✗ pixelmilter not found in Postfix main.cf"; \
+		echo "  Run 'make update-config' to regenerate configuration"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "4. Checking Postfix can access socket..."
+	@if $(DOCKER_COMPOSE) exec -T postfix test -S /var/run/pixelmilter/pixel.sock 2>/dev/null; then \
+		echo "✓ Postfix can access pixelmilter socket"; \
+	else \
+		echo "⚠ Postfix cannot access socket (may be normal if pixelmilter just started)"; \
+	fi
+	@echo ""
+	@echo "5. Checking pixelmilter process..."
+	@if $(DOCKER_COMPOSE) exec -T pixelmilter pgrep -f pixelmilter >/dev/null 2>&1; then \
+		echo "✓ pixelmilter process is running"; \
+	else \
+		echo "✗ pixelmilter process not found"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "6. Checking Postfix milter status..."
+	@if $(DOCKER_COMPOSE) exec -T postfix postconf smtpd_milters 2>/dev/null | grep -q "pixelmilter\|pixel.sock"; then \
+		echo "✓ Postfix smtpd_milters includes pixelmilter"; \
+		$(DOCKER_COMPOSE) exec -T postfix postconf smtpd_milters | head -1; \
+	else \
+		echo "✗ Postfix smtpd_milters does not include pixelmilter"; \
+		echo "  Run 'make update-config' to regenerate configuration"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "✓ All pixelmilter verification checks passed!"
+
+update-config:
+	@echo "Updating configuration files..."
+	@echo ""
+	@echo "1. Rebuilding Postfix container to apply template changes..."
+	$(Q)$(DOCKER_COMPOSE) build postfix
+	@echo ""
+	@echo "2. Restarting Postfix to load new configuration..."
+	$(Q)$(DOCKER_COMPOSE) restart postfix
+	@echo ""
+	@echo "3. Waiting for Postfix to be ready..."
+	@sleep 3
+	@echo ""
+	@echo "4. Verifying Postfix configuration..."
+	@if $(DOCKER_COMPOSE) exec -T postfix postfix check >/dev/null 2>&1; then \
+		echo "✓ Postfix configuration is valid"; \
+	else \
+		echo "✗ Postfix configuration check failed"; \
+		$(DOCKER_COMPOSE) exec -T postfix postfix check || true; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "5. Reloading Postfix to apply changes..."
+	$(Q)$(DOCKER_COMPOSE) exec postfix postfix reload
+	@echo ""
+	@echo "✓ Configuration updated successfully!"
+	@echo ""
+	@echo "Note: If you modified pixelmilter configuration, you may also need to:"
+	@echo "  - Restart pixelmilter: make restart (or docker-compose restart pixelmilter)"
+	@echo "  - Verify configuration: make verify-pixelmilter"

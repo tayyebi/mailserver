@@ -70,6 +70,71 @@ make install
 - data/dovecot — Dovecot state/indexes
 - data/dovecot-conf — Dovecot config (dovecot.conf, users)
 - data/mail — Maildir storage: data/mail/<domain>/<user>/{cur,new,tmp}
+- data/pixel — Pixel tracking data and socket directory
+
+---
+
+## Pixel Tracking (pixelmilter)
+
+The mailserver includes pixel tracking functionality that injects tracking pixels into HTML emails to track opens.
+
+### Verifying pixelmilter Configuration
+
+To ensure pixelmilter is correctly applied to the whole project:
+
+```bash
+make verify-pixelmilter
+```
+
+This command checks:
+- pixelmilter container is running
+- Socket file exists and is accessible
+- Postfix configuration includes pixelmilter
+- Postfix can communicate with pixelmilter
+
+### Updating Configuration Files (.cf files)
+
+Postfix configuration files (`main.cf`, `master.cf`) are generated from templates (`.tmpl` files) when the container starts. To ensure configuration files are updated after editing templates:
+
+**Option 1: Use the update-config target (recommended)**
+```bash
+make update-config
+```
+
+This will:
+1. Rebuild the Postfix container to apply template changes
+2. Restart Postfix to load the new configuration
+3. Verify the configuration is valid
+4. Reload Postfix to apply changes
+
+**Option 2: Manual restart**
+```bash
+# Rebuild and restart Postfix
+docker-compose build postfix
+docker-compose restart postfix
+
+# Or restart all services
+make restart
+```
+
+**Option 3: Reload only (if no template changes)**
+```bash
+make reload
+```
+
+### Configuration File Locations
+
+- **Templates**: `postfix/main.cf.tmpl`, `postfix/master.cf.tmpl`
+- **Rendered configs**: Generated inside the Postfix container at `/etc/postfix/main.cf`, `/etc/postfix/master.cf`
+- **Pixelmilter socket**: `data/pixel/socket/pixel.sock` (shared between containers)
+
+### Pixelmilter Integration
+
+Pixelmilter is configured in `postfix/main.cf.tmpl`:
+- `smtpd_milters` includes `unix:/var/run/pixelmilter/pixel.sock` for incoming mail
+- The socket is shared via Docker volume mount between `postfix` and `pixelmilter` containers
+
+After modifying `main.cf.tmpl` or `master.cf.tmpl`, always run `make update-config` to apply changes.
 
 ---
 
