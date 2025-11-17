@@ -39,6 +39,7 @@ pub struct StatsCollector {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Fields stored for potential future use in statistics or debugging
 struct PixelRequest {
     timestamp: DateTime<Utc>,
     client_ip: String,
