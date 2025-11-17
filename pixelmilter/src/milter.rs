@@ -5,6 +5,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{error, info, warn, debug};
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // These variants are part of the milter protocol and may be used in the future
 pub enum MilterResult {
     Continue,
     Accept,
