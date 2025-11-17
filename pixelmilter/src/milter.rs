@@ -281,19 +281,45 @@ async fn process_milter_command<T: MilterCallbacks>(
     match command {
         b'O' => {
             // SMFIC_OPTNEG - Option negotiation
+            // The request contains: protocol version (4 bytes), action flags (4 bytes), step flags (4 bytes)
+            // The response should contain: protocol version (4 bytes), action flags (4 bytes), step flags (4 bytes)
             debug!(
                 ctx_id = %ctx_id,
                 data_size = data.len(),
                 previous_state = %previous_state,
                 "Processing option negotiation"
             );
+            
+            // Parse the request to see what Postfix is requesting
+            if data.len() >= 12 {
+                let protocol_version = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
+                let action_flags = u32::from_be_bytes([data[4], data[5], data[6], data[7]]);
+                let step_flags = u32::from_be_bytes([data[8], data[9], data[10], data[11]]);
+                debug!(
+                    ctx_id = %ctx_id,
+                    protocol_version = protocol_version,
+                    requested_action_flags = action_flags,
+                    requested_step_flags = step_flags,
+                    "Parsed option negotiation request"
+                );
+            }
+            
+            // Respond with protocol version 6, and accept all actions/steps
+            // Protocol version: 6 (0x00000006)
+            // Action flags: 0x1F (accept all: add header, change header, add recipient, delete recipient, change body, quarantine)
+            // Step flags: 0x1F (accept all steps: connect, helo, mail, rcpt, header, eoh, body, eom)
+            let mut response_data = Vec::with_capacity(12);
+            response_data.extend_from_slice(&6u32.to_be_bytes()); // Protocol version 6
+            response_data.extend_from_slice(&0x1Fu32.to_be_bytes()); // Action flags - accept all
+            response_data.extend_from_slice(&0x1Fu32.to_be_bytes()); // Step flags - accept all
+            
             *state = MilterState::Connected;
             info!(
                 ctx_id = %ctx_id,
                 new_state = "Connected",
                 "Option negotiation completed"
             );
-            Ok(Some(create_response(b'O', &[0, 0, 0, 0, 0, 0])))
+            Ok(Some(create_response(b'O', &response_data)))
         }
         b'C' => {
             // SMFIC_CONNECT
