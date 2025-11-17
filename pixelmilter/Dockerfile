@@ -31,8 +31,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Create pixel user
 RUN useradd -r -s /usr/sbin/nologin pixel \
-    && mkdir -p /opt/pixelmilter /data/pixel /var/run/pixelmilter \
-    && chown -R pixel:pixel /opt/pixelmilter /data/pixel /var/run/pixelmilter
+    && mkdir -p /opt/pixelmilter /data/pixel \
+    && chown -R pixel:pixel /opt/pixelmilter /data/pixel
 
 WORKDIR /opt/pixelmilter
 
@@ -56,7 +56,7 @@ ENV DISCLOSURE_HEADER="X-Tracking-Notice"
 ENV INJECT_DISCLOSURE="true"
 ENV DATA_DIR="/data/pixel"
 ENV LOG_LEVEL="info"
-ENV PIXEL_MILTER_SOCKET="/var/run/pixelmilter/pixel.sock"
+ENV PIXEL_MILTER_ADDRESS="0.0.0.0:8892"
 
 ENTRYPOINT ["/usr/local/bin/pixelmilter-entrypoint.sh"]
 CMD []

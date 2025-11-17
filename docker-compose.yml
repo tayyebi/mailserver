@@ -117,7 +117,6 @@ services:
       - ./ssl/mailserver-cert.pem:/etc/ssl/certs/postfix.pem:ro
       - ./ssl/mailserver-key.pem:/etc/ssl/private/postfix.key:ro
       - /var/log/postfix.log:/var/log/mail.log
-      - ./data/pixel/socket:/var/run/pixelmilter:rw
     depends_on:
       dovecot:
         condition: service_healthy
@@ -147,11 +146,10 @@ services:
       - INJECT_DISCLOSURE=${INJECT_DISCLOSURE:-true}
       - DATA_DIR=/data/pixel
       - LOG_LEVEL=${LOG_LEVEL:-info}
-      - PIXEL_MILTER_SOCKET=/var/run/pixelmilter/pixel.sock
+      - PIXEL_MILTER_ADDRESS=0.0.0.0:8892
       - RUST_LOG_STYLE=never
     volumes:
       - ./data/pixel:/data/pixel
-      - ./data/pixel/socket:/var/run/pixelmilter
     labels:
       com.mailserver.role: "milter"
     logging:
@@ -159,6 +157,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    expose:
+      - "8892"
     networks:
       mailnet:
         ipv4_address: ${PIXEL_MILTER_IP}

@@ -19,9 +19,9 @@ use pixel_injector::PixelInjector;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Socket path for milter communication
-    #[arg(long, env = "PIXEL_MILTER_SOCKET", default_value = "/var/run/pixelmilter/pixel.sock")]
-    socket: PathBuf,
+    /// Socket path for milter communication (Unix socket) or TCP address (e.g., "0.0.0.0:8892")
+    #[arg(long, env = "PIXEL_MILTER_ADDRESS")]
+    address: Option<String>,
 
     /// Base URL for tracking pixels
     #[arg(long, env = "PIXEL_BASE_URL", default_value = "https://localhost:8443/pixel?id=")]
@@ -600,10 +600,57 @@ async fn main() -> Result<()> {
     }
 
     info!("Starting Pixel Milter");
-    info!("Socket: {:?}", args.socket);
     info!("Pixel Base URL: {}", args.pixel_base_url);
     info!("Require Opt-in: {}", args.require_opt_in);
     info!("Data Directory: {:?}", args.data_dir);
+
+    // Determine connection type
+    let use_inet = args.address.as_ref()
+        .map(|a| a.contains(':') && !a.starts_with('/'))
+        .unwrap_or(false);
+    
+    let address = args.address.clone().unwrap_or_else(|| {
+        "/var/run/pixelmilter/pixel.sock".to_string()
+    });
+
+    if use_inet {
+        info!("Using TCP/inet connection: {}", address);
+    } else {
+        info!("Using Unix socket: {}", address);
+        let socket_path = PathBuf::from(&address);
+        
+        // Ensure socket directory exists
+        if let Some(socket_dir) = socket_path.parent() {
+            debug!(socket_dir = ?socket_dir, "Checking socket directory");
+            if let Err(e) = fs::create_dir_all(socket_dir) {
+                error!(
+                    socket_dir = ?socket_dir,
+                    error = %e,
+                    "Failed to create socket directory"
+                );
+                eprintln!("Failed to create socket directory {:?}: {}", socket_dir, e);
+                std::process::exit(1);
+            }
+            info!(socket_dir = ?socket_dir, "Socket directory ready");
+        }
+
+        // Remove existing socket
+        if socket_path.exists() {
+            warn!(socket = ?socket_path, "Removing existing socket file");
+            if let Err(e) = fs::remove_file(&socket_path) {
+                error!(
+                    socket = ?socket_path,
+                    error = %e,
+                    "Failed to remove existing socket"
+                );
+                eprintln!("Failed to remove existing socket {:?}: {}", socket_path, e);
+                std::process::exit(1);
+            }
+            info!(socket = ?socket_path, "Existing socket file removed");
+        } else {
+            debug!(socket = ?socket_path, "Socket file does not exist, will create new one");
+        }
+    }
 
     // Ensure data directory exists
     debug!(data_dir = ?args.data_dir, "Checking data directory");
@@ -617,38 +664,6 @@ async fn main() -> Result<()> {
         std::process::exit(1);
     }
     info!(data_dir = ?args.data_dir, "Data directory ready");
-
-    // Ensure socket directory exists
-    if let Some(socket_dir) = args.socket.parent() {
-        debug!(socket_dir = ?socket_dir, "Checking socket directory");
-        if let Err(e) = fs::create_dir_all(socket_dir) {
-            error!(
-                socket_dir = ?socket_dir,
-                error = %e,
-                "Failed to create socket directory"
-            );
-            eprintln!("Failed to create socket directory {:?}: {}", socket_dir, e);
-            std::process::exit(1);
-        }
-        info!(socket_dir = ?socket_dir, "Socket directory ready");
-    }
-
-    // Remove existing socket
-    if args.socket.exists() {
-        warn!(socket = ?args.socket, "Removing existing socket file");
-        if let Err(e) = fs::remove_file(&args.socket) {
-            error!(
-                socket = ?args.socket,
-                error = %e,
-                "Failed to remove existing socket"
-            );
-            eprintln!("Failed to remove existing socket {:?}: {}", args.socket, e);
-            std::process::exit(1);
-        }
-        info!(socket = ?args.socket, "Existing socket file removed");
-    } else {
-        debug!(socket = ?args.socket, "Socket file does not exist, will create new one");
-    }
 
     let config = PixelMilterConfig {
         pixel_base_url: args.pixel_base_url,
@@ -676,21 +691,36 @@ async fn main() -> Result<()> {
     );
 
     // Set up signal handling for graceful shutdown
-    let socket_path = args.socket.clone();
+    let socket_path = if !use_inet {
+        Some(PathBuf::from(&address))
+    } else {
+        None
+    };
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.expect("Failed to listen for Ctrl+C");
         info!("Received shutdown signal, cleaning up...");
-        if socket_path.exists() {
-            let _ = fs::remove_file(&socket_path);
+        if let Some(ref path) = socket_path {
+            if path.exists() {
+                let _ = fs::remove_file(path);
+            }
         }
         std::process::exit(0);
     });
 
     // Run the server - this should never return unless there's an error
-    if let Err(e) = server.run(&args.socket).await {
-        error!(error = %e, "Fatal error running milter server");
-        eprintln!("Fatal error: {}", e);
-        std::process::exit(1);
+    if use_inet {
+        if let Err(e) = server.run_inet(&address).await {
+            error!(error = %e, "Fatal error running milter server");
+            eprintln!("Fatal error: {}", e);
+            std::process::exit(1);
+        }
+    } else {
+        let socket_path = PathBuf::from(&address);
+        if let Err(e) = server.run_unix(&socket_path).await {
+            error!(error = %e, "Fatal error running milter server");
+            eprintln!("Fatal error: {}", e);
+            std::process::exit(1);
+        }
     }
 
     // This should never be reached, but if it is, log it

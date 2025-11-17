@@ -1,8 +1,10 @@
 use anyhow::{Context, Result};
 use std::path::Path;
-use tokio::net::UnixListener;
+use tokio::net::{UnixListener, TcpListener};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::{error, info, warn, debug};
+use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)] // These variants are part of the milter protocol and may be used in the future
@@ -41,13 +43,13 @@ impl<T: MilterCallbacks + 'static> MilterServer<T> {
         Self { callbacks }
     }
 
-    pub async fn run(&self, socket_path: &Path) -> Result<()> {
-        info!("Attempting to bind to socket: {:?}", socket_path);
+    pub async fn run_unix(&self, socket_path: &Path) -> Result<()> {
+        info!("Attempting to bind to Unix socket: {:?}", socket_path);
         
         let listener = UnixListener::bind(socket_path)
             .with_context(|| format!("Failed to bind to socket: {:?}. Check permissions and ensure the directory exists.", socket_path))?;
 
-        info!("Milter server listening on: {:?}", socket_path);
+        info!("Milter server listening on Unix socket: {:?}", socket_path);
 
         let callbacks = std::sync::Arc::new(self.callbacks.clone());
         
@@ -57,7 +59,38 @@ impl<T: MilterCallbacks + 'static> MilterServer<T> {
                 Ok((stream, _)) => {
                     let callbacks = callbacks.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = handle_connection(stream, &*callbacks).await {
+                        if let Err(e) = handle_unix_connection(stream, &*callbacks).await {
+                            error!("Error handling connection: {}", e);
+                        }
+                    });
+                }
+                Err(e) => {
+                    error!("Failed to accept connection: {}", e);
+                    // Continue the loop - don't exit on connection errors
+                }
+            }
+        }
+    }
+
+    pub async fn run_inet(&self, address: &str) -> Result<()> {
+        info!("Attempting to bind to TCP address: {}", address);
+        
+        let listener = TcpListener::bind(address)
+            .await
+            .with_context(|| format!("Failed to bind to TCP address: {}. Check if the port is available.", address))?;
+
+        info!("Milter server listening on TCP: {}", address);
+
+        let callbacks = std::sync::Arc::new(self.callbacks.clone());
+        
+        // This loop should never exit - it runs forever accepting connections
+        loop {
+            match listener.accept().await {
+                Ok((stream, addr)) => {
+                    info!("New TCP connection from: {}", addr);
+                    let callbacks = callbacks.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = handle_tcp_connection(stream, &*callbacks).await {
                             error!("Error handling connection: {}", e);
                         }
                     });
@@ -71,8 +104,22 @@ impl<T: MilterCallbacks + 'static> MilterServer<T> {
     }
 }
 
-async fn handle_connection<T: MilterCallbacks>(
+async fn handle_unix_connection<T: MilterCallbacks>(
     mut stream: tokio::net::UnixStream,
+    callbacks: &T,
+) -> Result<()> {
+    handle_connection_impl(stream, callbacks).await
+}
+
+async fn handle_tcp_connection<T: MilterCallbacks>(
+    mut stream: tokio::net::TcpStream,
+    callbacks: &T,
+) -> Result<()> {
+    handle_connection_impl(stream, callbacks).await
+}
+
+async fn handle_connection_impl<T: MilterCallbacks, S: AsyncRead + AsyncWrite + Unpin>(
+    mut stream: S,
     callbacks: &T,
 ) -> Result<()> {
     let ctx_id = uuid::Uuid::new_v4().to_string();

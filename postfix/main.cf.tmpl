@@ -34,10 +34,10 @@ broken_sasl_auth_clients = yes
 smtpd_sasl_type=dovecot
 smtpd_sasl_path=inet:${DOVECOT_IP}:${DOVECOT_AUTH_PORT}
 
-# Milter (DKIM)
+# Milter (DKIM + Pixel Tracking)
 milter_default_action = accept
 milter_protocol = 6
-smtpd_milters = inet:${OPENDKIM_IP}:8891,unix:/var/run/pixelmilter/pixel.sock
+smtpd_milters = inet:${OPENDKIM_IP}:8891,inet:${PIXEL_MILTER_IP}:8892
 non_smtpd_milters = inet:${OPENDKIM_IP}:8891
 
 # Virtual delivery via Dovecot LMTP

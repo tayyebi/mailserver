@@ -126,13 +126,14 @@ make reload
 
 - **Templates**: `postfix/main.cf.tmpl`, `postfix/master.cf.tmpl`
 - **Rendered configs**: Generated inside the Postfix container at `/etc/postfix/main.cf`, `/etc/postfix/master.cf`
-- **Pixelmilter socket**: `data/pixel/socket/pixel.sock` (shared between containers)
+- **Pixelmilter connection**: TCP port 8892 (configurable via `PIXEL_MILTER_ADDRESS` environment variable)
 
 ### Pixelmilter Integration
 
 Pixelmilter is configured in `postfix/main.cf.tmpl`:
-- `smtpd_milters` includes `unix:/var/run/pixelmilter/pixel.sock` for incoming mail
-- The socket is shared via Docker volume mount between `postfix` and `pixelmilter` containers
+- `smtpd_milters` includes `inet:${PIXEL_MILTER_IP}:8892` for incoming mail
+- Pixelmilter listens on TCP port 8892 (configurable via `PIXEL_MILTER_ADDRESS` environment variable)
+- Postfix connects to pixelmilter via the Docker network using the `PIXEL_MILTER_IP` address
 
 After modifying `main.cf.tmpl` or `master.cf.tmpl`, always run `make update-config` to apply changes.
 

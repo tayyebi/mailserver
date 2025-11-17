@@ -201,17 +201,16 @@ verify-pixelmilter:
 		exit 1; \
 	fi
 	@echo ""
-	@echo "2. Checking pixelmilter socket..."
-	@if [ -S "data/pixel/socket/pixel.sock" ]; then \
-		echo "✓ Socket file exists: data/pixel/socket/pixel.sock"; \
-		ls -lh data/pixel/socket/pixel.sock; \
+	@echo "2. Checking pixelmilter TCP port..."
+	@if $(DOCKER_COMPOSE) exec -T pixelmilter nc -z localhost 8892 2>/dev/null || \
+		$(DOCKER_COMPOSE) exec -T pixelmilter timeout 1 bash -c 'echo > /dev/tcp/localhost/8892' 2>/dev/null; then \
+		echo "✓ pixelmilter is listening on port 8892"; \
 	else \
-		echo "✗ Socket file not found: data/pixel/socket/pixel.sock"; \
-		echo "  Note: Socket is created when pixelmilter starts"; \
+		echo "⚠ Cannot verify pixelmilter TCP port (may be normal if just started)"; \
 	fi
 	@echo ""
 	@echo "3. Checking Postfix configuration for pixelmilter..."
-	@if $(DOCKER_COMPOSE) exec -T postfix grep -q "pixelmilter" /etc/postfix/main.cf 2>/dev/null; then \
+	@if $(DOCKER_COMPOSE) exec -T postfix grep -q "8892\|pixelmilter" /etc/postfix/main.cf 2>/dev/null; then \
 		echo "✓ pixelmilter found in Postfix main.cf"; \
 		$(DOCKER_COMPOSE) exec -T postfix grep "smtpd_milters\|non_smtpd_milters" /etc/postfix/main.cf | grep -v "^#" || true; \
 	else \
@@ -220,11 +219,12 @@ verify-pixelmilter:
 		exit 1; \
 	fi
 	@echo ""
-	@echo "4. Checking Postfix can access socket..."
-	@if $(DOCKER_COMPOSE) exec -T postfix test -S /var/run/pixelmilter/pixel.sock 2>/dev/null; then \
-		echo "✓ Postfix can access pixelmilter socket"; \
+	@echo "4. Checking Postfix can connect to pixelmilter..."
+	@if $(DOCKER_COMPOSE) exec -T postfix nc -z $${PIXEL_MILTER_IP:-172.18.0.5} 8892 2>/dev/null || \
+		$(DOCKER_COMPOSE) exec -T postfix timeout 1 bash -c "echo > /dev/tcp/$${PIXEL_MILTER_IP:-172.18.0.5}/8892" 2>/dev/null; then \
+		echo "✓ Postfix can connect to pixelmilter on TCP port 8892"; \
 	else \
-		echo "⚠ Postfix cannot access socket (may be normal if pixelmilter just started)"; \
+		echo "⚠ Postfix cannot connect to pixelmilter (check network connectivity)"; \
 	fi
 	@echo ""
 	@echo "5. Checking pixelmilter process..."
@@ -236,8 +236,8 @@ verify-pixelmilter:
 	fi
 	@echo ""
 	@echo "6. Checking Postfix milter status..."
-	@if $(DOCKER_COMPOSE) exec -T postfix postconf smtpd_milters 2>/dev/null | grep -q "pixelmilter\|pixel.sock"; then \
-		echo "✓ Postfix smtpd_milters includes pixelmilter"; \
+	@if $(DOCKER_COMPOSE) exec -T postfix postconf smtpd_milters 2>/dev/null | grep -q "8892\|pixelmilter"; then \
+		echo "✓ Postfix smtpd_milters includes pixelmilter (port 8892)"; \
 		$(DOCKER_COMPOSE) exec -T postfix postconf smtpd_milters | head -1; \
 	else \
 		echo "✗ Postfix smtpd_milters does not include pixelmilter"; \
