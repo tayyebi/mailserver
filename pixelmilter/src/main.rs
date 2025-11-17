@@ -257,11 +257,18 @@ impl MilterCallbacks for PixelMilter {
             addr = %addr,
             "Processing connect callback"
         );
+        
+        // Create an initial connection state to handle early protocol events
+        let message = MessageState::new(String::new());
+        let mut connections = self.connections.write().await;
+        connections.insert(ctx_id.to_string(), message);
+        
         info!(
             ctx_id = %ctx_id,
             hostname = %hostname,
             addr = %addr,
-            "New milter connection established"
+            connection_count = connections.len(),
+            "New milter connection established and state created"
         );
         MilterResult::Continue
     }
@@ -272,23 +279,45 @@ impl MilterCallbacks for PixelMilter {
             sender = %sender,
             "Processing mail_from callback"
         );
-        let message = MessageState::new(sender.to_string());
-        debug!(
-            ctx_id = %ctx_id,
-            message_id = %message.id,
-            "Created new message state"
-        );
-
+        
         let mut connections = self.connections.write().await;
         let connection_count = connections.len();
-        connections.insert(ctx_id.to_string(), message.clone());
+        
+        // Update existing connection or create new one if it doesn't exist
+        let message = if let Some(existing_msg) = connections.get_mut(ctx_id) {
+            // Update the existing message with sender information
+            existing_msg.sender = sender.to_string();
+            existing_msg.id = generate_message_id();
+            // Clear any previous data for a new message
+            existing_msg.headers.clear();
+            existing_msg.raw_headers.clear();
+            existing_msg.body.clear();
+            existing_msg.should_track = false;
+            debug!(
+                ctx_id = %ctx_id,
+                message_id = %existing_msg.id,
+                "Updated existing message state"
+            );
+            existing_msg.clone()
+        } else {
+            // Create new message state if connection doesn't exist
+            let new_message = MessageState::new(sender.to_string());
+            debug!(
+                ctx_id = %ctx_id,
+                message_id = %new_message.id,
+                "Created new message state"
+            );
+            connections.insert(ctx_id.to_string(), new_message.clone());
+            new_message
+        };
+
         info!(
             ctx_id = %ctx_id,
             message_id = %message.id,
             sender = %sender,
             active_connections = connections.len(),
             previous_connections = connection_count,
-            "New message received"
+            "Mail from address received and stored"
         );
 
         MilterResult::Continue
@@ -330,8 +359,12 @@ impl MilterCallbacks for PixelMilter {
         } else {
             warn!(
                 ctx_id = %ctx_id,
-                "Received header for unknown connection context"
+                "Received header for unknown connection context - creating new state"
             );
+            // Create a new connection state to handle orphaned events
+            let mut connections = self.connections.write().await;
+            let message = MessageState::new(String::new());
+            connections.insert(ctx_id.to_string(), message);
         }
 
         MilterResult::Continue
@@ -364,8 +397,15 @@ impl MilterCallbacks for PixelMilter {
         } else {
             warn!(
                 ctx_id = %ctx_id,
-                "Received end_of_headers for unknown connection context"
+                "Received end_of_headers for unknown connection context - creating new state"
             );
+            // Create a new connection state to handle orphaned events
+            let mut connections = self.connections.write().await;
+            let mut message = MessageState::new(String::new());
+            if !self.config.require_opt_in {
+                message.should_track = true;
+            }
+            connections.insert(ctx_id.to_string(), message);
         }
 
         MilterResult::Continue
@@ -395,8 +435,12 @@ impl MilterCallbacks for PixelMilter {
             warn!(
                 ctx_id = %ctx_id,
                 chunk_size = chunk_size,
-                "Received body chunk for unknown connection context"
+                "Received body chunk for unknown connection context - creating new state"
             );
+            // Create a new connection state and store the body chunk
+            let mut message = MessageState::new(String::new());
+            message.body.extend_from_slice(chunk);
+            connections.insert(ctx_id.to_string(), message);
         }
 
         MilterResult::Continue
@@ -511,8 +555,12 @@ impl MilterCallbacks for PixelMilter {
         } else {
             warn!(
                 ctx_id = %ctx_id,
-                "Received end_of_message for unknown connection context"
+                "Received end_of_message for unknown connection context - no message to process"
             );
+            // Create a minimal connection state just to prevent further errors
+            let mut connections = self.connections.write().await;
+            let message = MessageState::new(String::new());
+            connections.insert(ctx_id.to_string(), message);
         }
 
         debug!(ctx_id = %ctx_id, "Accepting message");
