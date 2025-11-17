@@ -1,8 +1,7 @@
-use anyhow::{Context, Result};
-use mail_parser::{Message, MessageParser, MimeHeaders};
+use anyhow::Result;
 use regex::Regex;
 use std::sync::OnceLock;
-use tracing::{debug, warn};
+use tracing::debug;
 
 #[derive(Clone)]
 pub struct PixelInjector {
@@ -21,138 +20,27 @@ impl PixelInjector {
     }
 
     pub fn inject_pixel(&self, message_body: &[u8], message_id: &str) -> Result<Vec<u8>> {
-        // Try to parse as MIME message first
-        if let Some(message) = MessageParser::default().parse(message_body) {
-            debug!(message_id = %message_id, "Parsing as MIME message");
-            return self.inject_pixel_mime(&message, message_id);
-        }
-
-        // Fallback to simple HTML injection
-        debug!(message_id = %message_id, "Parsing as simple HTML");
-        self.inject_pixel_simple(message_body, message_id)
-    }
-
-    fn inject_pixel_mime(&self, message: &Message, message_id: &str) -> Result<Vec<u8>> {
-        let mut modified = false;
-        let mut result = Vec::new();
-
-        // Process each part of the message
-        if message.is_multipart() {
-            result = self.process_multipart_message(message, message_id, &mut modified)?;
-        } else {
-            // Single part message
-            if let Some(content_type) = message.content_type() {
-                if content_type.type_() == "text" && content_type.subtype() == Some("html") {
-                    if let Some(body) = message.body_text(0) {
-                        let injected = self.inject_pixel_html(body, message_id)?;
-                        if injected != body {
-                            modified = true;
-                            // Reconstruct the message with new body
-                            result = self.reconstruct_single_part_message(message, &injected)?;
-                        }
-                    }
-                }
-            }
-        }
-
-        if modified {
-            Ok(result)
-        } else {
-            // Return original if no modifications were made
-            Ok(message.raw_message().to_vec())
-        }
-    }
-
-    fn process_multipart_message(
-        &self,
-        message: &Message,
-        message_id: &str,
-        modified: &mut bool,
-    ) -> Result<Vec<u8>> {
-        // For multipart messages, we need to process each part
-        let mut parts = Vec::new();
-        
-        for attachment in message.attachments() {
-            if let Some(content_type) = attachment.content_type() {
-                if content_type.type_() == "text" && content_type.subtype() == Some("html") {
-                    if let Some(body) = attachment.text() {
-                        let injected = self.inject_pixel_html(body, message_id)?;
-                        if injected != body {
-                            *modified = true;
-                            parts.push(injected);
-                        } else {
-                            parts.push(body.to_string());
-                        }
-                    }
-                } else if let Some(body) = attachment.text() {
-                    parts.push(body.to_string());
-                }
-            }
-        }
-
-        if *modified {
-            // Reconstruct multipart message
-            self.reconstruct_multipart_message(message, &parts)
-        } else {
-            Ok(message.raw_message().to_vec())
-        }
-    }
-
-    fn reconstruct_single_part_message(&self, message: &Message, new_body: &str) -> Result<Vec<u8>> {
-        let mut result = String::new();
-        
-        // Add headers
-        for header in message.headers() {
-            result.push_str(&format!("{}: {}\r\n", header.name(), header.value()));
-        }
-        
-        result.push_str("\r\n");
-        result.push_str(new_body);
-        
-        Ok(result.into_bytes())
-    }
-
-    fn reconstruct_multipart_message(&self, message: &Message, parts: &[String]) -> Result<Vec<u8>> {
-        // This is a simplified reconstruction - in production you'd want more robust MIME handling
-        let boundary = message
-            .content_type()
-            .and_then(|ct| ct.attribute("boundary"))
-            .unwrap_or("----=_NextPart_000_0000_01234567.89ABCDEF");
-
-        let mut result = String::new();
-        
-        // Add headers
-        for header in message.headers() {
-            result.push_str(&format!("{}: {}\r\n", header.name(), header.value()));
-        }
-        
-        result.push_str("\r\n");
-        
-        // Add parts
-        for (i, part) in parts.iter().enumerate() {
-            result.push_str(&format!("--{}\r\n", boundary));
-            result.push_str("Content-Type: text/html; charset=utf-8\r\n");
-            result.push_str("\r\n");
-            result.push_str(part);
-            result.push_str("\r\n");
-        }
-        
-        result.push_str(&format!("--{}--\r\n", boundary));
-        
-        Ok(result.into_bytes())
-    }
-
-    fn inject_pixel_simple(&self, message_body: &[u8], message_id: &str) -> Result<Vec<u8>> {
+        // Convert to string for processing
         let body_str = String::from_utf8_lossy(message_body);
         
-        // Check if it looks like HTML
-        if body_str.to_lowercase().contains("<html") || body_str.to_lowercase().contains("<body") {
+        // Check if it looks like HTML content
+        if self.contains_html(&body_str) {
+            debug!(message_id = %message_id, "Injecting pixel into HTML content");
             let injected = self.inject_pixel_html(&body_str, message_id)?;
             Ok(injected.into_bytes())
         } else {
             // Not HTML, return unchanged
+            debug!(message_id = %message_id, "No HTML content found, skipping pixel injection");
             Ok(message_body.to_vec())
         }
+    }
+
+    fn contains_html(&self, content: &str) -> bool {
+        let lower = content.to_lowercase();
+        lower.contains("<html") || 
+        lower.contains("<body") || 
+        lower.contains("content-type: text/html") ||
+        lower.contains("content-type:text/html")
     }
 
     fn inject_pixel_html(&self, html: &str, message_id: &str) -> Result<String> {
@@ -185,7 +73,7 @@ impl PixelInjector {
         }
 
         // Fallback: append to end if it looks like HTML
-        if html.to_lowercase().contains("<html") || html.to_lowercase().contains("<body") {
+        if self.contains_html(html) {
             debug!(message_id = %message_id, "Injected pixel at end of HTML content");
             Ok(format!("{}{}", html, pixel_img))
         } else {
@@ -228,5 +116,14 @@ mod tests {
         
         // Should not inject pixel in plain text
         assert_eq!(result, text);
+    }
+
+    #[test]
+    fn test_contains_html() {
+        let injector = PixelInjector::new("https://example.com/pixel?id=".to_string());
+        
+        assert!(injector.contains_html("<html><body>test</body></html>"));
+        assert!(injector.contains_html("Content-Type: text/html\r\n\r\n<p>test</p>"));
+        assert!(!injector.contains_html("This is plain text"));
     }
 }

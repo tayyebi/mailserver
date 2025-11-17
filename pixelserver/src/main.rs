@@ -10,14 +10,11 @@ use axum_server::tls_rustls::RustlsConfig;
 use chrono::{DateTime, Utc};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fs;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tower_http::cors::CorsLayer;
-use tower_http::trace::TraceLayer;
 use tracing::{error, info, warn};
 
 mod pixel;
@@ -146,8 +143,9 @@ async fn main() -> Result<()> {
 
     if args.dev_mode {
         info!("Starting server in development mode (HTTP)");
-        let listener = tokio::net::TcpListener::bind(&args.bind_address).await?;
-        axum::serve(listener, app).await?;
+        axum::Server::bind(&args.bind_address)
+            .serve(app.into_make_service())
+            .await?;
     } else {
         info!("Starting server with TLS");
         let config = RustlsConfig::from_pem_file(&args.tls_cert, &args.tls_key)
