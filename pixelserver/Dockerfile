@@ -9,14 +9,21 @@ COPY Cargo.toml ./
 # Create a dummy main.rs to build dependencies
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 
-# Build dependencies
-RUN cargo build --release && rm -rf src
+# Build dependencies with cache mount
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/app/target \
+    cargo build --release && rm -rf src
 
 # Copy source code
 COPY src ./src
 
-# Build the application
-RUN cargo build --release
+# Build the application with cache mount
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/app/target \
+    cargo build --release && \
+    cp /app/target/release/pixelserver /tmp/pixelserver
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -32,15 +39,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Create pixelserver user
 RUN useradd -r -s /usr/sbin/nologin pixelserver \
-    && mkdir -p /opt/pixelserver /data/pixel \
-    && chown -R pixelserver:pixelserver /opt/pixelserver /data/pixel
+    && mkdir -p /opt/pixelserver \
+    && chown -R pixelserver:pixelserver /opt/pixelserver
 
 WORKDIR /opt/pixelserver
 
 # Copy the binary from builder stage
-COPY --from=builder /app/target/release/pixelserver /usr/local/bin/pixelserver
+COPY --from=builder /tmp/pixelserver /usr/local/bin/pixelserver
 
-RUN chmod +x /usr/local/bin/pixelserver
+# Copy entrypoint script
+COPY pixelserver-entrypoint.sh /usr/local/bin/pixelserver-entrypoint.sh
+
+RUN chmod +x /usr/local/bin/pixelserver /usr/local/bin/pixelserver-entrypoint.sh
 
 # Set default environment variables
 ENV DATA_DIR="/data/pixel"
@@ -52,6 +62,5 @@ ENV DEV_MODE="false"
 
 EXPOSE 8443
 
-USER pixelserver
-
+ENTRYPOINT ["/usr/local/bin/pixelserver-entrypoint.sh"]
 CMD ["/usr/local/bin/pixelserver"]
