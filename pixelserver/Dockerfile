@@ -1,10 +1,10 @@
 # Multi-stage build for Rust
-FROM rust:1.75-bookworm as builder
+FROM rust:1.82-bookworm as builder
 
 WORKDIR /app
 
 # Copy Cargo files
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml ./
 
 # Create a dummy main.rs to build dependencies
 RUN mkdir src && echo "fn main() {}" > src/main.rs

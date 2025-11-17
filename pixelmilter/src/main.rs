@@ -21,35 +21,35 @@ use pixel_injector::PixelInjector;
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Socket path for milter communication
-    #[arg(long, env("PIXEL_MILTER_SOCKET"), default_value = "/var/run/pixelmilter/pixel.sock")]
+    #[arg(long, env = "PIXEL_MILTER_SOCKET", default_value = "/var/run/pixelmilter/pixel.sock")]
     socket: PathBuf,
 
     /// Base URL for tracking pixels
-    #[arg(long, env("PIXEL_BASE_URL"), default_value = "https://localhost:8443/pixel?id=")]
+    #[arg(long, env = "PIXEL_BASE_URL", default_value = "https://localhost:8443/pixel?id=")]
     pixel_base_url: String,
 
     /// Require opt-in header to enable tracking
-    #[arg(long, env("REQUIRE_OPT_IN"), default_value = "false")]
+    #[arg(long, env = "REQUIRE_OPT_IN", default_value = "false")]
     require_opt_in: bool,
 
     /// Header name for opt-in
-    #[arg(long, env("OPT_IN_HEADER"), default_value = "X-Track-Open")]
+    #[arg(long, env = "OPT_IN_HEADER", default_value = "X-Track-Open")]
     opt_in_header: String,
 
     /// Header name for privacy disclosure
-    #[arg(long, env("DISCLOSURE_HEADER"), default_value = "X-Tracking-Notice")]
+    #[arg(long, env = "DISCLOSURE_HEADER", default_value = "X-Tracking-Notice")]
     disclosure_header: String,
 
     /// Add disclosure header to tracked emails
-    #[arg(long, env("INJECT_DISCLOSURE"), default_value = "true")]
+    #[arg(long, env = "INJECT_DISCLOSURE", default_value = "true")]
     inject_disclosure: bool,
 
     /// Data directory for storing tracking information
-    #[arg(long, env("DATA_DIR"), default_value = "/data/pixel")]
+    #[arg(long, env = "DATA_DIR", default_value = "/data/pixel")]
     data_dir: PathBuf,
 
     /// Log level
-    #[arg(long, env("LOG_LEVEL"), default_value = "info")]
+    #[arg(long, env = "LOG_LEVEL", default_value = "info")]
     log_level: String,
 }
 

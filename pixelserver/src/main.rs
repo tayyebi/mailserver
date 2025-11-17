@@ -1,10 +1,10 @@
 use anyhow::{Context, Result};
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, Query},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
-    Json, Router,
+    Extension, Json, Router,
 };
 use axum_server::tls_rustls::RustlsConfig;
 use chrono::{DateTime, Utc};
@@ -171,9 +171,9 @@ fn create_app(state: AppState) -> Router {
         .route("/msg/:id/body", get(message_body_handler))
         .route("/msg/:id/headers", get(message_headers_handler))
         .route("/stats", get(stats_handler))
-        .layer(TraceLayer::new_for_http())
-        .layer(CorsLayer::permissive())
-        .with_state(state)
+        .layer(tower_http::trace::TraceLayer::new_for_http())
+        .layer(tower_http::cors::CorsLayer::permissive())
+        .layer(Extension(state))
 }
 
 async fn status_handler() -> Json<StatusResponse> {
@@ -185,7 +185,7 @@ async fn status_handler() -> Json<StatusResponse> {
     })
 }
 
-async fn health_handler(State(state): State<AppState>) -> Json<HealthResponse> {
+async fn health_handler(Extension(state): Extension<AppState>) -> Json<HealthResponse> {
     let data_dir_exists = state.data_dir.exists();
     let data_dir_writable = state.data_dir.metadata()
         .map(|m| !m.permissions().readonly())
@@ -204,7 +204,7 @@ async fn health_handler(State(state): State<AppState>) -> Json<HealthResponse> {
 async fn pixel_handler(
     Query(params): Query<PixelQuery>,
     headers: HeaderMap,
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
 ) -> Response {
     let client_ip = extract_client_ip(&headers);
     let user_agent = extract_user_agent(&headers);
@@ -239,7 +239,7 @@ async fn pixel_handler(
 
 async fn message_meta_handler(
     Path(id): Path<String>,
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
 ) -> Result<Json<MessageMetadata>, (StatusCode, Json<ErrorResponse>)> {
     if !is_valid_message_id(&id) {
         return Err((
@@ -292,7 +292,7 @@ async fn message_meta_handler(
 
 async fn message_body_handler(
     Path(id): Path<String>,
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
 ) -> Result<String, (StatusCode, String)> {
     if !is_valid_message_id(&id) {
         return Err((StatusCode::BAD_REQUEST, "Invalid message ID format".to_string()));
@@ -315,7 +315,7 @@ async fn message_body_handler(
 
 async fn message_headers_handler(
     Path(id): Path<String>,
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
 ) -> Result<String, (StatusCode, String)> {
     if !is_valid_message_id(&id) {
         return Err((StatusCode::BAD_REQUEST, "Invalid message ID format".to_string()));
@@ -336,7 +336,7 @@ async fn message_headers_handler(
     }
 }
 
-async fn stats_handler(State(state): State<AppState>) -> Json<serde_json::Value> {
+async fn stats_handler(Extension(state): Extension<AppState>) -> Json<serde_json::Value> {
     let stats = state.stats.read().await;
     let computed_stats = stats.compute_stats(&state.data_dir).await;
     Json(computed_stats)
