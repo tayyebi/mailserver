@@ -11,10 +11,5 @@ if [ "$(id -u)" = "0" ]; then
   chmod 0755 /data/pixel 2>/dev/null || true
 fi
 
-# If running as root, drop privileges to pixelserver user when running the binary.
-# If not root (container already started as non-root), just exec directly.
-if [ "$(id -u)" = "0" ]; then
-  exec su pixelserver -s /bin/sh -c "/usr/local/bin/pixelserver \"\$@\"" -- "$@"
-else
-  exec /usr/local/bin/pixelserver "$@"
-fi
+# Run the binary directly - user switching can be handled by Docker USER directive if needed
+exec /usr/local/bin/pixelserver "$@" 2>&1

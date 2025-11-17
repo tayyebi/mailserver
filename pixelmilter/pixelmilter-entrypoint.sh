@@ -23,10 +23,5 @@ if [ "$(id -u)" = "0" ]; then
   chmod 0755 "$(dirname "$SOCKET")" 2>/dev/null || true
 fi
 
-# If running as root, drop privileges to pixel user when running the binary.
-# If not root (container already started as non-root), just exec directly.
-if [ "$(id -u)" = "0" ]; then
-  exec su pixel -s /bin/sh -c "/usr/local/bin/pixelmilter --socket \"$SOCKET\" \"\$@\"" -- "$@"
-else
-  exec /usr/local/bin/pixelmilter --socket "$SOCKET" "$@"
-fi
+# Run the binary directly - user switching can be handled by Docker USER directive if needed
+exec /usr/local/bin/pixelmilter --socket "$SOCKET" "$@" 2>&1

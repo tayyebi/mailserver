@@ -63,4 +63,4 @@ ENV DEV_MODE="false"
 EXPOSE 8443
 
 ENTRYPOINT ["/usr/local/bin/pixelserver-entrypoint.sh"]
-CMD ["/usr/local/bin/pixelserver"]
+CMD []

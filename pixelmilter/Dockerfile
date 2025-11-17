@@ -61,4 +61,4 @@ ENV LOG_LEVEL="info"
 ENV PIXEL_MILTER_SOCKET="/var/run/pixelmilter/pixel.sock"
 
 ENTRYPOINT ["/usr/local/bin/pixelmilter-entrypoint.sh"]
-CMD ["/usr/local/bin/pixelmilter"]
+CMD []

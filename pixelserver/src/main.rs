@@ -12,7 +12,7 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path as FsPath, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
@@ -122,7 +122,7 @@ impl AppState {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args = Args::parse();
+    let mut args = Args::parse();
 
     setup_logging(&args.log_level)?;
 
@@ -131,6 +131,18 @@ async fn main() -> Result<()> {
     info!("Bind Address: {}", args.bind_address);
     info!("TLS Cert: {:?}", args.tls_cert);
     info!("TLS Key: {:?}", args.tls_key);
+
+    let mut use_tls = !args.dev_mode;
+    if use_tls && !tls_assets_available(&args.tls_cert, &args.tls_key) {
+        warn!(
+            cert = ?args.tls_cert,
+            key = ?args.tls_key,
+            "TLS certificate or key not found or not a regular file; falling back to development (HTTP) mode"
+        );
+        use_tls = false;
+        args.dev_mode = true;
+    }
+
     info!("Development Mode: {}", args.dev_mode);
 
     // Ensure data directory exists
@@ -141,7 +153,7 @@ async fn main() -> Result<()> {
 
     let app = create_app(state);
 
-    if args.dev_mode {
+    if !use_tls {
         info!("Starting server in development mode (HTTP)");
         axum::Server::bind(&args.bind_address)
             .serve(app.into_make_service())
@@ -450,4 +462,12 @@ fn setup_logging(level: &str) -> Result<()> {
         .init();
 
     Ok(())
+}
+
+fn tls_assets_available(cert: &PathBuf, key: &PathBuf) -> bool {
+    fn is_regular_file(path: &FsPath) -> bool {
+        path.is_file()
+    }
+
+    is_regular_file(cert.as_path()) && is_regular_file(key.as_path())
 }
