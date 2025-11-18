@@ -77,8 +77,9 @@ impl Default for MilterOptions {
             protocol_version: SMFI_VERSION, // SMFI_VERSION - Current protocol version
             // For now, accept all actions by default
             action_flags: SMFIF_ADDHDRS | SMFIF_CHGHDRS | SMFIF_ADDRCPT | SMFIF_DELRCPT | SMFIF_CHGBODY | SMFIF_QUARANTINE,
-            // For now, accept all steps by default
-            step_flags: SMFIP_NOCONNECT | SMFIP_NOHELO | SMFIP_NOMAIL | SMFIP_NORCPT | SMFIP_NOBODY | SMFIP_NOHEADERS | SMFIP_NOEOH | SMFIP_NOURI | SMFIP_SKIP | SMFIP_REC_ONLY,
+            // Process all steps - don't skip any email processing steps
+            // Set to 0 to allow all protocol steps (CONNECT, HELO, MAIL, RCPT, HEADERS, BODY, EOM)
+            step_flags: 0,
         }
     }
 }
