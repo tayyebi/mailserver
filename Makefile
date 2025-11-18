@@ -576,25 +576,22 @@ send:
 		exit 1; \
 	fi; \
 	echo "Sending email from $$FROM to $(TO)..."; \
-	if command -v swaks >/dev/null 2>&1; then \
-		swaks \
-			--server 127.0.0.1 \
-			--port 587 \
-			--from "$$FROM" \
-			--to "$(TO)" \
-			--auth-user "$$SUBMISSION_USER" \
-			--auth-password "$$SUBMISSION_PASS" \
-			--tls \
-			--header "Subject: $$SUBJECT" \
-			--body "This is a test email sent from the mailserver.\n\nSent at: $$(date)\nFrom: $$FROM\nTo: $(TO)" || \
-		(echo "Failed to send email. Check logs with: make logs" && exit 1); \
+	# Use swaks from postfix container to ensure TLS support \
+	if $(DOCKER_COMPOSE) exec -T postfix swaks \
+		--server 127.0.0.1 \
+		--port 587 \
+		--from "$$FROM" \
+		--to "$(TO)" \
+		--auth-user "$$SUBMISSION_USER" \
+		--auth-password "$$SUBMISSION_PASS" \
+		--tls \
+		--header "Subject: $$SUBJECT" \
+		--body "This is a test email sent from the mailserver.\n\nSent at: $$(date)\nFrom: $$FROM\nTo: $(TO)" 2>&1 | grep -q "queued as"; then \
+		echo "✓ Email sent successfully"; \
 	else \
-		echo "ERROR: swaks is not installed. Install it with: apt install swaks"; \
-		echo "Alternatively, you can send email using sendmail:"; \
-		echo "  docker compose exec postfix sendmail -f $$FROM $(TO) < email.txt"; \
+		echo "Failed to send email. Check logs with: make logs"; \
 		exit 1; \
-	fi; \
-	echo "✓ Email sent successfully"
+	fi
 
 backup-dkim:
 	@tar czf dkim-backup-$$\(date +%Y%m%d_%H%M%S\).tgz -C data/opendkim keys
