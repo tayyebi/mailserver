@@ -41,7 +41,9 @@ smtpd_sasl_path=inet:${DOVECOT_IP}:${DOVECOT_AUTH_PORT}
 # Milter (DKIM + Pixel Tracking)
 milter_default_action = accept
 milter_protocol = 6
-smtpd_milters = inet:${OPENDKIM_IP}:8891,inet:${PIXEL_MILTER_IP}:8892
+# smtpd_milters: for incoming mail (DKIM signing only, no pixel tracking)
+smtpd_milters = inet:${OPENDKIM_IP}:8891
+# non_smtpd_milters: for outgoing mail (DKIM signing + pixel tracking + footer injection)
 non_smtpd_milters = inet:${OPENDKIM_IP}:8891,inet:${PIXEL_MILTER_IP}:8892
 
 # Virtual delivery via Dovecot LMTP
