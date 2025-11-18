@@ -68,6 +68,11 @@ certs:
 
 certs-force:
 	@mkdir -p data/ssl
+	# Prevent ssl/key.pem and ssl/cert.pem from being directories
+	[ -d ssl/key.pem ] && sudo rm -rf ssl/key.pem || true
+	[ -d ssl/cert.pem ] && sudo rm -rf ssl/cert.pem || true
+	[ -d data/ssl/key.pem ] && sudo rm -rf data/ssl/key.pem || true
+	[ -d data/ssl/cert.pem ] && sudo rm -rf data/ssl/cert.pem || true
 	@CN="$${MAIL_HOST:-localhost}"; \
 	 echo "[$$(date -u)] Generating TLS cert for CN=$$CN"; \
 	 openssl req -x509 -nodes -newkey rsa:2048 -sha256 \
@@ -283,15 +288,18 @@ fix-ownerships:
 	@echo ""
 	@echo "This command requires sudo privileges to change ownership."
 	@echo ""
-	@# Get UIDs/GIDs from running containers or use defaults
-	@DOVECOT_UID=$$(docker compose exec -T dovecot id -u dovecot 2>/dev/null || echo "100"); \
-	DOVECOT_GID=$$(docker compose exec -T dovecot id -g dovecot 2>/dev/null || echo "102"); \
-	POSTFIX_UID=$$(docker compose exec -T postfix id -u postfix 2>/dev/null || echo "100"); \
-	POSTFIX_GID=$$(docker compose exec -T postfix id -g postfix 2>/dev/null || echo "102"); \
-	PIXEL_UID=$$(docker compose exec -T pixelmilter id -u pixel 2>/dev/null || echo "999"); \
-	PIXEL_GID=$$(docker compose exec -T pixelmilter id -g pixel 2>/dev/null || echo "999"); \
-	PIXELSERVER_UID=$$(docker compose exec -T pixelserver id -u pixelserver 2>/dev/null || echo "999"); \
-	PIXELSERVER_GID=$$(docker compose exec -T pixelserver id -g pixelserver 2>/dev/null || echo "999"); \
+       # Get UIDs/GIDs from running containers if available, else fallback to defaults
+       if [ ! -f .container_uids.mk ]; then \
+	       echo 'DOVECOT_UID:='`docker compose exec -T dovecot id -u dovecot 2>/dev/null || echo 1000` > .container_uids.mk; \
+	       echo 'DOVECOT_GID:='`docker compose exec -T dovecot id -g dovecot 2>/dev/null || echo 1000` >> .container_uids.mk; \
+	       echo 'POSTFIX_UID:='`docker compose exec -T postfix id -u postfix 2>/dev/null || echo 1000` >> .container_uids.mk; \
+	       echo 'POSTFIX_GID:='`docker compose exec -T postfix id -g postfix 2>/dev/null || echo 1000` >> .container_uids.mk; \
+	       echo 'PIXEL_UID:='`docker compose exec -T pixelmilter id -u pixel 2>/dev/null || echo 1000` >> .container_uids.mk; \
+	       echo 'PIXEL_GID:='`docker compose exec -T pixelmilter id -g pixel 2>/dev/null || echo 1000` >> .container_uids.mk; \
+	       echo 'PIXELSERVER_UID:='`docker compose exec -T pixelserver id -u pixelserver 2>/dev/null || echo 1000` >> .container_uids.mk; \
+	       echo 'PIXELSERVER_GID:='`docker compose exec -T pixelserver id -g pixelserver 2>/dev/null || echo 1000` >> .container_uids.mk; \
+       fi; \
+       . ./.container_uids.mk; \
 	echo "Detected UIDs/GIDs:"; \
 	echo "  dovecot:   uid=$$DOVECOT_UID gid=$$DOVECOT_GID"; \
 	echo "  postfix:   uid=$$POSTFIX_UID gid=$$POSTFIX_GID"; \
@@ -313,25 +321,30 @@ fix-ownerships:
 		sudo chown $$POSTFIX_UID:$$POSTFIX_GID data/logs/postfix.log 2>/dev/null || true; \
 		sudo chmod 644 data/logs/postfix.log 2>/dev/null || true; \
 	fi; \
-	echo "Fixing SSL certificates ownership..."; \
-	# Ensure host-side SSL files are owned by root so bind-mounts present root-owned files inside containers
-	sudo chown -R root:root ssl 2>/dev/null || echo "  ⚠ Could not change ownership of ssl (may need manual fix)"; \
-	sudo chmod 755 ssl 2>/dev/null || true; \
-	if [ -f ssl/cert.pem ]; then \
-		sudo chown root:root ssl/cert.pem 2>/dev/null || true; \
-		sudo chmod 644 ssl/cert.pem 2>/dev/null || true; \
-	fi; \
-	if [ -f ssl/key.pem ]; then \
-		sudo chown root:root ssl/key.pem 2>/dev/null || true; \
-		sudo chmod 600 ssl/key.pem 2>/dev/null || true; \
-	fi; \
-	if [ -d ssl/opendkim ]; then \
-		sudo chown -R root:root ssl/opendkim 2>/dev/null || true; \
-		sudo chmod 755 ssl/opendkim 2>/dev/null || true; \
-		if [ -d ssl/opendkim/keys ]; then \
-			sudo chmod -R 755 ssl/opendkim/keys 2>/dev/null || true; \
-		fi; \
-	fi; \
+       echo "Fixing SSL certificates ownership..."; \
+       # Remove ssl/key.pem and ssl/cert.pem if they are directories (should only be files)
+       [ -d ssl/key.pem ] && sudo rm -rf ssl/key.pem || true; \
+       [ -d ssl/cert.pem ] && sudo rm -rf ssl/cert.pem || true; \
+       [ -d data/ssl/key.pem ] && sudo rm -rf data/ssl/key.pem || true; \
+       [ -d data/ssl/cert.pem ] && sudo rm -rf data/ssl/cert.pem || true; \
+       # Ensure host-side SSL files are owned by root so bind-mounts present root-owned files inside containers
+       sudo chown -R root:root ssl 2>/dev/null || echo "  ⚠ Could not change ownership of ssl (may need manual fix)"; \
+       sudo chmod 755 ssl 2>/dev/null || true; \
+       if [ -f ssl/cert.pem ]; then \
+	       sudo chown root:root ssl/cert.pem 2>/dev/null || true; \
+	       sudo chmod 644 ssl/cert.pem 2>/dev/null || true; \
+       fi; \
+       if [ -f ssl/key.pem ]; then \
+	       sudo chown root:root ssl/key.pem 2>/dev/null || true; \
+	       sudo chmod 600 ssl/key.pem 2>/dev/null || true; \
+       fi; \
+       if [ -d ssl/opendkim ]; then \
+	       sudo chown -R root:root ssl/opendkim 2>/dev/null || true; \
+	       sudo chmod 755 ssl/opendkim 2>/dev/null || true; \
+	       if [ -d ssl/opendkim/keys ]; then \
+		       sudo chmod -R 755 ssl/opendkim/keys 2>/dev/null || true; \
+	       fi; \
+       fi; \
 	# Also ensure any generated certs under data/ssl are owned correctly
 	if [ -d data/ssl ]; then \
 		sudo chown -R root:root data/ssl 2>/dev/null || true; \
@@ -341,11 +354,14 @@ fix-ownerships:
 			sudo chmod 600 data/ssl/key.pem 2>/dev/null || true; \
 		fi; \
 	fi; \
-	echo "Fixing dovecot/passwd ownership..."; \
-	if [ -f dovecot/passwd ]; then \
-		sudo chown $$DOVECOT_UID:$$DOVECOT_GID dovecot/passwd 2>/dev/null || echo "  ⚠ Could not change ownership of dovecot/passwd (may need manual fix)"; \
-		sudo chmod 640 dovecot/passwd 2>/dev/null || true; \
-	fi; \
+       echo "Fixing dovecot/passwd permissions..."; \
+       if [ -f dovecot/passwd ]; then \
+	       sudo chmod 644 dovecot/passwd 2>/dev/null || true; \
+	       if ! sudo test -r dovecot/passwd; then \
+		       echo "  ⚠ dovecot/passwd is not readable, attempting to fix ownership..."; \
+		       sudo chown $${DOVECOT_UID:-100}:$${DOVECOT_GID:-102} dovecot/passwd 2>/dev/null || true; \
+	       fi; \
+       fi; \
 	echo "Fixing postfix/resolv.conf ownership..."; \
 	if [ -f postfix/resolv.conf ]; then \
 		sudo chown root:root postfix/resolv.conf 2>/dev/null || echo "  ⚠ Could not change ownership of postfix/resolv.conf (may need manual fix)"; \
