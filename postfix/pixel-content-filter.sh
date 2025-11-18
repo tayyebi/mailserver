@@ -12,7 +12,7 @@ ARGS=(
     --disclosure-header "${DISCLOSURE_HEADER:-X-Tracking-Notice}"
     --data-dir "${DATA_DIR:-/data/pixel}"
     --footer-html-file "${FOOTER_HTML_FILE:-/opt/pixelmilter/domain-wide-footer.html}"
-    --log-level "${LOG_LEVEL:-info}"
+    --log-level "${LOG_LEVEL:-warn}"
 )
 
 # Add boolean flags only if they are true
