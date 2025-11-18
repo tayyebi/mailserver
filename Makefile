@@ -627,10 +627,10 @@ reports:
 			OPEN_COUNT=$$(jq -r '.open_count' $$f 2>/dev/null || echo "0"); \
 			FIRST_OPEN=$$(jq -r '.first_open_str // "never"' $$f 2>/dev/null || echo "never"); \
 		else \
-			SENDER=$$(grep -o '"sender":"[^"]*"' $$f 2>/dev/null | cut -d'"' -f4 || echo "unknown"); \
-			OPENED=$$(grep -o '"opened":[^,}]*' $$f 2>/dev/null | cut -d':' -f2 | tr -d ' ' || echo "false"); \
-			OPEN_COUNT=$$(grep -o '"open_count":[^,}]*' $$f 2>/dev/null | cut -d':' -f2 | tr -d ' ' || echo "0"); \
-			FIRST_OPEN=$$(grep -o '"first_open_str":"[^"]*"' $$f 2>/dev/null | cut -d'"' -f4 || echo "never"); \
+			SENDER=$$(grep -o '"sender"[[:space:]]*:[[:space:]]*"[^"]*"' $$f 2>/dev/null | sed 's/.*"sender"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || echo "unknown"); \
+			OPENED=$$(grep -o '"opened"[[:space:]]*:[[:space:]]*[^,}]*' $$f 2>/dev/null | sed 's/.*"opened"[[:space:]]*:[[:space:]]*\([^,}]*\).*/\1/' | tr -d ' ' || echo "false"); \
+			OPEN_COUNT=$$(grep -o '"open_count"[[:space:]]*:[[:space:]]*[0-9]*' $$f 2>/dev/null | sed 's/.*"open_count"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/' || echo "0"); \
+			FIRST_OPEN=$$(grep -o '"first_open_str"[[:space:]]*:[[:space:]]*"[^"]*"' $$f 2>/dev/null | sed 's/.*"first_open_str"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || echo "never"); \
 		fi; \
 		echo "  $$COUNT. $$ID"; \
 		echo "     Sender: $$SENDER | Opened: $$OPENED ($$OPEN_COUNT times) | First: $$FIRST_OPEN"; \
