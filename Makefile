@@ -33,7 +33,7 @@ help:
 	@echo "  make queue-status					  Display emails in queue"
 	@echo "  make queue-flush					   Flush email queue"
 	@echo "  make outbound-status				   Display last outbound emails status"
-	@echo "  make send TO=addr [FROM=addr] [SUBJECT=...]  Send test email (uses password from .env)"
+	@echo "  make send TO=addr [FROM=addr] [SUBJECT=...]  Send test email (reads password from passwd or .env)"
 	@echo ""
 	@echo "Pixel Tracking Commands:"
 	@echo "  make build-rust						Build Rust pixel tracking components"
@@ -544,13 +544,34 @@ send:
 	@FROM="$${FROM:-postmaster@$${MAIL_DOMAIN:-localhost}}"
 	@SUBJECT="$${SUBJECT:-Test Email from Mailserver}"
 	@SUBMISSION_USER="$${SUBMISSION_USER:-$$FROM}"
-	@SUBMISSION_PASS="$${SUBMISSION_PASS:-}"
-	@if [ -z "$$SUBMISSION_PASS" ] && [ -f .env ]; then \
+	@SUBMISSION_PASS="$${SUBMISSION_PASS:-}"; \
+	# Try to read password from passwd file first \
+	if [ -z "$$SUBMISSION_PASS" ] && [ -f data/dovecot/passwd ]; then \
+		PASSWD_ENTRY=$$(grep "^$$SUBMISSION_USER:" data/dovecot/passwd 2>/dev/null || echo ""); \
+		if [ -n "$$PASSWD_ENTRY" ]; then \
+			PASSWD_TYPE=$$(echo "$$PASSWD_ENTRY" | cut -d':' -f2 | cut -d'}' -f1 | tr -d '{'); \
+			if [ "$$PASSWD_TYPE" = "PLAIN" ]; then \
+				SUBMISSION_PASS=$$(echo "$$PASSWD_ENTRY" | cut -d':' -f2- | sed 's/{PLAIN}//'); \
+				echo "Using password from data/dovecot/passwd for $$SUBMISSION_USER"; \
+			else \
+				echo "WARNING: Password for $$SUBMISSION_USER is hashed ($$PASSWD_TYPE) in passwd file."; \
+				echo "Cannot extract plain password. Falling back to .env file..."; \
+			fi; \
+		fi; \
+	fi; \
+	# Fall back to .env file if password not found in passwd \
+	if [ -z "$$SUBMISSION_PASS" ] && [ -f .env ]; then \
 		SUBMISSION_PASS=$$(grep "^SUBMISSION_PASS=" .env 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'" || echo ""); \
 	fi; \
+	# Final check \
 	if [ -z "$$SUBMISSION_PASS" ]; then \
-		echo "ERROR: SUBMISSION_PASS not found in .env file"; \
-		echo "Please add SUBMISSION_PASS=yourpassword to .env file"; \
+		echo "ERROR: Password not found for $$SUBMISSION_USER"; \
+		echo ""; \
+		echo "Options:"; \
+		echo "  1. Add user with plain password: make add-user USER=$$SUBMISSION_USER PASS=yourpassword"; \
+		echo "     (Note: Use {PLAIN} format in data/dovecot/passwd for SMTP auth)"; \
+		echo "  2. Or set SUBMISSION_PASS=yourpassword in .env file"; \
+		echo "  3. Or pass password directly: make send TO=... FROM=... SUBMISSION_PASS=..."; \
 		exit 1; \
 	fi; \
 	echo "Sending email from $$FROM to $(TO)..."; \
