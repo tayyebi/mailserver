@@ -52,6 +52,18 @@ validate:
 	@command -v docker >/dev/null || (echo "ERROR: Missing docker (required for containers)" && exit 1)
 	@$(DOCKER_COMPOSE) version >/dev/null 2>&1 || (echo "ERROR: Missing docker-compose or 'docker compose' (required for orchestration)" && exit 1)
 	@echo "✓ All required dependencies present"
+	@echo ""
+	@echo "Checking permissions..."
+	@if [ -w /root ] 2>/dev/null || [ "$$(id -u)" = "0" ]; then \
+		echo "✓ Running as root - sudo not needed"; \
+	elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then \
+		echo "✓ Sudo available and passwordless access configured"; \
+	elif command -v sudo >/dev/null 2>&1; then \
+		echo "⚠ Sudo available but may require password (some commands may prompt)"; \
+	else \
+		echo "⚠ Sudo not available - some commands may fail if root privileges are needed"; \
+	fi
+	@echo ""
 	@echo "Optional tools:"
 	@command -v swaks >/dev/null && echo "✓ swaks (for email testing)" || echo "⚠ swaks missing (install for email testing: apt install swaks)"
 	@command -v jq >/dev/null && echo "✓ jq (for JSON parsing)" || echo "⚠ jq missing (install for better reports: apt install jq)"
@@ -283,19 +295,20 @@ certs:
 
 certs-force:
 	@mkdir -p data/ssl
-	# Prevent ssl/key.pem and ssl/cert.pem from being directories
-	[ -d ssl/key.pem ] && sudo rm -rf ssl/key.pem || true
-	[ -d ssl/cert.pem ] && sudo rm -rf ssl/cert.pem || true
-	[ -d data/ssl/key.pem ] && sudo rm -rf data/ssl/key.pem || true
-	[ -d data/ssl/cert.pem ] && sudo rm -rf data/ssl/cert.pem || true
-	@CN="$${MAIL_HOST:-localhost}"; \
-	 echo "[$$(date -u)] Generating TLS cert for CN=$$CN"; \
-	 openssl req -x509 -nodes -newkey rsa:2048 -sha256 \
+	@SUDO_CMD=$$(if [ "$$(id -u)" = "0" ] 2>/dev/null; then echo ""; elif command -v sudo >/dev/null 2>&1; then echo "sudo"; else echo ""; fi); \
+	# Prevent ssl/key.pem and ssl/cert.pem from being directories; \
+	[ -d ssl/key.pem ] && $$SUDO_CMD rm -rf ssl/key.pem || true; \
+	[ -d ssl/cert.pem ] && $$SUDO_CMD rm -rf ssl/cert.pem || true; \
+	[ -d data/ssl/key.pem ] && $$SUDO_CMD rm -rf data/ssl/key.pem || true; \
+	[ -d data/ssl/cert.pem ] && $$SUDO_CMD rm -rf data/ssl/cert.pem || true; \
+	CN="$${MAIL_HOST:-localhost}"; \
+	echo "[$$(date -u)] Generating TLS cert for CN=$$CN"; \
+	openssl req -x509 -nodes -newkey rsa:2048 -sha256 \
 		   -subj "/CN=$$CN" \
 		   -addext "subjectAltName=DNS:$$CN" \
-		   -keyout data/ssl/key.pem -out data/ssl/cert.pem -days 365
-	@chmod 600 data/ssl/key.pem
-	@chmod 644 data/ssl/cert.pem
+		   -keyout data/ssl/key.pem -out data/ssl/cert.pem -days 365; \
+	$$SUDO_CMD chmod 600 data/ssl/key.pem 2>/dev/null || chmod 600 data/ssl/key.pem; \
+	$$SUDO_CMD chmod 644 data/ssl/cert.pem 2>/dev/null || chmod 644 data/ssl/cert.pem
 
 
 # Add or update a user's password in data/dovecot/passwd
@@ -668,18 +681,21 @@ update-config:
 fix-ownerships:
 	@echo "Fixing ownerships of directories and files..."
 	@echo ""
-	@echo "This command requires sudo privileges to change ownership."
-	@echo ""
+	@if [ "$$(id -u)" != "0" ] 2>/dev/null && ! command -v sudo >/dev/null 2>&1; then \
+		echo "⚠ Warning: Not running as root and sudo not available."; \
+		echo "  Some operations may fail if root privileges are required."; \
+		echo ""; \
+	fi
 	# Get UIDs/GIDs from running containers if available, else fallback to defaults
 	if [ ! -f .container_uids.mk ]; then \
-	       echo 'DOVECOT_UID:='`docker compose exec -T dovecot id -u dovecot 2>/dev/null || echo 1000` > .container_uids.mk; \
-	       echo 'DOVECOT_GID:='`docker compose exec -T dovecot id -g dovecot 2>/dev/null || echo 1000` >> .container_uids.mk; \
-	       echo 'POSTFIX_UID:='`docker compose exec -T postfix id -u postfix 2>/dev/null || echo 1000` >> .container_uids.mk; \
-	       echo 'POSTFIX_GID:='`docker compose exec -T postfix id -g postfix 2>/dev/null || echo 1000` >> .container_uids.mk; \
-	       echo 'PIXEL_UID:='`docker compose exec -T pixelmilter id -u pixel 2>/dev/null || echo 1000` >> .container_uids.mk; \
-	       echo 'PIXEL_GID:='`docker compose exec -T pixelmilter id -g pixel 2>/dev/null || echo 1000` >> .container_uids.mk; \
-	       echo 'PIXELSERVER_UID:='`docker compose exec -T pixelserver id -u pixelserver 2>/dev/null || echo 1000` >> .container_uids.mk; \
-	       echo 'PIXELSERVER_GID:='`docker compose exec -T pixelserver id -g pixelserver 2>/dev/null || echo 1000` >> .container_uids.mk; \
+	       echo 'DOVECOT_UID:='`$(DOCKER_COMPOSE) exec -T dovecot id -u dovecot 2>/dev/null || echo 1000` > .container_uids.mk; \
+	       echo 'DOVECOT_GID:='`$(DOCKER_COMPOSE) exec -T dovecot id -g dovecot 2>/dev/null || echo 1000` >> .container_uids.mk; \
+	       echo 'POSTFIX_UID:='`$(DOCKER_COMPOSE) exec -T postfix id -u postfix 2>/dev/null || echo 1000` >> .container_uids.mk; \
+	       echo 'POSTFIX_GID:='`$(DOCKER_COMPOSE) exec -T postfix id -g postfix 2>/dev/null || echo 1000` >> .container_uids.mk; \
+	       echo 'PIXEL_UID:='`$(DOCKER_COMPOSE) exec -T pixelmilter id -u pixel 2>/dev/null || echo 1000` >> .container_uids.mk; \
+	       echo 'PIXEL_GID:='`$(DOCKER_COMPOSE) exec -T pixelmilter id -g pixel 2>/dev/null || echo 1000` >> .container_uids.mk; \
+	       echo 'PIXELSERVER_UID:='`$(DOCKER_COMPOSE) exec -T pixelserver id -u pixelserver 2>/dev/null || echo 1000` >> .container_uids.mk; \
+	       echo 'PIXELSERVER_GID:='`$(DOCKER_COMPOSE) exec -T pixelserver id -g pixelserver 2>/dev/null || echo 1000` >> .container_uids.mk; \
 	fi; \
 	. ./.container_uids.mk; \
 	echo "Detected UIDs/GIDs:"; \
@@ -688,59 +704,62 @@ fix-ownerships:
 	echo "  pixel:     uid=$$PIXEL_UID gid=$$PIXEL_GID"; \
 	echo "  pixelserver: uid=$$PIXELSERVER_UID gid=$$PIXELSERVER_GID"; \
 	echo ""; \
+	SUDO_CMD=$$(if [ "$$(id -u)" = "0" ] 2>/dev/null; then echo ""; elif command -v sudo >/dev/null 2>&1; then echo "sudo"; else echo ""; fi); \
 	echo "Fixing data/mail ownership (dovecot)..."; \
-	sudo chown -R $$DOVECOT_UID:$$DOVECOT_GID data/mail 2>/dev/null || echo "  ⚠ Could not change ownership of data/mail (may need manual fix)"; \
+	mkdir -p data/mail 2>/dev/null || true; \
+	$$SUDO_CMD chown -R $$DOVECOT_UID:$$DOVECOT_GID data/mail 2>/dev/null || echo "  ⚠ Could not change ownership of data/mail (may need manual fix)"; \
+	$$SUDO_CMD chmod -R 755 data/mail 2>/dev/null || echo "  ⚠ Could not change permissions of data/mail (may need manual fix)"; \
 	echo "Fixing data/pixel ownership (pixelmilter/pixelserver)..."; \
-	sudo chown -R $$PIXEL_UID:$$PIXEL_GID data/pixel 2>/dev/null || echo "  ⚠ Could not change ownership of data/pixel (may need manual fix)"; \
+	$$SUDO_CMD chown -R $$PIXEL_UID:$$PIXEL_GID data/pixel 2>/dev/null || echo "  ⚠ Could not change ownership of data/pixel (may need manual fix)"; \
 	echo "Fixing data/logs ownership..."; \
-	sudo chown -R root:root data/logs 2>/dev/null || echo "  ⚠ Could not change ownership of data/logs (may need manual fix)"; \
-	sudo chmod 755 data/logs 2>/dev/null || true; \
+	$$SUDO_CMD chown -R root:root data/logs 2>/dev/null || echo "  ⚠ Could not change ownership of data/logs (may need manual fix)"; \
+	$$SUDO_CMD chmod 755 data/logs 2>/dev/null || true; \
 	if [ -f data/logs/dovecot.log ]; then \
-		sudo chown $$DOVECOT_UID:$$DOVECOT_GID data/logs/dovecot.log 2>/dev/null || true; \
-		sudo chmod 644 data/logs/dovecot.log 2>/dev/null || true; \
+		$$SUDO_CMD chown $$DOVECOT_UID:$$DOVECOT_GID data/logs/dovecot.log 2>/dev/null || true; \
+		$$SUDO_CMD chmod 644 data/logs/dovecot.log 2>/dev/null || true; \
 	fi; \
 	if [ -f data/logs/postfix.log ]; then \
-		sudo chown $$POSTFIX_UID:$$POSTFIX_GID data/logs/postfix.log 2>/dev/null || true; \
-		sudo chmod 644 data/logs/postfix.log 2>/dev/null || true; \
+		$$SUDO_CMD chown $$POSTFIX_UID:$$POSTFIX_GID data/logs/postfix.log 2>/dev/null || true; \
+		$$SUDO_CMD chmod 644 data/logs/postfix.log 2>/dev/null || true; \
 	fi; \
 	echo "Fixing SSL certificates ownership..."; \
 	# Remove ssl/key.pem and ssl/cert.pem if they are directories (should only be files)
-	[ -d ssl/key.pem ] && sudo rm -rf ssl/key.pem || true; \
-	[ -d ssl/cert.pem ] && sudo rm -rf ssl/cert.pem || true; \
-	[ -d data/ssl/key.pem ] && sudo rm -rf data/ssl/key.pem || true; \
-	[ -d data/ssl/cert.pem ] && sudo rm -rf data/ssl/cert.pem || true; \
+	[ -d ssl/key.pem ] && $$SUDO_CMD rm -rf ssl/key.pem || true; \
+	[ -d ssl/cert.pem ] && $$SUDO_CMD rm -rf ssl/cert.pem || true; \
+	[ -d data/ssl/key.pem ] && $$SUDO_CMD rm -rf data/ssl/key.pem || true; \
+	[ -d data/ssl/cert.pem ] && $$SUDO_CMD rm -rf data/ssl/cert.pem || true; \
 	# Ensure host-side SSL files are owned by root so bind-mounts present root-owned files inside containers
-	sudo chown -R root:root ssl 2>/dev/null || echo "  ⚠ Could not change ownership of ssl (may need manual fix)"; \
-	sudo chmod 755 ssl 2>/dev/null || true; \
+	$$SUDO_CMD chown -R root:root ssl 2>/dev/null || echo "  ⚠ Could not change ownership of ssl (may need manual fix)"; \
+	$$SUDO_CMD chmod 755 ssl 2>/dev/null || true; \
 	if [ -f ssl/cert.pem ]; then \
-	       sudo chown root:root ssl/cert.pem 2>/dev/null || true; \
-	       sudo chmod 644 ssl/cert.pem 2>/dev/null || true; \
+	       $$SUDO_CMD chown root:root ssl/cert.pem 2>/dev/null || true; \
+	       $$SUDO_CMD chmod 644 ssl/cert.pem 2>/dev/null || true; \
 	fi; \
 	if [ -f ssl/key.pem ]; then \
-	       sudo chown root:root ssl/key.pem 2>/dev/null || true; \
-	       sudo chmod 600 ssl/key.pem 2>/dev/null || true; \
+	       $$SUDO_CMD chown root:root ssl/key.pem 2>/dev/null || true; \
+	       $$SUDO_CMD chmod 600 ssl/key.pem 2>/dev/null || true; \
 	fi; \
 	# Also ensure any generated certs under data/ssl are owned correctly
 	if [ -d data/ssl ]; then \
-		sudo chown -R root:root data/ssl 2>/dev/null || true; \
-		sudo chmod -R 755 data/ssl 2>/dev/null || true; \
+		$$SUDO_CMD chown -R root:root data/ssl 2>/dev/null || true; \
+		$$SUDO_CMD chmod -R 755 data/ssl 2>/dev/null || true; \
 		if [ -f data/ssl/key.pem ]; then \
-			sudo chown root:root data/ssl/key.pem 2>/dev/null || true; \
-			sudo chmod 600 data/ssl/key.pem 2>/dev/null || true; \
+			$$SUDO_CMD chown root:root data/ssl/key.pem 2>/dev/null || true; \
+			$$SUDO_CMD chmod 600 data/ssl/key.pem 2>/dev/null || true; \
 		fi; \
 	fi; \
 	echo "Fixing data/dovecot/passwd permissions..."; \
 	if [ -f data/dovecot/passwd ]; then \
-	       sudo chmod 644 data/dovecot/passwd 2>/dev/null || true; \
-	       if ! sudo test -r data/dovecot/passwd; then \
+	       $$SUDO_CMD chmod 644 data/dovecot/passwd 2>/dev/null || true; \
+	       if ! $$SUDO_CMD test -r data/dovecot/passwd; then \
 		       echo "  ⚠ data/dovecot/passwd is not readable, attempting to fix ownership..."; \
-		       sudo chown $${DOVECOT_UID:-100}:$${DOVECOT_GID:-102} data/dovecot/passwd 2>/dev/null || true; \
+		       $$SUDO_CMD chown $${DOVECOT_UID:-100}:$${DOVECOT_GID:-102} data/dovecot/passwd 2>/dev/null || true; \
 	       fi; \
 	fi; \
 	echo "Fixing postfix/resolv.conf ownership..."; \
 	if [ -f postfix/resolv.conf ]; then \
-		sudo chown root:root postfix/resolv.conf 2>/dev/null || echo "  ⚠ Could not change ownership of postfix/resolv.conf (may need manual fix)"; \
-		sudo chmod 644 postfix/resolv.conf 2>/dev/null || true; \
+		$$SUDO_CMD chown root:root postfix/resolv.conf 2>/dev/null || echo "  ⚠ Could not change ownership of postfix/resolv.conf (may need manual fix)"; \
+		$$SUDO_CMD chmod 644 postfix/resolv.conf 2>/dev/null || true; \
 	fi; \
 	echo ""; \
 	echo "✓ Ownership fixes completed!"
