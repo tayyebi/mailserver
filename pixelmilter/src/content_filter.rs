@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::PathBuf;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 use uuid::Uuid;
 
 use crate::pixel_injector::PixelInjector;
