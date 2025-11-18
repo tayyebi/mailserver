@@ -68,7 +68,7 @@ lmtp      unix  -       -       y       -       -       lmtp
 
 # Content filter for pixel tracking (used by submission/smtps)
 pixelcontentfilter unix - n n - - pipe
-  flags=Rq user=pixel argv=/usr/local/bin/pixel-content-filter.sh
+  flags=Rq user=postfix argv=/usr/local/bin/pixel-content-filter.sh
   -o milter_macro_daemon_name=ORIGINATING
 
 # Performance and caching daemons
