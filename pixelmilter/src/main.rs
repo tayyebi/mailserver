@@ -27,9 +27,9 @@ struct Args {
     #[arg(long, env = "PIXEL_BASE_URL", default_value = "https://localhost:8443/pixel?id=")]
     pixel_base_url: String,
 
-    /// Require opt-in header to enable tracking
-    #[arg(long, env = "REQUIRE_OPT_IN", default_value = "false", value_parser = parse_bool)]
-    require_opt_in: bool,
+    /// Require opt-in header to enable tracking (if false, tracking is enabled by default for all emails)
+    #[arg(long, env = "TRACKING_REQUIRES_OPT_IN", default_value = "false", value_parser = parse_bool)]
+    tracking_requires_opt_in: bool,
 
     /// Header name for opt-in
     #[arg(long, env = "OPT_IN_HEADER", default_value = "X-Track-Open")]
@@ -105,7 +105,7 @@ type ConnectionState = Arc<RwLock<HashMap<String, MessageState>>>;
 #[derive(Debug, Clone)]
 struct PixelMilterConfig {
     pixel_base_url: String,
-    require_opt_in: bool,
+    tracking_requires_opt_in: bool,
     opt_in_header: String,
     disclosure_header: String,
     inject_disclosure: bool,
@@ -348,7 +348,7 @@ impl MilterCallbacks for PixelMilter {
             );
 
             // Check for opt-in header
-            if self.config.require_opt_in && name.to_lowercase() == self.config.opt_in_header.to_lowercase() {
+            if self.config.tracking_requires_opt_in && name.to_lowercase() == self.config.opt_in_header.to_lowercase() {
                 let previous_tracking = message.should_track;
                 message.should_track = matches!(value.to_lowercase().as_str(), "yes" | "true" | "1" | "on");
                 info!(
@@ -385,7 +385,7 @@ impl MilterCallbacks for PixelMilter {
 
             // If opt-in is not required, enable tracking by default
             let previous_tracking = message.should_track;
-            if !self.config.require_opt_in {
+            if !self.config.tracking_requires_opt_in {
                 message.should_track = true;
             }
 
@@ -394,7 +394,7 @@ impl MilterCallbacks for PixelMilter {
                 message_id = %message.id,
                 tracking_enabled = message.should_track,
                 previous_tracking = previous_tracking,
-                require_opt_in = self.config.require_opt_in,
+                tracking_requires_opt_in = self.config.tracking_requires_opt_in,
                 header_count = header_count,
                 headers_size = headers_size,
                 "End of headers reached"
@@ -407,7 +407,7 @@ impl MilterCallbacks for PixelMilter {
             // Create a new connection state to handle orphaned events
             let mut connections = self.connections.write().await;
             let mut message = MessageState::new(String::new());
-            if !self.config.require_opt_in {
+            if !self.config.tracking_requires_opt_in {
                 message.should_track = true;
             }
             connections.insert(ctx_id.to_string(), message);
@@ -654,7 +654,7 @@ async fn main() -> Result<()> {
 
     info!("Starting Pixel Milter");
     info!("Pixel Base URL: {}", args.pixel_base_url);
-    info!("Require Opt-in: {}", args.require_opt_in);
+    info!("Tracking requires opt-in: {}", args.tracking_requires_opt_in);
     info!("Data Directory: {:?}", args.data_dir);
 
     // Determine connection type
@@ -720,7 +720,7 @@ async fn main() -> Result<()> {
 
     let config = PixelMilterConfig {
         pixel_base_url: args.pixel_base_url,
-        require_opt_in: args.require_opt_in,
+        tracking_requires_opt_in: args.tracking_requires_opt_in,
         opt_in_header: args.opt_in_header,
         disclosure_header: args.disclosure_header,
         inject_disclosure: args.inject_disclosure,
@@ -746,7 +746,7 @@ async fn main() -> Result<()> {
 
     info!(
         pixel_base_url = %config.pixel_base_url,
-        require_opt_in = config.require_opt_in,
+        tracking_requires_opt_in = config.tracking_requires_opt_in,
         opt_in_header = %config.opt_in_header,
         disclosure_header = %config.disclosure_header,
         inject_disclosure = config.inject_disclosure,

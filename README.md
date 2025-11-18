@@ -76,7 +76,30 @@ make install
 
 ## Pixel Tracking (pixelmilter)
 
-The mailserver includes pixel tracking functionality that injects tracking pixels into HTML emails to track opens.
+The mailserver includes pixel tracking functionality that injects tracking pixels and domain-wide footers into HTML emails to track opens.
+
+### Configuration
+
+Pixel tracking can be configured via environment variables in your `.env` file:
+
+- `TRACKING_REQUIRES_OPT_IN` (default: `false`): If `false`, tracking is enabled by default for all HTML emails. If `true`, tracking only occurs when emails include an opt-in header (see `OPT_IN_HEADER`).
+- `OPT_IN_HEADER` (default: `X-Track-Open`): Header name to check for opt-in when `TRACKING_REQUIRES_OPT_IN=true`.
+- `PIXEL_BASE_URL` (default: `https://${MAIL_HOST}:8443/pixel?id=`): Base URL for tracking pixels.
+- `DISCLOSURE_HEADER` (default: `X-Tracking-Notice`): Header name for privacy disclosure.
+- `INJECT_DISCLOSURE` (default: `true`): Whether to inject disclosure header into tracked emails.
+- `PIXEL_MILTER_ADDRESS` (default: `0.0.0.0:8892`): Address and port for the milter service.
+
+**Example `.env` configuration for domain-wide tracking (default):**
+```bash
+TRACKING_REQUIRES_OPT_IN=false
+PIXEL_BASE_URL=https://mail.gordarg.com/pixel?id=
+```
+
+**Example `.env` configuration for opt-in only tracking:**
+```bash
+TRACKING_REQUIRES_OPT_IN=true
+OPT_IN_HEADER=X-Track-Open
+```
 
 ### Verifying pixelmilter Configuration
 

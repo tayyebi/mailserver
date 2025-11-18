@@ -50,7 +50,7 @@ RUN chmod +x /usr/local/bin/pixelmilter /usr/local/bin/pixelmilter-entrypoint.sh
 
 # Set default environment variables
 ENV PIXEL_BASE_URL="https://localhost:8443/pixel?id="
-ENV REQUIRE_OPT_IN="false"
+ENV TRACKING_REQUIRES_OPT_IN="false"
 ENV OPT_IN_HEADER="X-Track-Open"
 ENV DISCLOSURE_HEADER="X-Tracking-Notice"
 ENV INJECT_DISCLOSURE="true"

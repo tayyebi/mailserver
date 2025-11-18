@@ -152,7 +152,7 @@ services:
     environment:
       - TZ=${TZ}
       - PIXEL_BASE_URL=${PIXEL_BASE_URL:-https://${MAIL_HOST}:8443/pixel?id=}
-      - REQUIRE_OPT_IN=${REQUIRE_OPT_IN:-false}
+      - TRACKING_REQUIRES_OPT_IN=${TRACKING_REQUIRES_OPT_IN:-false}
       - OPT_IN_HEADER=${OPT_IN_HEADER:-X-Track-Open}
       - DISCLOSURE_HEADER=${DISCLOSURE_HEADER:-X-Tracking-Notice}
       - INJECT_DISCLOSURE=${INJECT_DISCLOSURE:-true}
