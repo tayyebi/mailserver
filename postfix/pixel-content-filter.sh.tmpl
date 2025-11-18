@@ -6,10 +6,9 @@ set -euo pipefail
 
 # Build command arguments
 # PIXEL_BASE_URL is substituted at container startup via envsubst
-PIXEL_URL="${PIXEL_BASE_URL}"
 ARGS=(
     --content-filter-mode
-    --pixel-base-url "${PIXEL_URL}"
+    --pixel-base-url "${PIXEL_BASE_URL}"
     --opt-in-header "${OPT_IN_HEADER:-X-Track-Open}"
     --disclosure-header "${DISCLOSURE_HEADER:-X-Tracking-Notice}"
     --data-dir "${DATA_DIR:-/data/pixel}"
