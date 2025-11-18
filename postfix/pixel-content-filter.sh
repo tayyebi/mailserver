@@ -4,8 +4,8 @@
 
 set -euo pipefail
 
-# Debug: Log environment variables (remove in production)
-# echo "DEBUG: PIXEL_BASE_URL=${PIXEL_BASE_URL:-NOT SET}" >&2
+# Debug: Log environment variables to syslog
+echo "DEBUG: PIXEL_BASE_URL=${PIXEL_BASE_URL:-NOT SET}" | logger -t pixel-content-filter
 
 # Build command arguments
 # Use explicit value from environment, fallback to reading from /etc/postfix/environment if needed
