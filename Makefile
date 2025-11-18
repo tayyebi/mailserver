@@ -233,8 +233,7 @@ verify-pixelmilter:
 	fi
 	@echo ""
 	@echo "2. Checking pixelmilter TCP port..."
-	@if $(DOCKER_COMPOSE) exec -T pixelmilter nc -z localhost 8892 2>/dev/null || \
-		$(DOCKER_COMPOSE) exec -T pixelmilter timeout 1 bash -c 'echo > /dev/tcp/localhost/8892' 2>/dev/null; then \
+	@if $(DOCKER_COMPOSE) exec -T pixelmilter timeout 1 bash -c 'echo > /dev/tcp/localhost/8892' 2>/dev/null; then \
 		echo "✓ pixelmilter is listening on port 8892"; \
 	else \
 		echo "⚠ Cannot verify pixelmilter TCP port (may be normal if just started)"; \
@@ -251,18 +250,22 @@ verify-pixelmilter:
 	fi
 	@echo ""
 	@echo "4. Checking Postfix can connect to pixelmilter..."
-	@if $(DOCKER_COMPOSE) exec -T postfix nc -z $${PIXEL_MILTER_IP:-172.18.0.5} 8892 2>/dev/null || \
-		$(DOCKER_COMPOSE) exec -T postfix timeout 1 bash -c "echo > /dev/tcp/$${PIXEL_MILTER_IP:-172.18.0.5}/8892" 2>/dev/null; then \
+	@if $(DOCKER_COMPOSE) exec -T postfix timeout 1 bash -c "echo > /dev/tcp/$${PIXEL_MILTER_IP:-172.18.0.5}/8892" 2>/dev/null; then \
 		echo "✓ Postfix can connect to pixelmilter on TCP port 8892"; \
 	else \
 		echo "⚠ Postfix cannot connect to pixelmilter (check network connectivity)"; \
 	fi
 	@echo ""
 	@echo "5. Checking pixelmilter process..."
-	@if $(DOCKER_COMPOSE) exec -T pixelmilter pgrep -f pixelmilter >/dev/null 2>&1; then \
+	@if $(DOCKER_COMPOSE) exec -T pixelmilter pgrep -f pixelmilter >/dev/null 2>&1 || \
+		($(DOCKER_COMPOSE) exec -T pixelmilter test -f /proc/1/exe 2>/dev/null && \
+		$(DOCKER_COMPOSE) exec -T pixelmilter readlink /proc/1/exe 2>/dev/null | grep -q pixelmilter) || \
+		$(DOCKER_COMPOSE) exec -T pixelmilter cat /proc/1/comm 2>/dev/null | grep -q pixelmilter; then \
 		echo "✓ pixelmilter process is running"; \
 	else \
 		echo "✗ pixelmilter process not found"; \
+		echo "  Checking container logs for errors..."; \
+		$(DOCKER_COMPOSE) logs --tail=20 pixelmilter 2>/dev/null | tail -5 || true; \
 		exit 1; \
 	fi
 	@echo ""
