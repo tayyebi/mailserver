@@ -13,7 +13,7 @@ include .env
 export
 endif
 
-.PHONY: help validate install test send certs certs-force add-user add-domain reload restart logs backup-dkim reports view-reports tail-reports build-rust test-pixel pixel-stats pixel-health pixel-logs pixel-debug verify-pixelmilter update-config
+.PHONY: help validate install test send certs certs-force add-user add-domain reload restart logs backup-dkim reports view-reports tail-reports build-rust test-pixel pixel-stats pixel-health pixel-logs pixel-debug verify-pixelmilter update-config fix-ownerships
 
 help:
 	@echo "Available targets:"
@@ -40,6 +40,7 @@ help:
 	@echo "Configuration Management:"
 	@echo "  make update-config					Rebuild and reload services after config changes"
 	@echo "  make reload							Reload services (use after editing .cf templates)"
+	@echo "  make fix-ownerships					Fix ownerships of directories and files"
 
 validate:
 	@echo "Checking required dependencies..."
@@ -276,3 +277,67 @@ update-config:
 	@echo "Note: If you modified pixelmilter configuration, you may also need to:"
 	@echo "  - Restart pixelmilter: make restart (or docker-compose restart pixelmilter)"
 	@echo "  - Verify configuration: make verify-pixelmilter"
+
+fix-ownerships:
+	@echo "Fixing ownerships of directories and files..."
+	@echo ""
+	@echo "This command requires sudo privileges to change ownership."
+	@echo ""
+	@# Get UIDs/GIDs from running containers or use defaults
+	@DOVECOT_UID=$$(docker compose exec -T dovecot id -u dovecot 2>/dev/null || echo "100"); \
+	DOVECOT_GID=$$(docker compose exec -T dovecot id -g dovecot 2>/dev/null || echo "102"); \
+	POSTFIX_UID=$$(docker compose exec -T postfix id -u postfix 2>/dev/null || echo "100"); \
+	POSTFIX_GID=$$(docker compose exec -T postfix id -g postfix 2>/dev/null || echo "102"); \
+	PIXEL_UID=$$(docker compose exec -T pixelmilter id -u pixel 2>/dev/null || echo "999"); \
+	PIXEL_GID=$$(docker compose exec -T pixelmilter id -g pixel 2>/dev/null || echo "999"); \
+	PIXELSERVER_UID=$$(docker compose exec -T pixelserver id -u pixelserver 2>/dev/null || echo "999"); \
+	PIXELSERVER_GID=$$(docker compose exec -T pixelserver id -g pixelserver 2>/dev/null || echo "999"); \
+	echo "Detected UIDs/GIDs:"; \
+	echo "  dovecot:   uid=$$DOVECOT_UID gid=$$DOVECOT_GID"; \
+	echo "  postfix:   uid=$$POSTFIX_UID gid=$$POSTFIX_GID"; \
+	echo "  pixel:     uid=$$PIXEL_UID gid=$$PIXEL_GID"; \
+	echo "  pixelserver: uid=$$PIXELSERVER_UID gid=$$PIXELSERVER_GID"; \
+	echo ""; \
+	echo "Fixing data/mail ownership (dovecot)..."; \
+	sudo chown -R $$DOVECOT_UID:$$DOVECOT_GID data/mail 2>/dev/null || echo "  ⚠ Could not change ownership of data/mail (may need manual fix)"; \
+	echo "Fixing data/pixel ownership (pixelmilter/pixelserver)..."; \
+	sudo chown -R $$PIXEL_UID:$$PIXEL_GID data/pixel 2>/dev/null || echo "  ⚠ Could not change ownership of data/pixel (may need manual fix)"; \
+	echo "Fixing data/logs ownership..."; \
+	sudo chown -R root:root data/logs 2>/dev/null || echo "  ⚠ Could not change ownership of data/logs (may need manual fix)"; \
+	sudo chmod 755 data/logs 2>/dev/null || true; \
+	if [ -f data/logs/dovecot.log ]; then \
+		sudo chown $$DOVECOT_UID:$$DOVECOT_GID data/logs/dovecot.log 2>/dev/null || true; \
+		sudo chmod 644 data/logs/dovecot.log 2>/dev/null || true; \
+	fi; \
+	if [ -f data/logs/postfix.log ]; then \
+		sudo chown $$POSTFIX_UID:$$POSTFIX_GID data/logs/postfix.log 2>/dev/null || true; \
+		sudo chmod 644 data/logs/postfix.log 2>/dev/null || true; \
+	fi; \
+	echo "Fixing SSL certificates ownership..."; \
+	sudo chown -R root:root ssl 2>/dev/null || echo "  ⚠ Could not change ownership of ssl (may need manual fix)"; \
+	sudo chmod 755 ssl 2>/dev/null || true; \
+	if [ -f ssl/cert.pem ]; then \
+		sudo chmod 644 ssl/cert.pem 2>/dev/null || true; \
+	fi; \
+	if [ -f ssl/key.pem ]; then \
+		sudo chmod 600 ssl/key.pem 2>/dev/null || true; \
+	fi; \
+	if [ -d ssl/opendkim ]; then \
+		sudo chown -R root:root ssl/opendkim 2>/dev/null || true; \
+		sudo chmod 755 ssl/opendkim 2>/dev/null || true; \
+		if [ -d ssl/opendkim/keys ]; then \
+			sudo chmod -R 755 ssl/opendkim/keys 2>/dev/null || true; \
+		fi; \
+	fi; \
+	echo "Fixing dovecot/passwd ownership..."; \
+	if [ -f dovecot/passwd ]; then \
+		sudo chown $$DOVECOT_UID:$$DOVECOT_GID dovecot/passwd 2>/dev/null || echo "  ⚠ Could not change ownership of dovecot/passwd (may need manual fix)"; \
+		sudo chmod 640 dovecot/passwd 2>/dev/null || true; \
+	fi; \
+	echo "Fixing postfix/resolv.conf ownership..."; \
+	if [ -f postfix/resolv.conf ]; then \
+		sudo chown root:root postfix/resolv.conf 2>/dev/null || echo "  ⚠ Could not change ownership of postfix/resolv.conf (may need manual fix)"; \
+		sudo chmod 644 postfix/resolv.conf 2>/dev/null || true; \
+	fi; \
+	echo ""; \
+	echo "✓ Ownership fixes completed!"
