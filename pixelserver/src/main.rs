@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use axum::{
     extract::{Path, Query},
     http::{header, HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    response::{Html, IntoResponse, Response},
     routing::get,
     Extension, Json, Router,
 };
@@ -173,7 +173,7 @@ async fn main() -> Result<()> {
         tokio::spawn(async move {
             // Create reports-only router (only stats and message endpoints, no pixel tracking)
             let reports_app = Router::new()
-                .route("/", get(status_handler))
+                .route("/", get(reports_viewer_handler))
                 .route("/health", get(health_handler))
                 .route("/msg/:id/meta", get(message_meta_handler))
                 .route("/msg/:id/body", get(message_body_handler))
@@ -502,6 +502,10 @@ async fn stats_handler(Extension(state): Extension<AppState>) -> Json<serde_json
     Json(computed_stats)
 }
 
+async fn reports_viewer_handler() -> Html<&'static str> {
+    Html(REPORTS_VIEWER_HTML)
+}
+
 fn serve_pixel_response() -> Response {
     let mut headers = HeaderMap::new();
     headers.insert(header::CONTENT_TYPE, "image/gif".parse().unwrap());
@@ -630,6 +634,398 @@ fn extract_client_ip(headers: &HeaderMap) -> String {
         })
         .unwrap_or_else(|| "unknown".to_string())
 }
+
+const REPORTS_VIEWER_HTML: &str = r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Tracking Reports</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 4px solid #3498db;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .messages-list {
+            margin-top: 30px;
+        }
+        .messages-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .message-item {
+            background: #f8f9fa;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+            border-left: 4px solid #95a5a6;
+        }
+        .message-item:hover {
+            background: #e9ecef;
+            border-left-color: #3498db;
+        }
+        .message-item.opened {
+            border-left-color: #27ae60;
+        }
+        .message-id {
+            font-family: monospace;
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        .message-info {
+            display: flex;
+            gap: 20px;
+            font-size: 14px;
+        }
+        .message-info span {
+            color: #555;
+        }
+        .message-detail {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            display: none;
+        }
+        .message-detail.active {
+            display: block;
+        }
+        .detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .close-btn {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .close-btn:hover {
+            background: #c0392b;
+        }
+        .json-viewer {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        .nav-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .nav-btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .nav-btn:hover {
+            background: #2980b9;
+        }
+        .nav-btn:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Pixel Tracking Reports</h1>
+        <div id="error" class="error" style="display: none;"></div>
+        <div id="loading" class="loading">Loading statistics...</div>
+        
+        <div id="stats-section" style="display: none;">
+            <div class="stats-grid" id="stats-grid"></div>
+            
+            <div class="messages-list">
+                <div class="messages-header">
+                    <h2>Messages</h2>
+                </div>
+                <div id="messages-list"></div>
+            </div>
+            
+            <div id="message-detail" class="message-detail">
+                <div class="detail-header">
+                    <h3 id="detail-title">Message Details</h3>
+                    <button class="close-btn" onclick="closeDetail()">Close</button>
+                </div>
+                <div id="detail-content"></div>
+                <div class="nav-buttons">
+                    <button class="nav-btn" id="prev-btn" onclick="navigateMessage(-1)">← Previous</button>
+                    <button class="nav-btn" id="next-btn" onclick="navigateMessage(1)">Next →</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let statsData = null;
+        let messages = [];
+        let currentMessageIndex = -1;
+
+        async function loadStats() {
+            try {
+                const response = await fetch('/stats');
+                if (!response.ok) throw new Error('Failed to fetch stats');
+                statsData = await response.json();
+                displayStats(statsData);
+                loadMessages();
+            } catch (error) {
+                showError('Failed to load statistics: ' + error.message);
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        function displayStats(data) {
+            const grid = document.getElementById('stats-grid');
+            grid.innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-label">Total Messages</div>
+                    <div class="stat-value">${data.total_messages || 0}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Tracked Messages</div>
+                    <div class="stat-value">${data.tracked_messages || 0}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Opened Messages</div>
+                    <div class="stat-value">${data.opened_messages || 0}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Total Opens</div>
+                    <div class="stat-value">${data.total_opens || 0}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Unique IPs</div>
+                    <div class="stat-value">${data.unique_ips || 0}</div>
+                </div>
+            `;
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('stats-section').style.display = 'block';
+        }
+
+        async function loadMessages() {
+            try {
+                // Get message IDs from recent activity
+                const recentActivity = statsData.recent_activity || [];
+                const messageIds = [...new Set(recentActivity.map(a => a.message_id))];
+                
+                // Load metadata for each message
+                messages = [];
+                for (const id of messageIds) {
+                    try {
+                        const response = await fetch(`/msg/${id}/meta`);
+                        if (response.ok) {
+                            const meta = await response.json();
+                            messages.push({ id, meta });
+                        }
+                    } catch (e) {
+                        console.warn('Failed to load message', id, e);
+                    }
+                }
+                
+                // Sort by creation date (newest first)
+                messages.sort((a, b) => {
+                    const dateA = new Date(a.meta.created || 0);
+                    const dateB = new Date(b.meta.created || 0);
+                    return dateB - dateA;
+                });
+                
+                displayMessages();
+            } catch (error) {
+                console.error('Failed to load messages:', error);
+            }
+        }
+
+        function displayMessages() {
+            const list = document.getElementById('messages-list');
+            if (messages.length === 0) {
+                list.innerHTML = '<p style="color: #666; padding: 20px;">No messages found.</p>';
+                return;
+            }
+            
+            list.innerHTML = messages.map((msg, index) => {
+                const opened = msg.meta.opened ? 'opened' : '';
+                const openCount = msg.meta.open_count || 0;
+                const sender = msg.meta.sender || 'Unknown';
+                const created = msg.meta.created_str || new Date(msg.meta.created).toLocaleString();
+                
+                return `
+                    <div class="message-item ${opened}" onclick="showMessage(${index})">
+                        <div class="message-id">${msg.id}</div>
+                        <div class="message-info">
+                            <span><strong>From:</strong> ${sender}</span>
+                            <span><strong>Created:</strong> ${created}</span>
+                            <span><strong>Opens:</strong> ${openCount}</span>
+                            ${msg.meta.opened ? '<span style="color: #27ae60;">✓ Opened</span>' : '<span style="color: #95a5a6;">Not opened</span>'}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function showMessage(index) {
+            currentMessageIndex = index;
+            const msg = messages[index];
+            const detail = document.getElementById('message-detail');
+            const content = document.getElementById('detail-content');
+            
+            detail.classList.add('active');
+            content.innerHTML = '<div class="loading">Loading message details...</div>';
+            
+            try {
+                const [meta, body, headers] = await Promise.all([
+                    fetch(`/msg/${msg.id}/meta`).then(r => r.json()),
+                    fetch(`/msg/${msg.id}/body`).then(r => r.text()),
+                    fetch(`/msg/${msg.id}/headers`).then(r => r.text())
+                ]);
+                
+                const jsonData = {
+                    metadata: meta,
+                    body: body.substring(0, 1000) + (body.length > 1000 ? '...' : ''),
+                    headers: headers.substring(0, 1000) + (headers.length > 1000 ? '...' : '')
+                };
+                
+                content.innerHTML = `
+                    <div class="json-viewer">${formatJSON(jsonData)}</div>
+                `;
+                
+                updateNavButtons();
+            } catch (error) {
+                content.innerHTML = `<div class="error">Failed to load message details: ${error.message}</div>`;
+            }
+        }
+
+        function formatJSON(obj) {
+            return JSON.stringify(obj, null, 2)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, 
+                    (match) => {
+                        let cls = 'number';
+                        if (/^"/.test(match)) {
+                            if (/:$/.test(match)) {
+                                cls = 'key';
+                            } else {
+                                cls = 'string';
+                            }
+                        } else if (/true|false/.test(match)) {
+                            cls = 'boolean';
+                        } else if (/null/.test(match)) {
+                            cls = 'null';
+                        }
+                        return '<span class="' + cls + '">' + match + '</span>';
+                    });
+        }
+
+        function closeDetail() {
+            document.getElementById('message-detail').classList.remove('active');
+            currentMessageIndex = -1;
+        }
+
+        function navigateMessage(direction) {
+            if (currentMessageIndex === -1) return;
+            const newIndex = currentMessageIndex + direction;
+            if (newIndex >= 0 && newIndex < messages.length) {
+                showMessage(newIndex);
+            }
+        }
+
+        function updateNavButtons() {
+            const prevBtn = document.getElementById('prev-btn');
+            const nextBtn = document.getElementById('next-btn');
+            prevBtn.disabled = currentMessageIndex <= 0;
+            nextBtn.disabled = currentMessageIndex >= messages.length - 1;
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+
+        // Load stats on page load
+        loadStats();
+    </script>
+</body>
+</html>"#;
 
 fn extract_user_agent(headers: &HeaderMap) -> String {
     headers
