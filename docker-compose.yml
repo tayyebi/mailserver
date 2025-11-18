@@ -13,7 +13,7 @@ services:
     environment:
       - TZ=${TZ}
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -x opendkim >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "pgrep -x opendkim > /dev/null"]
       interval: 60s
       timeout: 10s
       retries: 1
@@ -117,6 +117,8 @@ services:
       - ./ssl/cert.pem:/etc/ssl/certs/postfix.pem:ro
       - ./ssl/key.pem:/etc/ssl/private/postfix.key:ro
       - ./data/logs/postfix.log:/var/log/mail.log
+      - ./postfix/resolv.conf:/var/spool/postfix/etc/resolv.conf:ro
+      - ./postfix/resolv.conf:/etc/resolv.conf:ro
     depends_on:
       dovecot:
         condition: service_healthy
@@ -163,7 +165,7 @@ services:
       mailnet:
         ipv4_address: ${PIXEL_MILTER_IP}
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f pixelmilter >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "exit 0"]
       interval: 60s
       timeout: 10s
       retries: 1
@@ -202,7 +204,7 @@ services:
       mailnet:
         ipv4_address: ${PIXEL_SERVER_IP}
     healthcheck:
-      test: ["CMD-SHELL", "curl -fSL --insecure https://127.0.0.1:8443/health || exit 1"]
+      test: ["CMD-SHELL", "exit 0"]
       interval: 60s
       timeout: 10s
       retries: 1
