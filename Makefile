@@ -13,13 +13,14 @@ include .env
 export
 endif
 
-.PHONY: help validate install test send certs certs-force add-user add-domain reload restart logs backup-dkim reports view-reports tail-reports build-rust test-pixel pixel-stats pixel-health pixel-logs pixel-debug verify-pixelmilter update-config fix-ownerships
+.PHONY: help validate install test test-connectivity test-local send certs certs-force add-user add-domain reload restart logs backup-dkim reports view-reports tail-reports build-rust test-pixel pixel-stats pixel-health pixel-logs pixel-debug verify-pixelmilter update-config fix-ownerships
 
 help:
 	@echo "Available targets:"
 	@echo "  make validate						  Check for required binaries"
 	@echo "  make install						   Bootstrap all services and data"
 	@echo "  make test							  Run mailserver health checks"
+	@echo "  make test-local SERVER=.. USER=.. PASS=.. Test SMTP/IMAP from local machine"
 	@echo "  make send TO=addr SUBMISSION_USER=..   Send test email over submission"
 	@echo "  make certs							 Generate TLS certs if missing"
 	@echo "  make certs-force					   Regenerate TLS certs"
@@ -76,10 +77,176 @@ test:
 		|| echo "⚠ SASL auth failed (ensure testuser exists in dovecot/passwd)"
 	@echo "6. pixelmilter health:"
 	@$(MAKE) verify-pixelmilter
-	@echo "7. Log error scan (last 50 lines):"
+	@echo "7. Connectivity and Network Checks:"
+	@$(MAKE) test-connectivity
+	@echo "8. Log error scan (last 50 lines):"
 	@tail -n 50 data/logs/dovecot.log 2>/dev/null | grep -iE 'error|fail|fatal' && echo "⚠ Dovecot log errors found" || echo "✓ Dovecot logs clean"
 	@tail -n 50 data/logs/postfix.log 2>/dev/null | grep -iE 'error|fail|fatal' && echo "⚠ Postfix log errors found" || echo "✓ Postfix logs clean"
 	@echo "\n==[ All health checks complete ]=="
+
+test-connectivity:
+	@echo ""
+	@echo "  a. Checking DNS resolution..."
+	@MAIL_HOST="$${MAIL_HOST:-localhost}"; \
+	if [ "$$MAIL_HOST" != "localhost" ] && [ "$$MAIL_HOST" != "127.0.0.1" ]; then \
+		echo "    Checking DNS for $$MAIL_HOST..."; \
+		if host "$$MAIL_HOST" >/dev/null 2>&1 || getent hosts "$$MAIL_HOST" >/dev/null 2>&1; then \
+			echo "    ✓ DNS resolves for $$MAIL_HOST"; \
+			host "$$MAIL_HOST" 2>/dev/null | head -3 || getent hosts "$$MAIL_HOST" 2>/dev/null | head -1; \
+		else \
+			echo "    ✗ DNS resolution failed for $$MAIL_HOST"; \
+			echo "    ⚠  This may cause external clients to fail connecting"; \
+		fi; \
+	else \
+		echo "    ⚠  MAIL_HOST is localhost - external clients cannot connect"; \
+	fi
+	@echo ""
+	@echo "  b. Checking port binding on host (0.0.0.0 vs 127.0.0.1)..."
+	@for port in 25 587 465 993 143; do \
+		if command -v ss >/dev/null 2>&1; then \
+			BINDING=$$(ss -tlnp 2>/dev/null | grep ":$$port " | head -1); \
+		elif command -v netstat >/dev/null 2>&1; then \
+			BINDING=$$(netstat -tlnp 2>/dev/null | grep ":$$port " | head -1); \
+		else \
+			BINDING=""; \
+		fi; \
+		if [ -n "$$BINDING" ]; then \
+			if echo "$$BINDING" | grep -q "0.0.0.0:$$port\|:::$$port"; then \
+				echo "    ✓ Port $$port is bound to 0.0.0.0 (accessible externally)"; \
+			elif echo "$$BINDING" | grep -q "127.0.0.1:$$port"; then \
+				echo "    ✗ Port $$port is only bound to 127.0.0.1 (NOT accessible externally)"; \
+			else \
+				echo "    ⚠  Port $$port binding: $$BINDING"; \
+			fi; \
+		else \
+			echo "    ✗ Port $$port is not listening on host"; \
+		fi; \
+	done
+	@echo ""
+	@echo "  c. Testing SMTP port connectivity with timeout..."
+	@MAIL_HOST="$${MAIL_HOST:-localhost}"; \
+	for port in 25 587 465; do \
+		echo -n "    Testing port $$port... "; \
+		if timeout 3 bash -c "echo > /dev/tcp/127.0.0.1/$$port" 2>/dev/null; then \
+			echo "✓ Port $$port is reachable on localhost"; \
+		else \
+			echo "✗ Port $$port is NOT reachable on localhost"; \
+		fi; \
+	done
+	@echo ""
+	@echo "  d. Testing SMTP service response (with timeout)..."
+	@MAIL_HOST="$${MAIL_HOST:-localhost}"; \
+	for port in 25 587; do \
+		echo -n "    SMTP port $$port response... "; \
+		RESPONSE=$$(timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/'"$$port"'; echo "QUIT" >&3; cat <&3' 2>/dev/null | head -1 || echo ""); \
+		if echo "$$RESPONSE" | grep -qiE "220|250|354"; then \
+			echo "✓ Service responding ($$(echo $$RESPONSE | tr -d '\r\n' | cut -c1-50))"; \
+		else \
+			if timeout 1 bash -c "echo > /dev/tcp/127.0.0.1/$$port" 2>/dev/null; then \
+				echo "⚠ Port open but no SMTP banner (may be starting up)"; \
+			else \
+				echo "✗ No valid SMTP response (timeout or connection refused)"; \
+			fi; \
+		fi; \
+	done
+	@echo ""
+	@echo "  e. Checking Docker port mappings..."
+	@if $(DOCKER_COMPOSE) ps postfix 2>/dev/null | grep -q "Up"; then \
+		echo "    Postfix container ports:"; \
+		docker port postfix 2>/dev/null | grep -E "25|587|465" || echo "      ⚠  Could not retrieve port mappings"; \
+	else \
+		echo "    ✗ Postfix container is not running"; \
+	fi
+	@if $(DOCKER_COMPOSE) ps dovecot 2>/dev/null | grep -q "Up"; then \
+		echo "    Dovecot container ports:"; \
+		docker port dovecot 2>/dev/null | grep -E "993|143|110|995" || echo "      ⚠  Could not retrieve port mappings"; \
+	else \
+		echo "    ✗ Dovecot container is not running"; \
+	fi
+	@echo ""
+	@echo "  f. Checking firewall rules (if accessible)..."
+	@HAS_BLOCKS=0; \
+	UFW_CHECKED=0; \
+	if command -v ufw >/dev/null 2>&1; then \
+		UFW_STATUS=$$(ufw status 2>/dev/null | head -1 || echo ""); \
+		UFW_CHECKED=1; \
+		if echo "$$UFW_STATUS" | grep -qi "active"; then \
+			echo "    UFW firewall is active:"; \
+			for port in 25 587 465 993 143; do \
+				UFW_RULE=$$(ufw status 2>/dev/null | grep -E "$$port" || true); \
+				if [ -n "$$UFW_RULE" ]; then \
+					echo "      Port $$port: $$UFW_RULE"; \
+				else \
+					echo "      ⚠  Port $$port: No explicit rule (may be blocked by default)"; \
+					HAS_BLOCKS=1; \
+				fi; \
+			done; \
+		else \
+			echo "    ✓ UFW firewall is inactive"; \
+		fi; \
+	fi; \
+	if command -v iptables >/dev/null 2>&1 && ([ -w /proc/sys/net/ipv4/ip_forward ] 2>/dev/null || [ "$$(id -u)" = "0" ]); then \
+		for port in 25 587 465 993 143; do \
+			RULES=$$(iptables -L INPUT -n --line-numbers 2>/dev/null | grep -E "DROP|REJECT.*:$$port" || true); \
+			if [ -n "$$RULES" ]; then \
+				echo "    ⚠  Port $$port may be blocked by iptables:"; \
+				echo "$$RULES" | sed 's/^/      /'; \
+				HAS_BLOCKS=1; \
+			fi; \
+		done; \
+		if [ $$HAS_BLOCKS -eq 0 ] && [ $$UFW_CHECKED -eq 0 ]; then \
+			echo "    ✓ No obvious firewall blocks detected (requires root to check fully)"; \
+		fi; \
+	elif [ $$UFW_CHECKED -eq 0 ]; then \
+		echo "    ⚠  Cannot check firewall rules (requires root or iptables access)"; \
+	fi
+	@echo ""
+	@echo "  g. Testing external connectivity simulation..."
+	@MAIL_HOST="$${MAIL_HOST:-localhost}"; \
+	if [ "$$MAIL_HOST" != "localhost" ] && [ "$$MAIL_HOST" != "127.0.0.1" ]; then \
+		echo "    Testing connection to $$MAIL_HOST:587 (submission)..."; \
+		if timeout 5 bash -c "echo > /dev/tcp/$$MAIL_HOST/587" 2>/dev/null; then \
+			echo "    ✓ Can connect to $$MAIL_HOST:587 via hostname"; \
+		else \
+			echo "    ✗ Cannot connect to $$MAIL_HOST:587 via hostname"; \
+			echo "    ⚠  External clients will likely timeout"; \
+		fi; \
+	else \
+		echo "    ⚠  MAIL_HOST is localhost - skipping external connectivity test"; \
+	fi
+	@echo ""
+	@echo "  h. Checking Postfix network configuration..."
+	@if $(DOCKER_COMPOSE) exec -T postfix postconf inet_interfaces 2>/dev/null | grep -q "all\|0.0.0.0"; then \
+		echo "    ✓ Postfix is configured to listen on all interfaces"; \
+		$(DOCKER_COMPOSE) exec -T postfix postconf inet_interfaces 2>/dev/null | head -1; \
+	else \
+		echo "    ⚠  Postfix inet_interfaces:"; \
+		$(DOCKER_COMPOSE) exec -T postfix postconf inet_interfaces 2>/dev/null | head -1; \
+	fi
+	@if $(DOCKER_COMPOSE) exec -T postfix postconf myhostname 2>/dev/null; then \
+		echo "    Postfix myhostname:"; \
+		$(DOCKER_COMPOSE) exec -T postfix postconf myhostname 2>/dev/null | head -1; \
+	fi
+	@echo ""
+	@echo "  i. Summary and recommendations:"
+	@MAIL_HOST="$${MAIL_HOST:-localhost}"; \
+	ISSUES=0; \
+	if [ "$$MAIL_HOST" = "localhost" ] || [ "$$MAIL_HOST" = "127.0.0.1" ]; then \
+		echo "    ✗ MAIL_HOST is set to localhost - external clients cannot connect"; \
+		ISSUES=$$((ISSUES + 1)); \
+	fi; \
+	if ! timeout 3 bash -c "echo > /dev/tcp/127.0.0.1/587" 2>/dev/null; then \
+		echo "    ✗ Port 587 is not accessible - check Docker port mapping"; \
+		ISSUES=$$((ISSUES + 1)); \
+	fi; \
+	if [ $$ISSUES -eq 0 ]; then \
+		echo "    ✓ Basic connectivity checks passed"; \
+		echo "    ℹ  If clients still timeout, check:"; \
+		echo "       - Firewall rules (ufw/iptables/firewalld)"; \
+		echo "       - Cloud provider security groups"; \
+		echo "       - Router/NAT configuration"; \
+		echo "       - DNS A/AAAA records point to server IP"; \
+	fi
 
 certs:
 	@[ -f data/ssl/cert.pem ] && echo "TLS cert exists" || $(MAKE) certs-force
