@@ -99,6 +99,8 @@ services:
       - DOVECOT_IP=${DOVECOT_IP}
       - DOVECOT_AUTH_PORT=12345
       - DOVECOT_LMTP_PORT=24
+      - OPENDKIM_IP=${OPENDKIM_IP}
+      - PIXEL_MILTER_IP=${PIXEL_MILTER_IP}
     healthcheck:
       test: ["CMD-SHELL", "postfix status | grep -qi running && /usr/local/bin/healthcheck.sh"]
       interval: 60s
