@@ -4,77 +4,64 @@ Postfix content filter reinjection script
 Sends filtered email via SMTP to reinjection service on port 10025
 """
 import sys
-import socket
+import smtplib
+import email
+import email.policy
+from email import message_from_bytes
+
+def extract_email_address(header_value):
+    """Extract email address from header value, handling 'Name <email>' format."""
+    header_value = header_value.strip()
+    # Match email in angle brackets: Name <email@domain.com>
+    import re
+    match = re.search(r'<([^>]+)>', header_value)
+    if match:
+        return match.group(1)
+    # If no angle brackets, use the whole value
+    return header_value.strip()
 
 def main():
     # Read email from stdin
-    email = sys.stdin.read()
+    email_data = sys.stdin.buffer.read()
     
-    # Extract recipient from To header
+    # Parse email to extract headers
+    try:
+        msg = message_from_bytes(email_data, policy=email.policy.default)
+    except Exception as e:
+        sys.stderr.write(f'ERROR: Failed to parse email: {e}\n')
+        sys.exit(1)
+    
+    # Extract sender and recipient
+    from_addr = None
     to_addr = None
-    for line in email.split('\n'):
-        if line.lower().startswith('to:'):
-            to_addr = line.split(':', 1)[1].strip()
-            # Remove angle brackets if present
-            to_addr = to_addr.strip('<>')
-            break
+    
+    if msg['From']:
+        from_addr = extract_email_address(msg['From'])
+    if msg['To']:
+        to_addr = extract_email_address(msg['To'])
     
     if not to_addr:
         sys.stderr.write('ERROR: No To header found\n')
         sys.exit(1)
     
-    # Connect to reinjection service
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect(('127.0.0.1', 10025))
-    except Exception as e:
-        sys.stderr.write(f'ERROR: Failed to connect to 127.0.0.1:10025: {e}\n')
-        sys.exit(1)
+    if not from_addr:
+        from_addr = 'noreply@localhost'
     
+    # Connect to reinjection service using smtplib
     try:
-        # Read initial greeting
-        response = sock.recv(1024)
-        if not response.startswith(b'220'):
-            sys.stderr.write(f'ERROR: No greeting from server: {response}\n')
-            sys.exit(1)
+        # Use SMTP class directly (not SMTP_SSL) since port 10025 doesn't use TLS
+        smtp = smtplib.SMTP('127.0.0.1', 10025, timeout=30)
+        smtp.set_debuglevel(0)  # Set to 1 for debugging
         
-        # Send SMTP commands
-        sock.sendall(b'EHLO localhost\r\n')
-        response = sock.recv(1024)
-        if not response.startswith(b'250'):
-            sys.stderr.write(f'ERROR: EHLO failed: {response}\n')
-            sys.exit(1)
+        # Send email using send_message which handles all SMTP protocol details
+        smtp.send_message(msg, from_addr=from_addr, to_addrs=[to_addr])
+        smtp.quit()
         
-        sock.sendall(b'MAIL FROM:<noreply@localhost>\r\n')
-        response = sock.recv(1024)
-        if not response.startswith(b'250'):
-            sys.stderr.write(f'ERROR: MAIL FROM failed: {response}\n')
-            sys.exit(1)
-        
-        sock.sendall(f'RCPT TO:<{to_addr}>\r\n'.encode())
-        response = sock.recv(1024)
-        if not response.startswith(b'250'):
-            sys.stderr.write(f'ERROR: RCPT TO failed: {response}\n')
-            sys.exit(1)
-        
-        sock.sendall(b'DATA\r\n')
-        response = sock.recv(1024)
-        if not response.startswith(b'354'):
-            sys.stderr.write(f'ERROR: DATA failed: {response}\n')
-            sys.exit(1)
-        
-        # Send email content
-        sock.sendall(email.encode())
-        sock.sendall(b'\r\n.\r\n')
-        response = sock.recv(1024)
-        if not response.startswith(b'250'):
-            sys.stderr.write(f'ERROR: Message send failed: {response}\n')
-            sys.exit(1)
-        
-        sock.sendall(b'QUIT\r\n')
-        sock.close()
-    except Exception as e:
+    except smtplib.SMTPException as e:
         sys.stderr.write(f'ERROR: SMTP error: {e}\n')
+        sys.exit(1)
+    except Exception as e:
+        sys.stderr.write(f'ERROR: Unexpected error: {e}\n')
         sys.exit(1)
 
 if __name__ == '__main__':
