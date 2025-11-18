@@ -82,7 +82,7 @@ pixelcontentfilter unix - n n - - pipe
   flags=Rq user=nobody argv=/usr/local/bin/pixel-content-filter.sh
   -o milter_macro_daemon_name=ORIGINATING
   -o receive_override_options=no_address_mappings
-  -o environment=PIXEL_BASE_URL=${PIXEL_BASE_URL:-https://${MAIL_HOST}:8443/pixel?id=} TRACKING_REQUIRES_OPT_IN=${TRACKING_REQUIRES_OPT_IN:-false} OPT_IN_HEADER=${OPT_IN_HEADER:-X-Track-Open} DISCLOSURE_HEADER=${DISCLOSURE_HEADER:-X-Tracking-Notice} INJECT_DISCLOSURE=${INJECT_DISCLOSURE:-true} DATA_DIR=${DATA_DIR:-/data/pixel} LOG_LEVEL=${LOG_LEVEL:-warn} FOOTER_HTML_FILE=${FOOTER_HTML_FILE:-/opt/pixelmilter/domain-wide-footer.html}
+  -o environment=PIXEL_BASE_URL=${PIXEL_BASE_URL} TRACKING_REQUIRES_OPT_IN=${TRACKING_REQUIRES_OPT_IN} OPT_IN_HEADER=${OPT_IN_HEADER} DISCLOSURE_HEADER=${DISCLOSURE_HEADER} INJECT_DISCLOSURE=${INJECT_DISCLOSURE} DATA_DIR=${DATA_DIR} LOG_LEVEL=${LOG_LEVEL} FOOTER_HTML_FILE=${FOOTER_HTML_FILE}
 
 # Performance and caching daemons
 anvil     unix  -       -       y       -       1       anvil
