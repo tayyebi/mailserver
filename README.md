@@ -92,7 +92,7 @@ Pixel tracking can be configured via environment variables in your `.env` file:
 **Example `.env` configuration for domain-wide tracking (default):**
 ```bash
 TRACKING_REQUIRES_OPT_IN=false
-PIXEL_BASE_URL=https://mail.gordarg.com/pixel?id=
+PIXEL_BASE_URL=https://mail.gordarg.com:8443/pixel?id=
 ```
 
 **Example `.env` configuration for opt-in only tracking:**
