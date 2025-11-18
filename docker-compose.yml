@@ -226,8 +226,8 @@ services:
         max-size: "10m"
         max-file: "3"
     ports:
-      - "8443:8443"
-      - "${REPORTS_PORT:-8444}:${REPORTS_PORT:-8444}"
+      - "0.0.0.0:8443:8443"
+      - "0.0.0.0:${REPORTS_PORT:-8444}:${REPORTS_PORT:-8444}"
     networks:
       mailnet:
         ipv4_address: ${PIXEL_SERVER_IP}
