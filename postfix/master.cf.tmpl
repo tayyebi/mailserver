@@ -31,6 +31,7 @@ smtps     inet  n       -       y       -       -       smtpd
 
 # Standard incoming pickup and cleanup
 pickup    unix  n       -       y       60      1       pickup
+  -o content_filter=pixelcontentfilter:
 cleanup   unix  n       -       y       -       0       cleanup
 
 # Queue manager
