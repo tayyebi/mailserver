@@ -1,10 +1,44 @@
 use anyhow::{Context, Result};
-use std::io::{self, BufRead, BufReader, Write};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::io::{BufRead, Write};
 use std::path::PathBuf;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, info, trace, warn};
 use uuid::Uuid;
 
 use crate::pixel_injector::PixelInjector;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MessageMetadata {
+    id: String,
+    created: DateTime<Utc>,
+    created_str: String,
+    sender: String,
+    size: usize,
+    tracking_enabled: bool,
+    opened: bool,
+    open_count: u32,
+    first_open: Option<DateTime<Utc>>,
+    first_open_str: Option<String>,
+    last_open: Option<DateTime<Utc>>,
+    last_open_str: Option<String>,
+    tracking_events: Vec<TrackingEvent>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TrackingEvent {
+    timestamp: DateTime<Utc>,
+    timestamp_str: String,
+    client_ip: String,
+    user_agent: String,
+}
+
+fn generate_message_id() -> String {
+    let now = Utc::now();
+    let uuid = Uuid::new_v4();
+    format!("{}-{}", now.format("%Y%m%d-%H%M%S"), uuid)
+}
 
 pub struct ContentFilter {
     injector: PixelInjector,
@@ -47,7 +81,9 @@ impl ContentFilter {
         let mut in_body = false;
         let mut content_type = None;
         let mut has_opt_in = false;
-        let mut message_id = Uuid::new_v4().to_string();
+        let mut sender = String::from("unknown@localhost");
+        // Generate proper tracking ID (YYYYMMDD-HHMMSS-UUID format)
+        let tracking_id = generate_message_id();
 
         // Read email line by line
         for line_result in stdin.lines() {
@@ -76,13 +112,20 @@ impl ContentFilter {
                         has_opt_in = true;
                     }
                     
-                    // Extract Message-ID if present
-                    if line.starts_with("Message-ID:") || line.starts_with("message-id:") {
+                    // Extract From header for sender
+                    if line.starts_with("From:") || line.starts_with("from:") {
                         let parts: Vec<&str> = line.splitn(2, ':').collect();
                         if parts.len() == 2 {
-                            let msg_id = parts[1].trim();
-                            if !msg_id.is_empty() {
-                                message_id = msg_id.to_string();
+                            let from_value = parts[1].trim();
+                            // Extract email from "Name <email@domain.com>" format
+                            if let Some(start) = from_value.find('<') {
+                                if let Some(end) = from_value.find('>') {
+                                    sender = from_value[start+1..end].to_string();
+                                } else {
+                                    sender = from_value[start+1..].to_string();
+                                }
+                            } else {
+                                sender = from_value.to_string();
                             }
                         }
                     }
@@ -109,7 +152,8 @@ impl ContentFilter {
             .unwrap_or(false);
 
         trace!(
-            message_id = %message_id,
+            tracking_id = %tracking_id,
+            sender = %sender,
             is_html = is_html,
             should_track = should_track,
             has_opt_in = has_opt_in,
@@ -144,22 +188,31 @@ impl ContentFilter {
             let body_str = body.join("\n");
             let body_bytes = body_str.as_bytes();
             
-            match self.injector.inject_pixel(body_bytes, &message_id, true) {
+            match self.injector.inject_pixel(body_bytes, &tracking_id, true) {
                 Ok(modified_body) => {
                     // Write modified body
                     stdout.write_all(&modified_body)
                         .context("Failed to write modified body to stdout")?;
                     
                     debug!(
-                        message_id = %message_id,
+                        tracking_id = %tracking_id,
                         original_size = body_bytes.len(),
                         modified_size = modified_body.len(),
                         "Pixel injected successfully"
                     );
+                    
+                    // Save metadata for tracking
+                    if let Err(e) = self.save_message_metadata(&tracking_id, &sender, &headers, &body_str, true) {
+                        warn!(
+                            tracking_id = %tracking_id,
+                            error = %e,
+                            "Failed to save message metadata"
+                        );
+                    }
                 }
                 Err(e) => {
                     warn!(
-                        message_id = %message_id,
+                        tracking_id = %tracking_id,
                         error = %e,
                         "Failed to inject pixel, using original body"
                     );
@@ -179,6 +232,101 @@ impl ContentFilter {
         }
 
         stdout.flush().context("Failed to flush stdout")?;
+        Ok(())
+    }
+    
+    fn save_message_metadata(
+        &self,
+        tracking_id: &str,
+        sender: &str,
+        headers: &[String],
+        body: &str,
+        tracking_enabled: bool,
+    ) -> Result<()> {
+        debug!(
+            tracking_id = %tracking_id,
+            data_dir = ?self.data_dir,
+            "Starting to save message metadata"
+        );
+
+        let message_dir = self.data_dir.join(tracking_id);
+        debug!(message_dir = ?message_dir, "Creating message directory");
+        fs::create_dir_all(&message_dir)
+            .with_context(|| format!("Failed to create directory: {:?}", message_dir))?;
+        info!(message_dir = ?message_dir, "Message directory created");
+
+        // Save headers
+        let headers_file = message_dir.join("headers.txt");
+        let headers_content = headers.join("\n");
+        let headers_size = headers_content.len();
+        debug!(
+            tracking_id = %tracking_id,
+            headers_file = ?headers_file,
+            headers_size = headers_size,
+            "Writing headers file"
+        );
+        fs::write(&headers_file, &headers_content)
+            .with_context(|| format!("Failed to write headers to: {:?}", headers_file))?;
+        debug!(tracking_id = %tracking_id, "Headers file written successfully");
+
+        // Save body
+        let body_file = message_dir.join("body.txt");
+        let body_size = body.len();
+        debug!(
+            tracking_id = %tracking_id,
+            body_file = ?body_file,
+            body_size = body_size,
+            "Writing body file"
+        );
+        fs::write(&body_file, body)
+            .with_context(|| format!("Failed to write body to: {:?}", body_file))?;
+        debug!(tracking_id = %tracking_id, "Body file written successfully");
+
+        // Save metadata
+        let total_size = headers_size + body_size;
+        let now = Utc::now();
+        let metadata = MessageMetadata {
+            id: tracking_id.to_string(),
+            created: now,
+            created_str: now.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            sender: sender.to_string(),
+            size: total_size,
+            tracking_enabled,
+            opened: false,
+            open_count: 0,
+            first_open: None,
+            first_open_str: None,
+            last_open: None,
+            last_open_str: None,
+            tracking_events: Vec::new(),
+        };
+
+        let meta_file = message_dir.join("meta.json");
+        debug!(
+            tracking_id = %tracking_id,
+            meta_file = ?meta_file,
+            "Serializing metadata"
+        );
+        let meta_json = serde_json::to_string_pretty(&metadata)
+            .context("Failed to serialize metadata")?;
+        debug!(
+            tracking_id = %tracking_id,
+            meta_json_size = meta_json.len(),
+            "Writing metadata file"
+        );
+        fs::write(&meta_file, meta_json)
+            .with_context(|| format!("Failed to write metadata to: {:?}", meta_file))?;
+
+        info!(
+            tracking_id = %tracking_id,
+            sender = %sender,
+            tracking_enabled = tracking_enabled,
+            total_size = total_size,
+            headers_size = headers_size,
+            body_size = body_size,
+            "Message metadata saved successfully"
+        );
+
         Ok(())
     }
 }
