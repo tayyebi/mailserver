@@ -1,6 +1,6 @@
 #!/bin/bash
 # Postfix content filter wrapper for pixelmilter
-# This script is called by Postfix to filter emails
+# This script is called by Postfix to filter emails and reinject them
 
 set -euo pipefail
 
@@ -24,7 +24,7 @@ if [ "${INJECT_DISCLOSURE:-true}" = "true" ] || [ "${INJECT_DISCLOSURE:-true}" =
     ARGS+=(--inject-disclosure)
 fi
 
-# Read email from stdin and pass to pixelmilter in content filter mode
-# Logs go to stderr (default), email goes to stdout
-# stdin/stdout are automatically handled by exec
-exec /usr/local/bin/pixelmilter "${ARGS[@]}"
+# Process email through pixelmilter and reinject via sendmail
+# pixelmilter reads from stdin, modifies email, writes to stdout
+# We pipe the output to sendmail to reinject into Postfix
+/usr/local/bin/pixelmilter "${ARGS[@]}" | /usr/sbin/sendmail -G -i "$@"
