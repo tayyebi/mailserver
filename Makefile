@@ -610,16 +610,30 @@ reports:
 	@echo "=== Pixel Tracking Reports ==="; \
 	echo ""; \
 	echo "Overall Statistics:"; \
-	curl -k -s "https://${MAIL_HOST:-localhost}:8443/stats" 2>/dev/null | jq . 2>/dev/null || echo "  (pixelserver may not be running)"; \
+	if command -v jq >/dev/null 2>&1; then \
+		curl -k -s "https://${MAIL_HOST:-localhost}:8443/stats" 2>/dev/null | jq . 2>/dev/null || echo "  (pixelserver may not be running)"; \
+	else \
+		curl -k -s "https://${MAIL_HOST:-localhost}:8443/stats" 2>/dev/null || echo "  (pixelserver may not be running)"; \
+	fi; \
 	echo ""; \
-	echo "Recent Messages:"; \
-	find data/pixel -name meta.json -type f -mtime -7 | head -20 | while read f; do \
+	echo "Recent Messages (last 20):"; \
+	COUNT=0; \
+	find data/pixel -name meta.json -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -20 | cut -d' ' -f2- | while read f; do \
+		COUNT=$$((COUNT+1)); \
 		ID=$$(basename $$(dirname $$f)); \
-		SENDER=$$(jq -r '.sender' $$f 2>/dev/null || echo "unknown"); \
-		OPENED=$$(jq -r '.opened' $$f 2>/dev/null || echo "false"); \
-		OPEN_COUNT=$$(jq -r '.open_count' $$f 2>/dev/null || echo "0"); \
-		FIRST_OPEN=$$(jq -r '.first_open_str // "never"' $$f 2>/dev/null || echo "never"); \
-		echo "  $$ID | $$SENDER | Opened: $$OPENED ($$OPEN_COUNT times) | First: $$FIRST_OPEN"; \
+		if command -v jq >/dev/null 2>&1; then \
+			SENDER=$$(jq -r '.sender' $$f 2>/dev/null || echo "unknown"); \
+			OPENED=$$(jq -r '.opened' $$f 2>/dev/null || echo "false"); \
+			OPEN_COUNT=$$(jq -r '.open_count' $$f 2>/dev/null || echo "0"); \
+			FIRST_OPEN=$$(jq -r '.first_open_str // "never"' $$f 2>/dev/null || echo "never"); \
+		else \
+			SENDER=$$(grep -o '"sender":"[^"]*"' $$f 2>/dev/null | cut -d'"' -f4 || echo "unknown"); \
+			OPENED=$$(grep -o '"opened":[^,}]*' $$f 2>/dev/null | cut -d':' -f2 | tr -d ' ' || echo "false"); \
+			OPEN_COUNT=$$(grep -o '"open_count":[^,}]*' $$f 2>/dev/null | cut -d':' -f2 | tr -d ' ' || echo "0"); \
+			FIRST_OPEN=$$(grep -o '"first_open_str":"[^"]*"' $$f 2>/dev/null | cut -d'"' -f4 || echo "never"); \
+		fi; \
+		echo "  $$COUNT. $$ID"; \
+		echo "     Sender: $$SENDER | Opened: $$OPENED ($$OPEN_COUNT times) | First: $$FIRST_OPEN"; \
 	done || echo "  No messages found"
 
 view-reports:
