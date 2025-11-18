@@ -45,7 +45,7 @@ smtpd_milters = inet:${OPENDKIM_IP}:8891,inet:${PIXEL_MILTER_IP}:8892
 non_smtpd_milters = inet:${OPENDKIM_IP}:8891,inet:${PIXEL_MILTER_IP}:8892
 
 # Virtual delivery via Dovecot LMTP
-virtual_transport=lmtp:[${DOVECOT_IP}]:${DOVECOT_LMTP_PORT}
+virtual_transport=lmtp:${DOVECOT_IP}:${DOVECOT_LMTP_PORT}
 virtual_mailbox_domains = hash:/etc/postfix/virtual_domains
 virtual_mailbox_maps = hash:/etc/postfix/vmailbox
 virtual_alias_maps = hash:/etc/postfix/virtual_aliases
