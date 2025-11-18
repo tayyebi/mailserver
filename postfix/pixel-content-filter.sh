@@ -4,10 +4,15 @@
 
 set -euo pipefail
 
+# Debug: Log environment variables (remove in production)
+# echo "DEBUG: PIXEL_BASE_URL=${PIXEL_BASE_URL:-NOT SET}" >&2
+
 # Build command arguments
+# Use explicit value from environment, fallback to reading from /etc/postfix/environment if needed
+PIXEL_URL="${PIXEL_BASE_URL:-https://localhost:8443/pixel?id=}"
 ARGS=(
     --content-filter-mode
-    --pixel-base-url "${PIXEL_BASE_URL:-https://localhost:8443/pixel?id=}"
+    --pixel-base-url "${PIXEL_URL}"
     --opt-in-header "${OPT_IN_HEADER:-X-Track-Open}"
     --disclosure-header "${DISCLOSURE_HEADER:-X-Tracking-Notice}"
     --data-dir "${DATA_DIR:-/data/pixel}"
