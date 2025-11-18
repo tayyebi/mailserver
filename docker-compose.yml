@@ -108,7 +108,7 @@ services:
       - DISCLOSURE_HEADER=${DISCLOSURE_HEADER:-X-Tracking-Notice}
       - INJECT_DISCLOSURE=${INJECT_DISCLOSURE:-true}
       - DATA_DIR=/data/pixel
-      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_LEVEL=${LOG_LEVEL:-warn}
       - FOOTER_HTML_FILE=/opt/pixelmilter/domain-wide-footer.html
     healthcheck:
       test: ["CMD-SHELL", "postfix status | grep -qi running && /usr/local/bin/healthcheck.sh"]

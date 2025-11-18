@@ -1,7 +1,7 @@
 use anyhow::Result;
 use regex::Regex;
 use std::sync::OnceLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 #[derive(Clone)]
 pub struct PixelInjector {
@@ -58,7 +58,7 @@ impl PixelInjector {
             "Converted body to string for processing"
         );
         
-        info!(
+        debug!(
             message_id = %message_id,
             body_size = original_size,
             "HTML Content-Type confirmed, injecting pixel"
@@ -66,7 +66,7 @@ impl PixelInjector {
         let injected = self.inject_pixel_html(&body_str, message_id)?;
         let new_size = injected.len();
         let size_diff = new_size as i64 - original_size as i64;
-        info!(
+        debug!(
             message_id = %message_id,
             original_size = original_size,
             new_size = new_size,
@@ -127,7 +127,7 @@ impl PixelInjector {
             if let Some(captures) = body_regex.captures(html) {
                 let result = body_regex.replace(html, format!("{}{}", content_to_inject, &captures[1]));
                 let result_size = result.len();
-                info!(
+                debug!(
                     message_id = %message_id,
                     injection_method = "before_body_tag",
                     original_size = html_size,
@@ -156,7 +156,7 @@ impl PixelInjector {
                 let closing_body_with_content = format!("{}{}", content_to_inject, "</body>");
                 let result = html_regex.replace(html, format!("{}{}", closing_body_with_content, &captures[1]));
                 let result_size = result.len();
-                info!(
+                debug!(
                     message_id = %message_id,
                     injection_method = "add_closing_body_tag",
                     original_size = html_size,
@@ -170,7 +170,7 @@ impl PixelInjector {
             // No </html> tag either, append </body> with content at the end
             let result = format!("{}{}</body>", html, content_to_inject);
             let result_size = result.len();
-            info!(
+            debug!(
                 message_id = %message_id,
                 injection_method = "add_closing_body_tag_end",
                 original_size = html_size,
@@ -203,7 +203,7 @@ impl PixelInjector {
                     let body_wrapper = format!("<body>{}{}</body>", content_to_inject, &captures[1]);
                     let result = html_regex.replace(html, body_wrapper);
                     let result_size = result.len();
-                    info!(
+                    debug!(
                         message_id = %message_id,
                         injection_method = "wrap_in_body_tags",
                         original_size = html_size,
@@ -218,7 +218,7 @@ impl PixelInjector {
             // Fallback: wrap entire content in body tags
             let result = format!("<body>{}{}</body>", html, content_to_inject);
             let result_size = result.len();
-            info!(
+            debug!(
                 message_id = %message_id,
                 injection_method = "wrap_in_body_tags_fallback",
                 original_size = html_size,
