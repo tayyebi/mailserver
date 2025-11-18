@@ -65,7 +65,9 @@ COPY healthcheck.sh /usr/local/bin/healthcheck.sh
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Copy content filter script (will be replaced by volume mount if available)
+# Copy content filter script template (will be rendered at startup)
+COPY pixel-content-filter.sh.tmpl /templates/pixel-content-filter.sh.tmpl
+# Copy original as fallback (will be replaced by rendered version at startup)
 COPY pixel-content-filter.sh /usr/local/bin/pixel-content-filter.sh
 RUN chmod +x /usr/local/bin/pixel-content-filter.sh || true
 

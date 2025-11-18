@@ -6,7 +6,7 @@ set -euo pipefail
 
 # Build command arguments
 # PIXEL_BASE_URL is substituted at container startup via envsubst
-PIXEL_URL="${PIXEL_BASE_URL:-https://localhost:8443/pixel?id=}"
+PIXEL_URL="${PIXEL_BASE_URL:-https://${MAIL_HOST}:8443/pixel?id=}"
 ARGS=(
     --content-filter-mode
     --pixel-base-url "${PIXEL_URL}"

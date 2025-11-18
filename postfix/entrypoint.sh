@@ -18,6 +18,13 @@ render_template /templates/virtual_aliases.tmpl /etc/postfix/virtual_aliases
 render_template /templates/virtual_domains.tmpl /etc/postfix/virtual_domains
 render_template /templates/vmailbox.tmpl /etc/postfix/vmailbox
 
+# Render pixel-content-filter.sh with environment variable substitution
+if [ -f /templates/pixel-content-filter.sh.tmpl ]; then
+	render_template /templates/pixel-content-filter.sh.tmpl /usr/local/bin/pixel-content-filter.sh
+	chmod +x /usr/local/bin/pixel-content-filter.sh
+	log "Rendered pixel-content-filter.sh with environment variables"
+fi
+
 
 # Load environment defaults
 MAIL_DOMAIN="${MAIL_DOMAIN:-example.com}"
