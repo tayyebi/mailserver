@@ -1,10 +1,19 @@
-# Port 25 listener — standard SMTP for inter‑server mail relay
+# Port 25 listener — standard SMTP for inter‑server mail relay
 smtp      inet  n       -       y       -       -       smtpd
+
+# Reinjection service for content filter (port 10025)
+# This service receives reinjected emails from content filter and does NOT apply content_filter again
+127.0.0.1:10025 inet n  -       y       -       -       smtpd
+  -o syslog_name=postfix/reinject
+  -o content_filter=
+  -o receive_override_options=no_address_mappings
+  -o mynetworks=127.0.0.0/8
+  -o smtpd_authorized_xforward_hosts=127.0.0.0/8
 
 # postlog for logging
 postlog   unix-dgram   n    -    n    -     1       postlogd
 
-# Submission (port 587) with enforced TLS and Dovecot SASL
+# Submission (port 587) with enforced TLS and Dovecot SASL
 submission inet        n    -    y    -     -       smtpd
   -o syslog_name=postfix/submission
   -o smtpd_tls_security_level=encrypt
