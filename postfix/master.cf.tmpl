@@ -9,6 +9,8 @@ smtp      inet  n       -       y       -       -       smtpd
   -o receive_override_options=no_address_mappings
   -o mynetworks=127.0.0.0/8
   -o smtpd_authorized_xforward_hosts=127.0.0.0/8
+  -o smtpd_tls_security_level=none
+  -o disable_ehlo_name_check=yes
 
 # postlog for logging
 postlog   unix-dgram   n    -    n    -     1       postlogd
