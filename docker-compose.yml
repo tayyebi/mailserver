@@ -139,6 +139,7 @@ services:
       - ./postfix/virtual_domains.tmpl:/templates/virtual_domains.tmpl:ro
       - ./postfix/vmailbox.tmpl:/templates/vmailbox.tmpl:ro
       - ./postfix/pixel-content-filter.sh:/usr/local/bin/pixel-content-filter.sh:ro
+      - ./postfix/reinject.py:/usr/local/bin/reinject.py:ro
       # Share pixelmilter data directory and footer (use same bind mount as pixelmilter)
       - ./data/pixel:/data/pixel:ro
       - pixelmilter_footer:/opt/pixelmilter:ro
