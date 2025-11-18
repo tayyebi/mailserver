@@ -13,7 +13,7 @@ use uuid::Uuid;
 mod milter;
 mod pixel_injector;
 
-use milter::{MilterCallbacks, MilterResult, MilterServer};
+use milter::{MilterCallbacks, MilterResult, MilterServer, MilterOptions};
 use pixel_injector::PixelInjector;
 
 #[derive(Parser, Debug)]
@@ -111,6 +111,7 @@ struct PixelMilterConfig {
     inject_disclosure: bool,
     data_dir: PathBuf,
     footer_html_file: PathBuf,
+    milter_options: MilterOptions,
 }
 
 #[derive(Clone)]
@@ -250,6 +251,10 @@ impl PixelMilter {
 
 #[async_trait::async_trait]
 impl MilterCallbacks for PixelMilter {
+    fn get_milter_options(&self) -> &MilterOptions {
+        &self.config.milter_options
+    }
+
     async fn connect(&self, ctx_id: &str, hostname: &str, addr: &str) -> MilterResult {
         debug!(
             ctx_id = %ctx_id,
@@ -721,13 +726,23 @@ async fn main() -> Result<()> {
         inject_disclosure: args.inject_disclosure,
         data_dir: args.data_dir,
         footer_html_file: args.footer_html_file,
+        milter_options: MilterOptions::default(),
     };
 
     debug!("Creating PixelMilter instance");
     let milter = PixelMilter::new(config.clone())
         .context("Failed to create PixelMilter instance")?;
+    
+    let milter_options = MilterOptions::default();
+    info!(
+        milter_protocol_version = milter_options.protocol_version,
+        milter_action_flags = milter_options.action_flags,
+        milter_step_flags = milter_options.step_flags,
+        "Milter options initialized"
+    );
+
     debug!("Creating MilterServer instance");
-    let server = MilterServer::new(milter);
+    let server = MilterServer::new(milter, milter_options);
 
     info!(
         pixel_base_url = %config.pixel_base_url,

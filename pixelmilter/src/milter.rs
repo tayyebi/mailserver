@@ -4,6 +4,52 @@ use tokio::net::{UnixListener, TcpListener};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::{error, info, warn, debug};
+use anyhow::bail;
+
+// Milter Protocol Commands (SMFIC_ defines)
+pub const SMFIC_OPTNEG: u8 = b'O';
+pub const SMFIC_CONNECT: u8 = b'C';
+pub const SMFIC_HELO: u8 = b'H';
+pub const SMFIC_MAIL: u8 = b'M';
+pub const SMFIC_RCPT: u8 = b'R';
+pub const SMFIC_HEADER: u8 = b'L';
+pub const SMFIC_EOH: u8 = b'N';
+pub const SMFIC_BODY: u8 = b'B';
+pub const SMFIC_EOM: u8 = b'E';
+pub const SMFIC_ABORT: u8 = b'A';
+pub const SMFIC_QUIT: u8 = b'Q';
+pub const SMFIC_MACRO: u8 = b'D';
+
+// Milter Protocol Responses (SMFIR_ defines)
+pub const SMFIR_CONTINUE: u8 = b'c';
+pub const SMFIR_ACCEPT: u8 = b'a';
+pub const SMFIR_REJECT: u8 = b'r';
+pub const SMFIR_TEMPFAIL: u8 = b't';
+pub const SMFIR_DISCARD: u8 = b'd';
+pub const SMFIR_REPLACEBODY: u8 = b'b';
+
+// Milter Protocol Version
+pub const SMFI_VERSION: u32 = 6;
+
+// Milter Action Flags (SMFIF_ defines)
+pub const SMFIF_ADDHDRS: u32 = 0x01;       // Add headers
+pub const SMFIF_CHGHDRS: u32 = 0x02;       // Change headers
+pub const SMFIF_ADDRCPT: u32 = 0x04;       // Add recipient
+pub const SMFIF_DELRCPT: u32 = 0x08;       // Delete recipient
+pub const SMFIF_CHGBODY: u32 = 0x10;       // Change body
+pub const SMFIF_QUARANTINE: u32 = 0x20;    // Quarantine
+
+// Milter Step Flags (SMFIP_ defines)
+pub const SMFIP_NOCONNECT: u32 = 0x01;     // Skip connect
+pub const SMFIP_NOHELO: u32 = 0x02;        // Skip helo
+pub const SMFIP_NOMAIL: u32 = 0x04;        // Skip mail from
+pub const SMFIP_NORCPT: u32 = 0x08;        // Skip rcpt to
+pub const SMFIP_NOBODY: u32 = 0x10;        // Skip body
+pub const SMFIP_NOHEADERS: u32 = 0x20;     // Skip headers
+pub const SMFIP_NOEOH: u32 = 0x40;         // Skip end of headers
+pub const SMFIP_NOURI: u32 = 0x80;         // Skip URI
+pub const SMFIP_SKIP: u32 = 0x100;         // Can skip messages
+pub const SMFIP_REC_ONLY: u32 = 0x200;     // Recipient list only
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)] // These variants are part of the milter protocol and may be used in the future
@@ -18,9 +64,33 @@ pub enum MilterResult {
     ChangeHeader(String, String),
 }
 
+#[derive(Debug, Clone)]
+pub struct MilterOptions {
+    pub protocol_version: u32,
+    pub action_flags: u32,
+    pub step_flags: u32,
+}
+
+impl Default for MilterOptions {
+    fn default() -> Self {
+        Self {
+            protocol_version: SMFI_VERSION, // SMFI_VERSION - Current protocol version
+            // For now, accept all actions by default
+            action_flags: SMFIF_ADDHDRS | SMFIF_CHGHDRS | SMFIF_ADDRCPT | SMFIF_DELRCPT | SMFIF_CHGBODY | SMFIF_QUARANTINE,
+            // For now, accept all steps by default
+            step_flags: SMFIP_NOCONNECT | SMFIP_NOHELO | SMFIP_NOMAIL | SMFIP_NORCPT | SMFIP_NOBODY | SMFIP_NOHEADERS | SMFIP_NOEOH | SMFIP_NOURI | SMFIP_SKIP | SMFIP_REC_ONLY,
+        }
+    }
+}
+
 #[async_trait::async_trait]
 pub trait MilterCallbacks: Send + Sync + Clone {
+    fn get_milter_options(&self) -> &MilterOptions;
     async fn connect(&self, ctx_id: &str, hostname: &str, addr: &str) -> MilterResult;
+    async fn helo(&self, ctx_id: &str, helo_name: &str) -> MilterResult {
+        let _ = (ctx_id, helo_name);
+        MilterResult::Continue
+    }
     async fn mail_from(&self, ctx_id: &str, sender: &str) -> MilterResult;
     async fn rcpt_to(&self, ctx_id: &str, recipient: &str) -> MilterResult {
         let _ = (ctx_id, recipient);
@@ -31,15 +101,20 @@ pub trait MilterCallbacks: Send + Sync + Clone {
     async fn body(&self, ctx_id: &str, chunk: &[u8]) -> MilterResult;
     async fn end_of_message(&self, ctx_id: &str) -> MilterResult;
     async fn close(&self, ctx_id: &str) -> MilterResult;
+    async fn macro_data(&self, ctx_id: &str, macro_name: &str, macro_value: &str) -> MilterResult {
+        let _ = (ctx_id, macro_name, macro_value);
+        MilterResult::Continue
+    }
 }
 
 pub struct MilterServer<T: MilterCallbacks + 'static> {
     callbacks: T,
+    options: MilterOptions,
 }
 
 impl<T: MilterCallbacks + 'static> MilterServer<T> {
-    pub fn new(callbacks: T) -> Self {
-        Self { callbacks }
+    pub fn new(callbacks: T, options: MilterOptions) -> Self {
+        Self { callbacks, options }
     }
 
     pub async fn run_unix(&self, socket_path: &Path) -> Result<()> {
@@ -124,6 +199,8 @@ async fn handle_connection_impl<T: MilterCallbacks, S: AsyncRead + AsyncWrite + 
     let ctx_id = uuid::Uuid::new_v4().to_string();
     info!(ctx_id = %ctx_id, "New milter connection handler started");
 
+    let milter_options = callbacks.get_milter_options();
+
     let mut buffer = vec![0u8; 4096];
     let mut message_buffer = Vec::new();
     let mut current_state = MilterState::WaitingForConnect;
@@ -150,7 +227,25 @@ async fn handle_connection_impl<T: MilterCallbacks, S: AsyncRead + AsyncWrite + 
                 );
                 message_buffer.extend_from_slice(&buffer[..n]);
                 
-                while let Some((command, data)) = parse_milter_message(&mut message_buffer)? {
+                loop {
+                    let (command, data) = match parse_milter_message(&mut message_buffer) {
+                        Ok(Some((cmd, dta))) => (cmd, dta),
+                        Ok(None) => {
+                            // Incomplete message, wait for more data
+                            break;
+                        }
+                        Err(e) => {
+                            error!(
+                                ctx_id = %ctx_id,
+                                error = %e,
+                                "Failed to parse milter message - sending tempfail and closing connection"
+                            );
+                            // Send a temporary failure response before closing
+                            let _ = stream.write_all(&create_response(SMFIR_TEMPFAIL, &[])).await;
+                            return Err(e);
+                        }
+                    };
+                    
                     command_count += 1;
                     let command_char = format!("{}", command as char);
                     debug!(
@@ -162,8 +257,8 @@ async fn handle_connection_impl<T: MilterCallbacks, S: AsyncRead + AsyncWrite + 
                         "Processing milter command"
                     );
                     
-                    match process_milter_command(&ctx_id, command, data, callbacks, &mut current_state).await {
-                        Ok(Some(response)) => {
+                    match process_milter_command(&ctx_id, command, data, callbacks, &mut current_state, milter_options).await {
+                        Ok((Some(response), should_continue)) => {
                             debug!(
                                 ctx_id = %ctx_id,
                                 response_size = response.len(),
@@ -179,9 +274,17 @@ async fn handle_connection_impl<T: MilterCallbacks, S: AsyncRead + AsyncWrite + 
                                 break;
                             }
                             debug!(ctx_id = %ctx_id, "Response sent successfully");
+                            if !should_continue {
+                                info!(ctx_id = %ctx_id, "Breaking connection handler loop after command");
+                                break;
+                            }
                         }
-                        Ok(None) => {
+                        Ok((None, should_continue)) => {
                             debug!(ctx_id = %ctx_id, "No response needed for command");
+                            if !should_continue {
+                                info!(ctx_id = %ctx_id, "Breaking connection handler loop after command");
+                                break;
+                            }
                         }
                         Err(e) => {
                             error!(
@@ -189,8 +292,10 @@ async fn handle_connection_impl<T: MilterCallbacks, S: AsyncRead + AsyncWrite + 
                                 error = %e,
                                 command = %command_char,
                                 total_commands = command_count,
-                                "Error processing command"
+                                "Error processing command - sending tempfail and closing connection"
                             );
+                            // Send a temporary failure response before closing
+                            let _ = stream.write_all(&create_response(SMFIR_TEMPFAIL, &[])).await;
                             break;
                         }
                     }
@@ -216,10 +321,16 @@ async fn handle_connection_impl<T: MilterCallbacks, S: AsyncRead + AsyncWrite + 
     Ok(())
 }
 
+/// Represents the current state of the milter connection for a given message.
+/// The milter protocol is stateful, and commands are expected in a specific order.
 #[derive(Debug)]
 enum MilterState {
+    /// Initial state, waiting for the SMFIC_OPTNEG command from the MTA.
     WaitingForConnect,
+    /// State after successful option negotiation, waiting for SMFIC_CONNECT, SMFIC_HELO, or SMFIC_MAIL.
     Connected,
+    /// State after receiving SMFIC_MAIL, indicating a message is currently being processed.
+    /// In this state, SMFIC_RCPT, SMFIC_HEADER, SMFIC_EOH, SMFIC_BODY, SMFIC_EOM are expected.
     InMessage,
 }
 
@@ -269,59 +380,63 @@ fn parse_milter_message(buffer: &mut Vec<u8>) -> Result<Option<(u8, Vec<u8>)>> {
     Ok(Some((command, data)))
 }
 
+/// Processes a single milter command received from the MTA.
+/// This function acts as the core of the milter's state machine,
+/// handling commands, invoking callbacks, and generating responses.
+/// It also enforces state transitions to ensure protocol adherence.
 async fn process_milter_command<T: MilterCallbacks>(
     ctx_id: &str,
     command: u8,
     data: Vec<u8>,
     callbacks: &T,
     state: &mut MilterState,
-) -> Result<Option<Vec<u8>>> {
+    options: &MilterOptions,
+) -> Result<(Option<Vec<u8>>, bool)> {
     let previous_state = format!("{:?}", state);
     match command {
-        b'O' => {
-            // SMFIC_OPTNEG - Option negotiation
-            // The request contains: protocol version (4 bytes), action flags (4 bytes), step flags (4 bytes)
-            // The response should contain: protocol version (4 bytes), action flags (4 bytes), step flags (4 bytes)
-            debug!(
-                ctx_id = %ctx_id,
-                data_size = data.len(),
-                previous_state = %previous_state,
-                "Processing option negotiation"
-            );
-            
-            // Parse the request to see what Postfix is requesting
-            if data.len() >= 12 {
-                let protocol_version = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
-                let action_flags = u32::from_be_bytes([data[4], data[5], data[6], data[7]]);
-                let step_flags = u32::from_be_bytes([data[8], data[9], data[10], data[11]]);
-                debug!(
+        SMFIC_OPTNEG => {
+            // SMFIC_OPTNEG - Option negotiation. This is the first command sent by the MTA.
+            // It allows the MTA and milter to negotiate capabilities (protocol version, actions, steps).
+            if !matches!(state, MilterState::WaitingForConnect) {
+                warn!(
                     ctx_id = %ctx_id,
-                    protocol_version = protocol_version,
-                    requested_action_flags = action_flags,
-                    requested_step_flags = step_flags,
-                    "Parsed option negotiation request"
+                    command_char = %format!("{}", command as char),
+                    current_state = %previous_state,
+                    "Received OPTNEG in unexpected state"
                 );
+                // If OPTNEG is received in an unexpected state, send TempFail and continue.
+                // This might indicate a protocol error, but we try to recover.
+                return Ok((Some(create_response(SMFIR_TEMPFAIL, &[])), true));
             }
-            
-            // Respond with protocol version 6, and accept all actions/steps
-            // Protocol version: 6 (0x00000006)
-            // Action flags: 0x1F (accept all: add header, change header, add recipient, delete recipient, change body, quarantine)
-            // Step flags: 0x1F (accept all steps: connect, helo, mail, rcpt, header, eoh, body, eom)
+            // Respond with the milter's protocol version, action flags, and step flags
             let mut response_data = Vec::with_capacity(12);
-            response_data.extend_from_slice(&6u32.to_be_bytes()); // Protocol version 6
-            response_data.extend_from_slice(&0x1Fu32.to_be_bytes()); // Action flags - accept all
-            response_data.extend_from_slice(&0x1Fu32.to_be_bytes()); // Step flags - accept all
+            response_data.extend_from_slice(&options.protocol_version.to_be_bytes());
+            response_data.extend_from_slice(&options.action_flags.to_be_bytes());
+            response_data.extend_from_slice(&options.step_flags.to_be_bytes());
             
             *state = MilterState::Connected;
             info!(
                 ctx_id = %ctx_id,
+                milter_protocol_version = options.protocol_version,
+                milter_action_flags = options.action_flags,
+                milter_step_flags = options.step_flags,
                 new_state = "Connected",
                 "Option negotiation completed"
             );
-            Ok(Some(create_response(b'O', &response_data)))
+            Ok((Some(create_response(SMFIC_OPTNEG, &response_data)), true))
         }
-        b'C' => {
-            // SMFIC_CONNECT
+        SMFIC_CONNECT => {
+            // SMFIC_CONNECT - Connection information. Sent after OPTNEG (if not skipped).
+            // Contains hostname and IP address of the connecting client.
+            if !matches!(state, MilterState::Connected) {
+                warn!(
+                    ctx_id = %ctx_id,
+                    command_char = %format!("{}", command as char),
+                    current_state = %previous_state,
+                    "Received CONNECT in unexpected state"
+                );
+                return Ok((Some(create_response(SMFIR_TEMPFAIL, &[])), true));
+            }
             debug!(ctx_id = %ctx_id, data_size = data.len(), "Parsing connect data");
             let (hostname, addr) = parse_connect_data(&data)?;
             debug!(
@@ -340,16 +455,48 @@ async fn process_milter_command<T: MilterCallbacks>(
                 "Connect callback completed"
             );
             
-            match result {
-                MilterResult::Continue => Ok(Some(create_response(b'c', &[]))),
-                MilterResult::Accept => Ok(Some(create_response(b'a', &[]))),
-                MilterResult::Reject => Ok(Some(create_response(b'r', &[]))),
-                MilterResult::TempFail => Ok(Some(create_response(b't', &[]))),
-                _ => Ok(Some(create_response(b'c', &[]))),
-            }
+            Ok((milter_response_from_result(result), true))
         }
-        b'M' => {
-            // SMFIC_MAIL - MAIL FROM
+        SMFIC_HELO => {
+            // SMFIC_HELO - HELO or EHLO command from the client.
+            if !matches!(state, MilterState::Connected) {
+                warn!(
+                    ctx_id = %ctx_id,
+                    command_char = %format!("{}", command as char),
+                    current_state = %previous_state,
+                    "Received HELO in unexpected state"
+                );
+                return Ok((Some(create_response(SMFIR_TEMPFAIL, &[])), true));
+            }
+            debug!(ctx_id = %ctx_id, data_size = data.len(), "Parsing helo data");
+            let helo_name = parse_string_data(&data)?;
+            debug!(
+                ctx_id = %ctx_id,
+                helo_name = %helo_name,
+                "Processing helo command"
+            );
+            
+            let result = callbacks.helo(ctx_id, &helo_name).await;
+            let result_str = format!("{:?}", result);
+            debug!(
+                ctx_id = %ctx_id,
+                result = %result_str,
+                "Helo callback completed"
+            );
+            
+            Ok((milter_response_from_result(result), true))
+        }
+        SMFIC_MAIL => {
+            // SMFIC_MAIL - MAIL FROM command. Initiates a new message.
+            if !matches!(state, MilterState::Connected) {
+                warn!(
+                    ctx_id = %ctx_id,
+                    command_char = %format!("{}", command as char),
+                    current_state = %previous_state,
+                    "Received MAIL FROM in unexpected state"
+                );
+                return Ok((Some(create_response(SMFIR_TEMPFAIL, &[])), true));
+            }
             debug!(ctx_id = %ctx_id, data_size = data.len(), "Parsing mail from data");
             let sender = parse_string_data(&data)?;
             debug!(
@@ -369,16 +516,19 @@ async fn process_milter_command<T: MilterCallbacks>(
                 "Mail from callback completed"
             );
             
-            match result {
-                MilterResult::Continue => Ok(Some(create_response(b'c', &[]))),
-                MilterResult::Accept => Ok(Some(create_response(b'a', &[]))),
-                MilterResult::Reject => Ok(Some(create_response(b'r', &[]))),
-                MilterResult::TempFail => Ok(Some(create_response(b't', &[]))),
-                _ => Ok(Some(create_response(b'c', &[]))),
-            }
+            Ok((milter_response_from_result(result), true))
         }
-        b'R' => {
-            // SMFIC_RCPT - RCPT TO
+        SMFIC_RCPT => {
+            // SMFIC_RCPT - RCPT TO command. Specifies a recipient for the current message.
+            if !matches!(state, MilterState::InMessage) {
+                warn!(
+                    ctx_id = %ctx_id,
+                    command_char = %format!("{}", command as char),
+                    current_state = %previous_state,
+                    "Received RCPT TO in unexpected state"
+                );
+                return Ok((Some(create_response(SMFIR_TEMPFAIL, &[])), true));
+            }
             debug!(ctx_id = %ctx_id, data_size = data.len(), "Parsing rcpt to data");
             let recipient = parse_string_data(&data)?;
             debug!(
@@ -395,16 +545,19 @@ async fn process_milter_command<T: MilterCallbacks>(
                 "Rcpt to callback completed"
             );
             
-            match result {
-                MilterResult::Continue => Ok(Some(create_response(b'c', &[]))),
-                MilterResult::Accept => Ok(Some(create_response(b'a', &[]))),
-                MilterResult::Reject => Ok(Some(create_response(b'r', &[]))),
-                MilterResult::TempFail => Ok(Some(create_response(b't', &[]))),
-                _ => Ok(Some(create_response(b'c', &[]))),
-            }
+            Ok((milter_response_from_result(result), true))
         }
-        b'L' => {
-            // SMFIC_HEADER
+        SMFIC_HEADER => {
+            // SMFIC_HEADER - A message header line. Sent repeatedly for each header.
+            if !matches!(state, MilterState::InMessage) {
+                warn!(
+                    ctx_id = %ctx_id,
+                    command_char = %format!("{}", command as char),
+                    current_state = %previous_state,
+                    "Received HEADER in unexpected state"
+                );
+                return Ok((Some(create_response(SMFIR_TEMPFAIL, &[])), true));
+            }
             debug!(ctx_id = %ctx_id, data_size = data.len(), "Parsing header data");
             let (name, value) = parse_header_data(&data)?;
             debug!(
@@ -422,16 +575,19 @@ async fn process_milter_command<T: MilterCallbacks>(
                 "Header callback completed"
             );
             
-            match result {
-                MilterResult::Continue => Ok(Some(create_response(b'c', &[]))),
-                MilterResult::Accept => Ok(Some(create_response(b'a', &[]))),
-                MilterResult::Reject => Ok(Some(create_response(b'r', &[]))),
-                MilterResult::TempFail => Ok(Some(create_response(b't', &[]))),
-                _ => Ok(Some(create_response(b'c', &[]))),
-            }
+            Ok((milter_response_from_result(result), true))
         }
-        b'N' => {
-            // SMFIC_EOH - End of headers
+        SMFIC_EOH => {
+            // SMFIC_EOH - End of message headers.
+            if !matches!(state, MilterState::InMessage) {
+                warn!(
+                    ctx_id = %ctx_id,
+                    command_char = %format!("{}", command as char),
+                    current_state = %previous_state,
+                    "Received EOH in unexpected state"
+                );
+                return Ok((Some(create_response(SMFIR_TEMPFAIL, &[])), true));
+            }
             debug!(
                 ctx_id = %ctx_id,
                 previous_state = %previous_state,
@@ -446,16 +602,19 @@ async fn process_milter_command<T: MilterCallbacks>(
                 "End of headers callback completed"
             );
             
-            match result {
-                MilterResult::Continue => Ok(Some(create_response(b'c', &[]))),
-                MilterResult::Accept => Ok(Some(create_response(b'a', &[]))),
-                MilterResult::Reject => Ok(Some(create_response(b'r', &[]))),
-                MilterResult::TempFail => Ok(Some(create_response(b't', &[]))),
-                _ => Ok(Some(create_response(b'c', &[]))),
-            }
+            Ok((milter_response_from_result(result), true))
         }
-        b'B' => {
-            // SMFIC_BODY
+        SMFIC_BODY => {
+            // SMFIC_BODY - A chunk of the message body. Sent repeatedly until EOM.
+            if !matches!(state, MilterState::InMessage) {
+                warn!(
+                    ctx_id = %ctx_id,
+                    command_char = %format!("{}", command as char),
+                    current_state = %previous_state,
+                    "Received BODY in unexpected state"
+                );
+                return Ok((Some(create_response(SMFIR_TEMPFAIL, &[])), true));
+            }
             debug!(
                 ctx_id = %ctx_id,
                 chunk_size = data.len(),
@@ -470,16 +629,19 @@ async fn process_milter_command<T: MilterCallbacks>(
                 "Body callback completed"
             );
             
-            match result {
-                MilterResult::Continue => Ok(Some(create_response(b'c', &[]))),
-                MilterResult::Accept => Ok(Some(create_response(b'a', &[]))),
-                MilterResult::Reject => Ok(Some(create_response(b'r', &[]))),
-                MilterResult::TempFail => Ok(Some(create_response(b't', &[]))),
-                _ => Ok(Some(create_response(b'c', &[]))),
-            }
+            Ok((milter_response_from_result(result), true))
         }
-        b'E' => {
-            // SMFIC_BODYEOB - End of message
+        SMFIC_EOM => {
+            // SMFIC_EOM - End of message. Marks the end of the current message.
+            if !matches!(state, MilterState::InMessage) {
+                warn!(
+                    ctx_id = %ctx_id,
+                    command_char = %format!("{}", command as char),
+                    current_state = %previous_state,
+                    "Received EOM in unexpected state"
+                );
+                return Ok((Some(create_response(SMFIR_TEMPFAIL, &[])), true));
+            }
             debug!(
                 ctx_id = %ctx_id,
                 previous_state = %previous_state,
@@ -494,56 +656,43 @@ async fn process_milter_command<T: MilterCallbacks>(
                 "End of message callback completed"
             );
             
-            match result {
-                MilterResult::Continue => Ok(Some(create_response(b'c', &[]))),
-                MilterResult::Accept => Ok(Some(create_response(b'a', &[]))),
-                MilterResult::Reject => Ok(Some(create_response(b'r', &[]))),
-                MilterResult::TempFail => Ok(Some(create_response(b't', &[]))),
-                MilterResult::Discard => Ok(Some(create_response(b'd', &[]))),
-                MilterResult::ReplaceBody(body) => {
-                    info!(
-                        ctx_id = %ctx_id,
-                        replacement_body_size = body.len(),
-                        "Replacing message body"
-                    );
-                    Ok(Some(create_response(b'b', &body)))
-                }
-                _ => Ok(Some(create_response(b'a', &[]))),
-            }
+            Ok((milter_response_from_result(result), true))
         }
-        b'H' => {
-            // SMFIC_HELO
-            debug!(ctx_id = %ctx_id, data_size = data.len(), "Parsing helo data");
-            let helo_name = parse_string_data(&data)?;
+        SMFIC_MACRO => {
+            // SMFIC_MACRO - Macro definitions. Contains name-value pairs for macros.
+            // Macros can be sent at various stages of the protocol.
+            debug!(ctx_id = %ctx_id, data_size = data.len(), "Parsing macro data");
+            let (macro_name, macro_value) = parse_macro_data(&data)?;
             debug!(
                 ctx_id = %ctx_id,
-                helo_name = %helo_name,
-                "Processing helo command"
+                macro_name = %macro_name,
+                macro_value = %macro_value,
+                "Processing macro command"
             );
-            // For now, just continue - we don't have a helo callback
-            Ok(Some(create_response(b'c', &[])))
-        }
-        b'D' => {
-            // SMFIC_MACRO - Macro definitions (usually ignored by milters)
+
+            let result = callbacks.macro_data(ctx_id, &macro_name, &macro_value).await;
+            let result_str = format!("{:?}", result);
             debug!(
                 ctx_id = %ctx_id,
-                data_size = data.len(),
-                "Processing macro command (ignored)"
+                result = %result_str,
+                "Macro data callback completed"
             );
-            // Macros are typically ignored by milters, just continue
-            Ok(Some(create_response(b'c', &[])))
+
+            Ok((milter_response_from_result(result), true))
         }
-        b'A' => {
-            // SMFIC_ABORT - Abort current message
+        SMFIC_ABORT => {
+            // SMFIC_ABORT - Abort current message. The MTA is cancelling the current message.
+            // No response is sent, and the connection handler loop is terminated.
             info!(ctx_id = %ctx_id, "Processing abort command");
             let _ = callbacks.close(ctx_id).await;
-            Ok(Some(create_response(b'c', &[])))
+            Ok((None, false))
         }
-        b'Q' => {
-            // SMFIC_QUIT
+        SMFIC_QUIT => {
+            // SMFIC_QUIT - Quit command. The MTA is closing the connection.
+            // No response is sent, and the connection handler loop is terminated.
             info!(ctx_id = %ctx_id, "Processing quit command");
             let _ = callbacks.close(ctx_id).await;
-            Ok(None)
+            Ok((None, false))
         }
         _ => {
             warn!(
@@ -551,13 +700,16 @@ async fn process_milter_command<T: MilterCallbacks>(
                 command = command,
                 command_char = %format!("{}", command as char),
                 data_size = data.len(),
-                "Unknown milter command received"
+                "Unknown milter command received - sending continue"
             );
-            Ok(Some(create_response(b'c', &[])))
+            // For unknown commands, send a continue response to avoid breaking the connection.
+            Ok((Some(create_response(SMFIR_CONTINUE, &[])), true))
         }
     }
 }
 
+/// Creates a milter response message.
+/// The response format is: 4 bytes length (big-endian) + 1 byte command + data.
 fn create_response(command: u8, data: &[u8]) -> Vec<u8> {
     let length = (data.len() + 1) as u32;
     let mut response = Vec::with_capacity(4 + data.len() + 1);
@@ -575,24 +727,62 @@ fn create_response(command: u8, data: &[u8]) -> Vec<u8> {
 fn parse_connect_data(data: &[u8]) -> Result<(String, String)> {
     let data_str = String::from_utf8_lossy(data);
     let parts: Vec<&str> = data_str.split('\0').collect();
-    
-    let hostname = parts.get(0).unwrap_or(&"unknown").to_string();
-    let addr = parts.get(1).unwrap_or(&"unknown").to_string();
+
+    let hostname = parts.get(0)
+        .map(|s| s.to_string())
+        .context("Missing hostname in connect data")?;
+    let addr = parts.get(1)
+        .map(|s| s.to_string())
+        .context("Missing address in connect data")?;
     
     Ok((hostname, addr))
 }
 
 fn parse_string_data(data: &[u8]) -> Result<String> {
     let data_str = String::from_utf8_lossy(data);
+    if data_str.is_empty() {
+        bail!("Empty string data received");
+    }
     Ok(data_str.trim_end_matches('\0').to_string())
 }
 
 fn parse_header_data(data: &[u8]) -> Result<(String, String)> {
     let data_str = String::from_utf8_lossy(data);
-    let parts: Vec<&str> = data_str.split('\0').collect();
-    
-    let name = parts.get(0).unwrap_or(&"").to_string();
-    let value = parts.get(1).unwrap_or(&"").to_string();
+    let parts: Vec<&str> = data_str.splitn(2, '\0').collect();
+
+    let name = parts.get(0)
+        .map(|s| s.to_string())
+        .context("Missing header name in header data")?;
+    let value = parts.get(1)
+        .map(|s| s.to_string())
+        .context("Missing header value in header data")?;
     
     Ok((name, value))
+}
+
+fn parse_macro_data(data: &[u8]) -> Result<(String, String)> {
+    let data_str = String::from_utf8_lossy(data);
+    let parts: Vec<&str> = data_str.splitn(2, '\0').collect();
+
+    let macro_name = parts.get(0)
+        .map(|s| s.to_string())
+        .context("Missing macro name in macro data")?;
+    let macro_value = parts.get(1)
+        .map(|s| s.to_string())
+        .context("Missing macro value in macro data")?;
+    
+    Ok((macro_name, macro_value))
+}
+
+fn milter_response_from_result(result: MilterResult) -> Option<Vec<u8>> {
+    match result {
+        MilterResult::Continue => Some(create_response(SMFIR_CONTINUE, &[])),
+        MilterResult::Accept => Some(create_response(SMFIR_ACCEPT, &[])),
+        MilterResult::Reject => Some(create_response(SMFIR_REJECT, &[])),
+        MilterResult::TempFail => Some(create_response(SMFIR_TEMPFAIL, &[])),
+        MilterResult::Discard => Some(create_response(SMFIR_DISCARD, &[])),
+        MilterResult::ReplaceBody(body) => Some(create_response(SMFIR_REPLACEBODY, &body)),
+        // TODO: Handle AddHeader, ChangeHeader, etc. if implemented
+        _ => Some(create_response(SMFIR_ACCEPT, &[])), // Default to accept for unhandled results
+    }
 }
