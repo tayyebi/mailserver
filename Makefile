@@ -57,11 +57,29 @@ install: validate certs
 	$(Q)$(DOCKER_COMPOSE) up -d
 
 test:
-	@echo "Testing Submission (587 STARTTLS) and IMAPS (993)..."
-	@SNI="$${MAIL_HOST:-localhost}"; echo "QUIT" | openssl s_client \
-	   -connect 127.0.0.1:587 -starttls smtp -crlf -servername "$$SNI"
-	@SNI="$${MAIL_HOST:-localhost}"; echo -e "a1 CAPABILITY\na2 LOGOUT" | openssl s_client \
-	   -quiet -connect 127.0.0.1:993 -servername "$$SNI"
+	@echo "\n==[ Mailserver Health Checks ]=="
+	@echo "1. TLS/IMAPS connectivity (993):"
+	@SNI="$${MAIL_HOST:-localhost}"; echo -e "a1 CAPABILITY\na2 LOGOUT" | openssl s_client -quiet -connect 127.0.0.1:993 -servername "$$SNI" 2>&1 | grep -q 'OK' \
+		&& echo "✓ IMAPS TLS works" \
+		|| (echo "✗ IMAPS TLS failed" && exit 1)
+	@echo "2. Submission (587 STARTTLS):"
+	@SNI="$${MAIL_HOST:-localhost}"; echo "QUIT" | openssl s_client -connect 127.0.0.1:587 -starttls smtp -crlf -servername "$$SNI" 2>&1 | grep -q '250' \
+		&& echo "✓ Submission STARTTLS works" \
+		|| (echo "✗ Submission STARTTLS failed" && exit 1)
+	@echo "3. Dovecot liveness:"
+	@$(DOCKER_COMPOSE) exec -T dovecot doveadm who 2>/dev/null && echo "✓ Dovecot responds" || (echo "✗ Dovecot not responding" && exit 1)
+	@echo "4. Postfix liveness:"
+	@$(DOCKER_COMPOSE) exec -T postfix postfix status 2>/dev/null && echo "✓ Postfix responds" || (echo "✗ Postfix not responding" && exit 1)
+	@echo "5. SASL auth (Postfix→Dovecot):"
+	@$(DOCKER_COMPOSE) exec -T postfix testsaslauthd -u testuser -p testpass 2>&1 | grep -q 'OK' \
+		&& echo "✓ SASL auth works (testuser)" \
+		|| echo "⚠ SASL auth failed (ensure testuser exists in dovecot/passwd)"
+	@echo "6. pixelmilter health:"
+	@$(MAKE) verify-pixelmilter
+	@echo "7. Log error scan (last 50 lines):"
+	@tail -n 50 data/logs/dovecot.log 2>/dev/null | grep -iE 'error|fail|fatal' && echo "⚠ Dovecot log errors found" || echo "✓ Dovecot logs clean"
+	@tail -n 50 data/logs/postfix.log 2>/dev/null | grep -iE 'error|fail|fatal' && echo "⚠ Postfix log errors found" || echo "✓ Postfix logs clean"
+	@echo "\n==[ All health checks complete ]=="
 
 certs:
 	@[ -f data/ssl/cert.pem ] && echo "TLS cert exists" || $(MAKE) certs-force
@@ -82,19 +100,26 @@ certs-force:
 	@chmod 600 data/ssl/key.pem
 	@chmod 644 data/ssl/cert.pem
 
-add-user:
-	@[ -n "$(USER)" ] && [ -n "$(PASS)" ] || (echo "Usage: make add-user USER=me@example.com PASS=secret" && exit 1)
-	$(Q)HASH=$$(docker run --rm dovecot bash -lc "doveadm pw -s SHA512-CRYPT -p '$(PASS)'"); \
-	docker exec dovecot bash -lc "\
-	  touch /etc/dovecot/passwd; \
-	  grep -q '^$(USER):' /etc/dovecot/passwd \
-		&& sed -i 's#^$(USER):.*#$(USER):'$${HASH}'#' /etc/dovecot/passwd \
-		|| echo '$(USER):'$${HASH} >> /etc/dovecot/passwd; \
-	  chown dovecot:dovecot /etc/dovecot/passwd; \
-	  chmod 640 /etc/dovecot/passwd"
+
+# Add or update a user's password in dovecot/passwd
+add-user update-user:
+		@[ -n "$(USER)" ] && [ -n "$(PASS)" ] || (echo "Usage: make $@ USER=me@example.com PASS=secret" && exit 1)
+		$(Q)HASH=$$(docker run --rm dovecot bash -lc "doveadm pw -s SHA512-CRYPT -p '$(PASS)'"); \
+		docker exec dovecot bash -lc "\
+			touch /etc/dovecot/passwd; \
+			if grep -q '^$(USER):' /etc/dovecot/passwd; then \
+				sed -i 's#^$(USER):.*#$(USER):'$${HASH}'#' /etc/dovecot/passwd; \
+				echo 'Password updated for $(USER)'; \
+			else \
+				echo '$(USER):'$${HASH} >> /etc/dovecot/passwd; \
+				echo 'User added: $(USER)'; \
+			fi; \
+			chown dovecot:dovecot /etc/dovecot/passwd; \
+			chmod 640 /etc/dovecot/passwd"
 
 show-users:
-	$(Q)docker exec dovecot bash -lc "cat /etc/dovecot/passwd"
+	@echo "Users and password hashes (from dovecot/passwd):"
+	@$(Q)docker exec dovecot bash -lc "cat /etc/dovecot/passwd || echo 'No passwd file found'"
 
 remove-user:
 	@[ -n "$(USER)" ] || (echo "Usage: make remove-user USER=me@example.com" && exit 1)
