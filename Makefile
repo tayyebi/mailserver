@@ -13,14 +13,13 @@ include .env
 export
 endif
 
-.PHONY: help validate install test test-connectivity test-local send certs certs-force add-user add-domain reload restart logs backup-dkim reports view-reports tail-reports build-rust test-pixel pixel-stats pixel-health pixel-logs pixel-debug verify-pixelmilter update-config fix-ownerships
+.PHONY: help validate install test test-connectivity send certs certs-force add-user add-domain reload restart logs backup-dkim reports view-reports tail-reports build-rust test-pixel pixel-stats pixel-health pixel-logs pixel-debug verify-pixelmilter update-config fix-ownerships
 
 help:
 	@echo "Available targets:"
 	@echo "  make validate						  Check for required binaries"
 	@echo "  make install						   Bootstrap all services and data"
 	@echo "  make test							  Run mailserver health checks"
-	@echo "  make test-local SERVER=.. USER=.. PASS=.. Test SMTP/IMAP from local machine"
 	@echo "  make send TO=addr SUBMISSION_USER=..   Send test email over submission"
 	@echo "  make certs							 Generate TLS certs if missing"
 	@echo "  make certs-force					   Regenerate TLS certs"
