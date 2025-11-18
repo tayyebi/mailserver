@@ -3,7 +3,6 @@
 dovecot/passwd
 
 # SSL / TLS
-ssl/
 *.key
 *.pem
 *.crt
@@ -11,6 +10,7 @@ ssl/
 
 # Mail data & queues
 data/
+.container_uids.mk
 
 # Logs
 logs/

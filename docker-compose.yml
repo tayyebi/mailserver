@@ -30,7 +30,7 @@ services:
       - ./opendkim/TrustedHosts:/etc/opendkim/TrustedHosts:ro
       - ./opendkim/KeyTable:/etc/opendkim/KeyTable:ro
       - ./opendkim/SigningTable:/etc/opendkim/SigningTable:ro
-      - ./ssl/opendkim/keys:/etc/opendkim/keys:ro
+      - ./data/ssl/opendkim/keys:/etc/opendkim/keys:ro
     networks:
       mailnet:
         ipv4_address: ${OPENDKIM_IP}
@@ -61,11 +61,11 @@ services:
     labels:
       com.mailserver.role: "imap"
     volumes:
-      - ./ssl/cert.pem:/etc/ssl/private/cert.pem:ro
-      - ./ssl/key.pem:/etc/ssl/private/key.pem:ro
+      - ./data/ssl/cert.pem:/etc/ssl/private/cert.pem:ro
+      - ./data/ssl/key.pem:/etc/ssl/private/key.pem:ro
       - ./data/logs/dovecot.log:/var/log/mail.log
       - ./data/mail:/mail
-      - ./dovecot/passwd:/etc/dovecot/passwd:rw
+      - ./data/dovecot/passwd:/etc/dovecot/passwd:rw
       - ./dovecot/dovecot.conf:/etc/dovecot/dovecot.conf:ro
     logging:
       driver: "json-file"
@@ -117,8 +117,8 @@ services:
       - "465:465"
     volumes:
       - /var/spool/postfix
-      - ./ssl/cert.pem:/etc/ssl/certs/postfix.pem:ro
-      - ./ssl/key.pem:/etc/ssl/private/postfix.key:ro
+      - ./data/ssl/cert.pem:/etc/ssl/certs/postfix.pem:ro
+      - ./data/ssl/key.pem:/etc/ssl/private/postfix.key:ro
       - ./data/logs/postfix.log:/var/log/mail.log
       - ./postfix/resolv.conf:/var/spool/postfix/etc/resolv.conf:ro
       - ./postfix/resolv.conf:/etc/resolv.conf:ro
@@ -192,8 +192,8 @@ services:
       - RUST_LOG_STYLE=never
     volumes:
       - ./data/pixel:/data/pixel
-      - ./ssl/cert.pem:/etc/ssl/certs/server.pem:ro
-      - ./ssl/key.pem:/etc/ssl/private/server.key:ro
+      - ./data/ssl/cert.pem:/etc/ssl/certs/server.pem:ro
+      - ./data/ssl/key.pem:/etc/ssl/private/server.key:ro
     labels:
       com.mailserver.role: "pixel-server"
     logging:

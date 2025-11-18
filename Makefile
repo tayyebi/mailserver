@@ -82,9 +82,9 @@ test:
 			sed -i 's/^ service auth {/service auth {/' dovecot/dovecot.conf; \
 			echo "  ✓ Fixed. Restart Dovecot: make restart"; \
 		fi; \
-		if [ ! -f dovecot/passwd ] || [ -d dovecot/passwd ]; then \
-			echo "  ⚠ dovecot/passwd is missing or a directory - creating file..."; \
-			rm -rf dovecot/passwd; touch dovecot/passwd; chmod 644 dovecot/passwd; \
+		if [ ! -f data/dovecot/passwd ] || [ -d data/dovecot/passwd ]; then \
+			echo "  ⚠ data/dovecot/passwd is missing or a directory - creating file..."; \
+			rm -rf data/dovecot/passwd; touch data/dovecot/passwd; chmod 644 data/dovecot/passwd; \
 			echo "  ✓ Created. Add users with: make add-user USER=... PASS=..."; \
 		fi; \
 		exit 1; \
@@ -289,17 +289,17 @@ certs-force:
 	@chmod 644 data/ssl/cert.pem
 
 
-# Add or update a user's password in dovecot/passwd
+# Add or update a user's password in data/dovecot/passwd
 add-user update-user:
 		@[ -n "$(USER)" ] && [ -n "$(PASS)" ] || (echo "Usage: make $@ USER=me@example.com PASS=secret" && exit 1)
 		@# Ensure passwd file exists and is a file, not directory
-		@if [ ! -f dovecot/passwd ]; then \
-			if [ -d dovecot/passwd ]; then \
-				echo "Removing dovecot/passwd directory..."; \
-				rm -rf dovecot/passwd; \
+		@if [ ! -f data/dovecot/passwd ]; then \
+			if [ -d data/dovecot/passwd ]; then \
+				echo "Removing data/dovecot/passwd directory..."; \
+				rm -rf data/dovecot/passwd; \
 			fi; \
-			touch dovecot/passwd; \
-			chmod 644 dovecot/passwd; \
+			touch data/dovecot/passwd; \
+			chmod 644 data/dovecot/passwd; \
 		fi
 		$(Q)HASH=$$($(DOCKER_COMPOSE) exec -T dovecot doveadm pw -s SHA512-CRYPT -p '$(PASS)' 2>&1 | grep -v "the input device" | tail -1); \
 		if [ -z "$$HASH" ] || echo "$$HASH" | grep -q "TTY"; then \
@@ -309,17 +309,17 @@ add-user update-user:
 			echo "Error: Failed to generate password hash"; \
 			exit 1; \
 		fi; \
-		if grep -q '^$(USER):' dovecot/passwd; then \
-			sed -i "s#^$(USER):.*#$(USER):$${HASH}#" dovecot/passwd; \
+		if grep -q '^$(USER):' data/dovecot/passwd; then \
+			sed -i "s#^$(USER):.*#$(USER):$${HASH}#" data/dovecot/passwd; \
 			echo "Password updated for $(USER)"; \
 		else \
-			echo "$(USER):$${HASH}" >> dovecot/passwd; \
+			echo "$(USER):$${HASH}" >> data/dovecot/passwd; \
 			echo "User added: $(USER)"; \
 		fi; \
-		chmod 644 dovecot/passwd
+		chmod 644 data/dovecot/passwd
 
 show-users:
-	@echo "Users and password hashes (from dovecot/passwd):"
+	@echo "Users and password hashes (from data/dovecot/passwd):"
 	@$(Q)docker exec dovecot bash -lc "cat /etc/dovecot/passwd || echo 'No passwd file found'"
 
 remove-user:
@@ -583,12 +583,12 @@ fix-ownerships:
 			sudo chmod 600 data/ssl/key.pem 2>/dev/null || true; \
 		fi; \
 	fi; \
-	echo "Fixing dovecot/passwd permissions..."; \
-	if [ -f dovecot/passwd ]; then \
-	       sudo chmod 644 dovecot/passwd 2>/dev/null || true; \
-	       if ! sudo test -r dovecot/passwd; then \
-		       echo "  ⚠ dovecot/passwd is not readable, attempting to fix ownership..."; \
-		       sudo chown $${DOVECOT_UID:-100}:$${DOVECOT_GID:-102} dovecot/passwd 2>/dev/null || true; \
+	echo "Fixing data/dovecot/passwd permissions..."; \
+	if [ -f data/dovecot/passwd ]; then \
+	       sudo chmod 644 data/dovecot/passwd 2>/dev/null || true; \
+	       if ! sudo test -r data/dovecot/passwd; then \
+		       echo "  ⚠ data/dovecot/passwd is not readable, attempting to fix ownership..."; \
+		       sudo chown $${DOVECOT_UID:-100}:$${DOVECOT_GID:-102} data/dovecot/passwd 2>/dev/null || true; \
 	       fi; \
 	fi; \
 	echo "Fixing postfix/resolv.conf ownership..."; \
