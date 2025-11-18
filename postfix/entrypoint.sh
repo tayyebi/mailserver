@@ -18,17 +18,18 @@ render_template /templates/virtual_aliases.tmpl /etc/postfix/virtual_aliases
 render_template /templates/virtual_domains.tmpl /etc/postfix/virtual_domains
 render_template /templates/vmailbox.tmpl /etc/postfix/vmailbox
 
-# Render pixel-content-filter.sh with environment variable substitution
-if [ -f /templates/pixel-content-filter.sh.tmpl ]; then
-	render_template /templates/pixel-content-filter.sh.tmpl /usr/local/bin/pixel-content-filter.sh
-	chmod +x /usr/local/bin/pixel-content-filter.sh
-	log "Rendered pixel-content-filter.sh with environment variables"
-fi
-
-
-# Load environment defaults
+# Load environment defaults (needed for template rendering)
 MAIL_DOMAIN="${MAIL_DOMAIN:-example.com}"
 MAIL_HOST="${MAIL_HOST:-mail.${MAIL_DOMAIN}}"
+PIXEL_BASE_URL="${PIXEL_BASE_URL:-https://${MAIL_HOST}:8443/pixel?id=}"
+
+# Render pixel-content-filter.sh with environment variable substitution
+if [ -f /templates/pixel-content-filter.sh.tmpl ]; then
+	export PIXEL_BASE_URL MAIL_HOST
+	render_template /templates/pixel-content-filter.sh.tmpl /usr/local/bin/pixel-content-filter.sh
+	chmod +x /usr/local/bin/pixel-content-filter.sh
+	log "Rendered pixel-content-filter.sh with PIXEL_BASE_URL=${PIXEL_BASE_URL}"
+fi
 TZ="${TZ:-UTC}"
 DOVECOT_AUTH_HOST="${DOVECOT_AUTH_HOST:-dovecot}"
 DOVECOT_AUTH_PORT="${DOVECOT_AUTH_PORT:-12345}"
