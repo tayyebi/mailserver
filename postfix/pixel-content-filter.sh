@@ -27,4 +27,7 @@ fi
 # Process email through pixelmilter and reinject via sendmail
 # pixelmilter reads from stdin, modifies email, writes to stdout
 # We pipe the output to sendmail to reinject into Postfix
-/usr/local/bin/pixelmilter "${ARGS[@]}" | /usr/sbin/sendmail -G -i "$@"
+# -t: read recipients from To/Cc/Bcc headers
+# -i: ignore dots in message
+# -G: don't do DNS lookups (faster)
+/usr/local/bin/pixelmilter "${ARGS[@]}" | /usr/sbin/sendmail -G -i -t
