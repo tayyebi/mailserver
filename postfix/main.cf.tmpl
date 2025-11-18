@@ -25,8 +25,11 @@ smtpd_tls_key_file = /etc/ssl/private/postfix.key
 smtpd_tls_security_level = may
 smtpd_tls_auth_only = no
 smtpd_tls_protocols = !SSLv2, !SSLv3
-smtpd_tls_loglevel = 2
-smtp_tls_loglevel = 2
+smtpd_tls_loglevel = 3
+smtp_tls_loglevel = 3
+smtpd_tls_received_header = yes
+smtpd_tls_session_cache_timeout = 3600s
+tls_random_source = dev:/dev/urandom
 
 # SASL
 smtpd_sasl_auth_enable = yes

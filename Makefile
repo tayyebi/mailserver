@@ -13,7 +13,7 @@ include .env
 export
 endif
 
-.PHONY: help validate install test test-connectivity send certs certs-force add-user add-domain reload restart logs backup-dkim reports view-reports tail-reports build-rust test-pixel pixel-stats pixel-health pixel-logs pixel-debug verify-pixelmilter update-config fix-ownerships
+.PHONY: help validate install test test-connectivity send certs certs-force add-user add-domain show-dkim reload restart logs backup-dkim reports view-reports tail-reports build-rust test-pixel pixel-stats pixel-health pixel-logs pixel-debug verify-pixelmilter update-config fix-ownerships
 
 help:
 	@echo "Available targets:"
@@ -25,6 +25,7 @@ help:
 	@echo "  make certs-force					   Regenerate TLS certs"
 	@echo "  make add-user USER=.. PASS=..		  Add/update a mailbox"
 	@echo "  make add-domain DOMAIN=.. [SELECTOR]   Add new mail domain + DKIM"
+	@echo "  make show-dkim DOMAIN=.. [SELECTOR]   Show DKIM DNS record for domain"
 	@echo "  make reload							Reload services"
 	@echo "  make restart						   Restart services"
 	@echo "  make logs							  Tail logs"
@@ -336,6 +337,57 @@ add-domain:
 	@[ -n "$(DOMAIN)" ] || (echo "Usage: make add-domain DOMAIN=example.net [SELECTOR]" && exit 1)
 	$(Q)docker exec opendkim bash -lc "/scripts/add-domain.sh $(DOMAIN) $${SELECTOR:-default}"
 	@echo "Remember to add DNS records for $(DOMAIN)"
+
+show-dkim:
+	@[ -n "$(DOMAIN)" ] || (echo "Usage: make show-dkim DOMAIN=example.net [SELECTOR]" && exit 1)
+	@SELECTOR="$${SELECTOR:-default}"; \
+	DOMAIN="$(DOMAIN)"; \
+	KEY_FILE="data/opendkim/keys/$$DOMAIN/$$SELECTOR.txt"; \
+	echo ""; \
+	echo "=== DKIM Information for $$DOMAIN ==="; \
+	echo ""; \
+	if [ ! -f "$$KEY_FILE" ]; then \
+		echo "✗ DKIM key not found: $$KEY_FILE"; \
+		echo ""; \
+		echo "Available domains:"; \
+		ls -1 data/opendkim/keys/ 2>/dev/null | sed 's/^/  - /' || echo "  (none)"; \
+		exit 1; \
+	fi; \
+	echo "Domain: $$DOMAIN"; \
+	echo "Selector: $$SELECTOR"; \
+	echo ""; \
+	echo "DNS Record Name:"; \
+	echo "  $$SELECTOR._domainkey.$$DOMAIN"; \
+	echo ""; \
+	echo "DNS TXT Record Value:"; \
+	if [ -f "$$KEY_FILE" ]; then \
+		PUBLIC_KEY=$$(cat "$$KEY_FILE" | grep -v '^---' | grep -v 'BEGIN' | grep -v 'END' | tr -d '\n\r ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$$//'); \
+		if [ -n "$$PUBLIC_KEY" ]; then \
+			echo "  v=DKIM1; k=rsa; p=$$PUBLIC_KEY"; \
+		else \
+			echo "  (could not read public key from file)"; \
+		fi; \
+	else \
+		echo "  (key file not found)"; \
+	fi; \
+	echo ""; \
+	echo "Key File Location:"; \
+	echo "  $$KEY_FILE"; \
+	echo ""; \
+	if grep -q "$$SELECTOR._domainkey.$$DOMAIN" opendkim/KeyTable 2>/dev/null; then \
+		echo "KeyTable Entry:"; \
+		grep "$$SELECTOR._domainkey.$$DOMAIN" opendkim/KeyTable | sed 's/^/  /'; \
+		echo ""; \
+	fi; \
+	if grep -q "@$$DOMAIN" opendkim/SigningTable 2>/dev/null; then \
+		echo "SigningTable Entry:"; \
+		grep "@$$DOMAIN" opendkim/SigningTable | sed 's/^/  /'; \
+		echo ""; \
+	fi; \
+	echo "To add this DNS record, create a TXT record:"; \
+	echo "  Name: $$SELECTOR._domainkey.$$DOMAIN"; \
+	echo "  Value: (see DNS TXT Record Value above)"; \
+	echo ""
 
 reload:
 	$(Q)$(DOCKER_COMPOSE) exec postfix postfix reload
