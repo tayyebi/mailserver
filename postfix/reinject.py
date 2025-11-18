@@ -32,6 +32,12 @@ def main():
         sys.exit(1)
     
     try:
+        # Read initial greeting
+        response = sock.recv(1024)
+        if not response.startswith(b'220'):
+            sys.stderr.write(f'ERROR: No greeting from server: {response}\n')
+            sys.exit(1)
+        
         # Send SMTP commands
         sock.sendall(b'EHLO localhost\r\n')
         response = sock.recv(1024)

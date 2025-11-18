@@ -127,6 +127,7 @@ services:
       - "587:587"
       - "465:465"
     volumes:
+      - /var/log/mailserver/postfix:/var/log/postfix:rw
       - /var/spool/postfix
       - ./data/ssl/cert.pem:/etc/ssl/certs/postfix.pem:ro
       - ./data/ssl/key.pem:/etc/ssl/private/postfix.key:ro

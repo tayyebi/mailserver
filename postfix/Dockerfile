@@ -31,7 +31,8 @@ RUN mkdir -p /var/spool/postfix/active /var/spool/postfix/bounce /var/spool/post
         /var/spool/postfix/defer /var/spool/postfix/deferred /var/spool/postfix/flush \
         /var/spool/postfix/hold /var/spool/postfix/incoming /var/spool/postfix/private \
         /var/spool/postfix/maildrop /var/spool/postfix/pid /var/spool/postfix/public \
-        /var/spool/postfix/saved /var/spool/postfix/trace
+        /var/spool/postfix/saved /var/spool/postfix/trace \
+        /var/log/postfix
 RUN mkdir -p /usr/share/doc/postfix \
     && touch /usr/share/doc/postfix/MAILLOG_README \
     && touch /usr/share/doc/postfix/TLS_README \

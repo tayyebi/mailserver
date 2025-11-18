@@ -13,7 +13,7 @@ include .env
 export
 endif
 
-.PHONY: help validate install test test-connectivity send certs certs-force add-user add-domain show-dkim reload restart logs backup-dkim reports view-reports tail-reports build-rust test-pixel pixel-stats pixel-health pixel-logs pixel-debug verify-pixelmilter update-config fix-ownerships
+.PHONY: help validate install test test-connectivity send certs certs-force add-user add-domain show-dkim reload restart logs backup-dkim reports view-reports tail-reports build-rust test-pixel pixel-stats pixel-health pixel-logs pixel-debug verify-pixelmilter update-config fix-ownerships queue-status queue-flush outbound-status
 
 help:
 	@echo "Available targets:"
@@ -30,6 +30,10 @@ help:
 	@echo "  make restart						   Restart services"
 	@echo "  make logs							  Tail logs"
 	@echo "  make backup-dkim					   Backup DKIM keys"
+	@echo "  make queue-status					  Display emails in queue"
+	@echo "  make queue-flush					   Flush email queue"
+	@echo "  make outbound-status				   Display last outbound emails status"
+	@echo "  make send TO=addr [FROM=addr] [SUBJECT=...]  Send test email (uses password from .env)"
 	@echo ""
 	@echo "Pixel Tracking Commands:"
 	@echo "  make build-rust						Build Rust pixel tracking components"
@@ -508,6 +512,67 @@ restart:
 
 logs:
 	$(Q)$(DOCKER_COMPOSE) logs -f postfix opendkim dovecot
+
+queue-status:
+	@echo "=== Email Queue Status ==="
+	@$(DOCKER_COMPOSE) exec -T postfix postqueue -p || echo "Failed to query queue"
+
+queue-flush:
+	@echo "Flushing email queue..."
+	@$(DOCKER_COMPOSE) exec -T postfix postqueue -f || echo "Failed to flush queue"
+	@echo "✓ Queue flushed"
+
+outbound-status:
+	@echo "=== Last Outbound Email Status ==="
+	@echo ""
+	@echo "Recent outbound emails (last 20):"
+	@$(DOCKER_COMPOSE) logs --tail=200 postfix 2>/dev/null | \
+		grep -E '(status=sent|status=deferred|status=bounced|relay=.*\.com|relay=.*\.net|relay=.*\.org|to=<.*@.*>)' | \
+		tail -20 | \
+		sed 's/.*postfix[^|]*| //' || \
+		echo "No outbound email logs found"
+	@echo ""
+	@echo "Summary (last 50 emails):"
+	@$(DOCKER_COMPOSE) logs --tail=500 postfix 2>/dev/null | \
+		grep -oE 'status=(sent|deferred|bounced)' | \
+		sort | uniq -c | \
+		sed 's/^/  /' || \
+		echo "  No status information found"
+
+send:
+	@[ -n "$(TO)" ] || (echo "Usage: make send TO=recipient@example.com [FROM=sender@example.com] [SUBJECT=Subject]" && exit 1)
+	@FROM="$${FROM:-postmaster@$${MAIL_DOMAIN:-localhost}}"
+	@SUBJECT="$${SUBJECT:-Test Email from Mailserver}"
+	@SUBMISSION_USER="$${SUBMISSION_USER:-$$FROM}"
+	@SUBMISSION_PASS="$${SUBMISSION_PASS:-}"
+	@if [ -z "$$SUBMISSION_PASS" ] && [ -f .env ]; then \
+		SUBMISSION_PASS=$$(grep "^SUBMISSION_PASS=" .env 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'" || echo ""); \
+	fi; \
+	if [ -z "$$SUBMISSION_PASS" ]; then \
+		echo "ERROR: SUBMISSION_PASS not found in .env file"; \
+		echo "Please add SUBMISSION_PASS=yourpassword to .env file"; \
+		exit 1; \
+	fi; \
+	echo "Sending email from $$FROM to $(TO)..."; \
+	if command -v swaks >/dev/null 2>&1; then \
+		swaks \
+			--server 127.0.0.1 \
+			--port 587 \
+			--from "$$FROM" \
+			--to "$(TO)" \
+			--auth-user "$$SUBMISSION_USER" \
+			--auth-password "$$SUBMISSION_PASS" \
+			--tls \
+			--header "Subject: $$SUBJECT" \
+			--body "This is a test email sent from the mailserver.\n\nSent at: $$(date)\nFrom: $$FROM\nTo: $(TO)" || \
+		(echo "Failed to send email. Check logs with: make logs" && exit 1); \
+	else \
+		echo "ERROR: swaks is not installed. Install it with: apt install swaks"; \
+		echo "Alternatively, you can send email using sendmail:"; \
+		echo "  docker compose exec postfix sendmail -f $$FROM $(TO) < email.txt"; \
+		exit 1; \
+	fi; \
+	echo "✓ Email sent successfully"
 
 backup-dkim:
 	@tar czf dkim-backup-$$\(date +%Y%m%d_%H%M%S\).tgz -C data/opendkim keys
