@@ -40,7 +40,17 @@ done
 postfix upgrade-configuration
 
 # Copy pixelmilter binary from pixelmilter container if available
-if command -v docker >/dev/null 2>&1; then
+# Use docker compose exec from host if docker compose is available, or try docker cp
+PIXELMILTER_CONTAINER="pixelmilter"
+if [ -f /usr/local/bin/docker-compose ] || command -v docker-compose >/dev/null 2>&1; then
+  log "Attempting to copy pixelmilter binary using docker compose"
+  if docker-compose exec -T "$PIXELMILTER_CONTAINER" cat /usr/local/bin/pixelmilter > /usr/local/bin/pixelmilter 2>/dev/null; then
+    chmod +x /usr/local/bin/pixelmilter
+    log "Successfully copied pixelmilter binary"
+  else
+    log "Warning: Could not copy pixelmilter binary via docker compose"
+  fi
+elif command -v docker >/dev/null 2>&1; then
   PIXELMILTER_CONTAINER=$(docker ps --filter "name=pixelmilter" --format "{{.Names}}" | head -1)
   if [ -n "$PIXELMILTER_CONTAINER" ]; then
     log "Copying pixelmilter binary from container $PIXELMILTER_CONTAINER"
@@ -50,6 +60,15 @@ if command -v docker >/dev/null 2>&1; then
     else
       log "Warning: Could not copy pixelmilter binary, content filter may not work"
     fi
+  fi
+else
+  # Try to copy from shared volume
+  if [ -f /data/pixel/pixelmilter ]; then
+    cp /data/pixel/pixelmilter /usr/local/bin/pixelmilter
+    chmod +x /usr/local/bin/pixelmilter
+    log "Copied pixelmilter binary from shared volume"
+  else
+    log "Warning: pixelmilter binary not found, content filter may not work"
   fi
 fi
 

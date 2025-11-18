@@ -10,6 +10,10 @@ if [ "$(id -u)" = "0" ]; then
   chown -R pixel:pixel /data/pixel 2>/dev/null || true
 fi
 
+# Copy binary to shared volume for postfix container to access
+cp /usr/local/bin/pixelmilter /data/pixel/pixelmilter 2>/dev/null || true
+chmod +x /data/pixel/pixelmilter 2>/dev/null || true
+
 ADDRESS=${PIXEL_MILTER_ADDRESS:-0.0.0.0:8892}
 
 # Run the binary directly - user switching can be handled by Docker USER directive if needed
