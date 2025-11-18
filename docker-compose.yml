@@ -60,9 +60,9 @@ services:
     labels:
       com.mailserver.role: "imap"
     volumes:
-      - ./ssl/mailserver-cert.pem:/etc/ssl/private/cert.pem:ro
-      - ./ssl/mailserver-key.pem:/etc/ssl/private/key.pem:ro
-      - /var/log/dovecot.log:/var/log/mail.log
+      - ./ssl/cert.pem:/etc/ssl/private/cert.pem:ro
+      - ./ssl/key.pem:/etc/ssl/private/key.pem:ro
+      - ./data/logs/dovecot.log:/var/log/mail.log
       - ./data/mail:/mail
       - ./dovecot/passwd:/etc/dovecot/passwd
     logging:
@@ -114,9 +114,9 @@ services:
       - "465:465"
     volumes:
       - /var/spool/postfix
-      - ./ssl/mailserver-cert.pem:/etc/ssl/certs/postfix.pem:ro
-      - ./ssl/mailserver-key.pem:/etc/ssl/private/postfix.key:ro
-      - /var/log/postfix.log:/var/log/mail.log
+      - ./ssl/cert.pem:/etc/ssl/certs/postfix.pem:ro
+      - ./ssl/key.pem:/etc/ssl/private/postfix.key:ro
+      - ./data/logs/postfix.log:/var/log/mail.log
     depends_on:
       dovecot:
         condition: service_healthy
@@ -187,8 +187,8 @@ services:
       - RUST_LOG_STYLE=never
     volumes:
       - ./data/pixel:/data/pixel
-      - ./ssl/mailserver-cert.pem:/etc/ssl/certs/server.pem:ro
-      - ./ssl/mailserver-key.pem:/etc/ssl/private/server.key:ro
+      - ./ssl/cert.pem:/etc/ssl/certs/server.pem:ro
+      - ./ssl/key.pem:/etc/ssl/private/server.key:ro
     labels:
       com.mailserver.role: "pixel-server"
     logging:

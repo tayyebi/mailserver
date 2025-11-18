@@ -742,7 +742,7 @@ async fn main() -> Result<()> {
     );
 
     debug!("Creating MilterServer instance");
-    let server = MilterServer::new(milter, milter_options);
+    let server = MilterServer::new(milter);
 
     info!(
         pixel_base_url = %config.pixel_base_url,

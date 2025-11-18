@@ -109,12 +109,11 @@ pub trait MilterCallbacks: Send + Sync + Clone {
 
 pub struct MilterServer<T: MilterCallbacks + 'static> {
     callbacks: T,
-    options: MilterOptions,
 }
 
 impl<T: MilterCallbacks + 'static> MilterServer<T> {
-    pub fn new(callbacks: T, options: MilterOptions) -> Self {
-        Self { callbacks, options }
+    pub fn new(callbacks: T) -> Self {
+        Self { callbacks }
     }
 
     pub async fn run_unix(&self, socket_path: &Path) -> Result<()> {
@@ -767,9 +766,7 @@ fn parse_macro_data(data: &[u8]) -> Result<(String, String)> {
     let macro_name = parts.get(0)
         .map(|s| s.to_string())
         .context("Missing macro name in macro data")?;
-    let macro_value = parts.get(1)
-        .map(|s| s.to_string())
-        .context("Missing macro value in macro data")?;
+    let macro_value = parts.get(1).unwrap_or(&"").to_string();
     
     Ok((macro_name, macro_value))
 }

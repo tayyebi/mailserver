@@ -11,7 +11,4 @@ RUN apt-get update \
  && dpkg-reconfigure -f noninteractive tzdata \
  && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /etc/opendkim/keys \
- && chown -R opendkim:opendkim /etc/opendkim
-
 COPY opendkim.conf /etc/opendkim/opendkim.conf
