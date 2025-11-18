@@ -314,12 +314,15 @@ fix-ownerships:
 		sudo chmod 644 data/logs/postfix.log 2>/dev/null || true; \
 	fi; \
 	echo "Fixing SSL certificates ownership..."; \
+	# Ensure host-side SSL files are owned by root so bind-mounts present root-owned files inside containers
 	sudo chown -R root:root ssl 2>/dev/null || echo "  ⚠ Could not change ownership of ssl (may need manual fix)"; \
 	sudo chmod 755 ssl 2>/dev/null || true; \
 	if [ -f ssl/cert.pem ]; then \
+		sudo chown root:root ssl/cert.pem 2>/dev/null || true; \
 		sudo chmod 644 ssl/cert.pem 2>/dev/null || true; \
 	fi; \
 	if [ -f ssl/key.pem ]; then \
+		sudo chown root:root ssl/key.pem 2>/dev/null || true; \
 		sudo chmod 600 ssl/key.pem 2>/dev/null || true; \
 	fi; \
 	if [ -d ssl/opendkim ]; then \
@@ -327,6 +330,15 @@ fix-ownerships:
 		sudo chmod 755 ssl/opendkim 2>/dev/null || true; \
 		if [ -d ssl/opendkim/keys ]; then \
 			sudo chmod -R 755 ssl/opendkim/keys 2>/dev/null || true; \
+		fi; \
+	fi; \
+	# Also ensure any generated certs under data/ssl are owned correctly
+	if [ -d data/ssl ]; then \
+		sudo chown -R root:root data/ssl 2>/dev/null || true; \
+		sudo chmod -R 755 data/ssl 2>/dev/null || true; \
+		if [ -f data/ssl/key.pem ]; then \
+			sudo chown root:root data/ssl/key.pem 2>/dev/null || true; \
+			sudo chmod 600 data/ssl/key.pem 2>/dev/null || true; \
 		fi; \
 	fi; \
 	echo "Fixing dovecot/passwd ownership..."; \
