@@ -607,16 +607,33 @@ render-maps:
 		postmap /etc/postfix/vmailbox"
 
 reports:
-	@PAGE=$${PAGE:-1}; PER=$${PER:-50}; \
-	URL="https://${MAIL_HOST:-localhost}:8443/reports?page=$$PAGE&per=$$PER&format=html"; \
-	echo "Fetching $$URL"; \
-	curl -k --silent "$$URL" | sed -n '1,300p'
+	@echo "=== Pixel Tracking Reports ==="; \
+	echo ""; \
+	echo "Overall Statistics:"; \
+	curl -k -s "https://${MAIL_HOST:-localhost}:8443/stats" 2>/dev/null | jq . 2>/dev/null || echo "  (pixelserver may not be running)"; \
+	echo ""; \
+	echo "Recent Messages:"; \
+	find data/pixel -name meta.json -type f -mtime -7 | head -20 | while read f; do \
+		ID=$$(basename $$(dirname $$f)); \
+		SENDER=$$(jq -r '.sender' $$f 2>/dev/null || echo "unknown"); \
+		OPENED=$$(jq -r '.opened' $$f 2>/dev/null || echo "false"); \
+		OPEN_COUNT=$$(jq -r '.open_count' $$f 2>/dev/null || echo "0"); \
+		FIRST_OPEN=$$(jq -r '.first_open_str // "never"' $$f 2>/dev/null || echo "never"); \
+		echo "  $$ID | $$SENDER | Opened: $$OPENED ($$OPEN_COUNT times) | First: $$FIRST_OPEN"; \
+	done || echo "  No messages found"
 
 view-reports:
-	@PAGE=$${PAGE:-1}; PER=$${PER:-50}; \
-	URL="https://${MAIL_HOST:-localhost}:8443/reports?page=$$PAGE&per=$$PER"; \
-	echo "GET $$URL"; \
-	curl -k --silent "$$URL" | jq .
+	@echo "=== Detailed Pixel Tracking Reports ==="; \
+	echo ""; \
+	echo "Overall Statistics:"; \
+	curl -k -s "https://${MAIL_HOST:-localhost}:8443/stats" 2>/dev/null | jq . 2>/dev/null || echo "  (pixelserver may not be running)"; \
+	echo ""; \
+	echo "All Messages (JSON):"; \
+	find data/pixel -name meta.json -type f | head -50 | while read f; do \
+		echo ""; \
+		echo "--- $$(basename $$(dirname $$f)) ---"; \
+		jq '{id, sender, created_str, opened, open_count, first_open_str, last_open_str}' $$f 2>/dev/null || cat $$f; \
+	done
 
 tail-reports:
 	@LOG=data/pixel/requests.log; \
