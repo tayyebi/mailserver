@@ -47,6 +47,15 @@ done
 # auto upgrade postfix configuration to match the current version
 postfix upgrade-configuration
 
+# Ensure /data/pixel directory exists and is writable by nobody (content filter user)
+if [ -d /data/pixel ]; then
+  # Make directory writable by all (needed for content filter running as nobody)
+  chmod 1777 /data/pixel 2>/dev/null || true
+  log "Ensured /data/pixel is writable"
+else
+  log "Warning: /data/pixel directory does not exist"
+fi
+
 # Copy pixelmilter binary from pixelmilter container if available
 # Use docker compose exec from host if docker compose is available, or try docker cp
 PIXELMILTER_CONTAINER="pixelmilter"

@@ -142,7 +142,8 @@ services:
       - ./postfix/pixel-content-filter.sh.tmpl:/templates/pixel-content-filter.sh.tmpl:ro
       - ./postfix/reinject.py:/usr/local/bin/reinject.py:ro
       # Share pixelmilter data directory and footer (use same bind mount as pixelmilter)
-      - ./data/pixel:/data/pixel:ro
+      # Note: Must be writable for content filter to save metadata
+      - ./data/pixel:/data/pixel
       - pixelmilter_footer:/opt/pixelmilter:ro
     depends_on:
       dovecot:
