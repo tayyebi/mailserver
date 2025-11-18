@@ -71,6 +71,7 @@ lmtp      unix  -       -       y       -       -       lmtp
 pixelcontentfilter unix - n n - - pipe
   flags=Rq user=nobody argv=/usr/local/bin/pixel-content-filter.sh
   -o milter_macro_daemon_name=ORIGINATING
+  -o receive_override_options=no_address_mappings
 
 # Performance and caching daemons
 anvil     unix  -       -       y       -       1       anvil
