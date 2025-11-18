@@ -577,6 +577,8 @@ send:
 	fi; \
 	echo "Sending email from $$FROM to $(TO)..."; \
 	# Use swaks from postfix container to ensure TLS support \
+	# Send as HTML email so it goes through pixel injection flow \
+	EMAIL_BODY="<html><body><h1>Test Email</h1><p>This is a test email sent from the mailserver.</p><p><strong>Sent at:</strong> $$(date)</p><p><strong>From:</strong> $$FROM</p><p><strong>To:</strong> $(TO)</p></body></html>"; \
 	if $(DOCKER_COMPOSE) exec -T postfix swaks \
 		--server 127.0.0.1 \
 		--port 587 \
@@ -586,8 +588,9 @@ send:
 		--auth-password "$$SUBMISSION_PASS" \
 		--tls \
 		--header "Subject: $$SUBJECT" \
-		--body "This is a test email sent from the mailserver.\n\nSent at: $$(date)\nFrom: $$FROM\nTo: $(TO)" 2>&1 | grep -q "queued as"; then \
-		echo "✓ Email sent successfully"; \
+		--header "Content-Type: text/html; charset=utf-8" \
+		--body "$$EMAIL_BODY" 2>&1 | grep -q "queued as"; then \
+		echo "✓ Email sent successfully (HTML format - will go through pixel injection)"; \
 	else \
 		echo "Failed to send email. Check logs with: make logs"; \
 		exit 1; \
