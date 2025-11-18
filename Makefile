@@ -607,13 +607,14 @@ render-maps:
 		postmap /etc/postfix/vmailbox"
 
 reports:
-	@echo "=== Pixel Tracking Reports ==="; \
+	@REPORTS_PORT=$${REPORTS_PORT:-8444}; \
+	echo "=== Pixel Tracking Reports ==="; \
 	echo ""; \
 	echo "Overall Statistics:"; \
 	if command -v jq >/dev/null 2>&1; then \
-		curl -k -s "https://${MAIL_HOST:-localhost}:8443/stats" 2>/dev/null | jq . 2>/dev/null || echo "  (pixelserver may not be running)"; \
+		curl -k -s "https://${MAIL_HOST:-localhost}:$$REPORTS_PORT/stats" 2>/dev/null | jq . 2>/dev/null || echo "  (pixelserver may not be running)"; \
 	else \
-		curl -k -s "https://${MAIL_HOST:-localhost}:8443/stats" 2>/dev/null || echo "  (pixelserver may not be running)"; \
+		curl -k -s "https://${MAIL_HOST:-localhost}:$$REPORTS_PORT/stats" 2>/dev/null || echo "  (pixelserver may not be running)"; \
 	fi; \
 	echo ""; \
 	echo "Recent Messages (last 20):"; \
@@ -637,10 +638,11 @@ reports:
 	done || echo "  No messages found"
 
 view-reports:
-	@echo "=== Detailed Pixel Tracking Reports ==="; \
+	@REPORTS_PORT=$${REPORTS_PORT:-8444}; \
+	echo "=== Detailed Pixel Tracking Reports ==="; \
 	echo ""; \
 	echo "Overall Statistics:"; \
-	curl -k -s "https://${MAIL_HOST:-localhost}:8443/stats" 2>/dev/null | jq . 2>/dev/null || echo "  (pixelserver may not be running)"; \
+	curl -k -s "https://${MAIL_HOST:-localhost}:$$REPORTS_PORT/stats" 2>/dev/null | jq . 2>/dev/null || echo "  (pixelserver may not be running)"; \
 	echo ""; \
 	echo "All Messages (JSON):"; \
 	find data/pixel -name meta.json -type f | head -50 | while read f; do \
@@ -652,6 +654,25 @@ view-reports:
 tail-reports:
 	@LOG=data/pixel/requests.log; \
 	if [ -f "$$LOG" ]; then tail -n 200 "$$LOG" || true; else echo "No log file at $$LOG"; fi
+
+clear-tracking:
+	@echo "⚠ WARNING: This will delete ALL tracking data!"; \
+	echo ""; \
+	read -p "Are you sure? Type 'yes' to confirm: " confirm; \
+	if [ "$$confirm" = "yes" ]; then \
+		echo "Clearing tracking database..."; \
+		find data/pixel -mindepth 1 -maxdepth 1 -type d ! -name socket -exec rm -rf {} \; 2>/dev/null || true; \
+		rm -f data/pixel/requests.log 2>/dev/null || true; \
+		echo "✓ Tracking database cleared"; \
+	else \
+		echo "Operation cancelled"; \
+	fi
+
+clear-tracking-force:
+	@echo "Clearing tracking database (forced)..."; \
+	find data/pixel -mindepth 1 -maxdepth 1 -type d ! -name socket -exec rm -rf {} \; 2>/dev/null || true; \
+	rm -f data/pixel/requests.log 2>/dev/null || true; \
+	echo "✓ Tracking database cleared"
 
 # Rust Pixel Tracking Targets
 build-rust:

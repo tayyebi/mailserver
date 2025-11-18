@@ -213,6 +213,7 @@ services:
       - PIXEL_TLS_KEY=/etc/ssl/private/server.key
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - RUST_LOG_STYLE=never
+      - REPORTS_BIND_ADDRESS=${REPORTS_BIND_ADDRESS:-0.0.0.0:8444}
     volumes:
       - ./data/pixel:/data/pixel
       - ./data/ssl/cert.pem:/etc/ssl/certs/server.pem:ro
@@ -226,6 +227,7 @@ services:
         max-file: "3"
     ports:
       - "8443:8443"
+      - "${REPORTS_PORT:-8444}:${REPORTS_PORT:-8444}"
     networks:
       mailnet:
         ipv4_address: ${PIXEL_SERVER_IP}

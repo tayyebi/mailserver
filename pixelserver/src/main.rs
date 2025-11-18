@@ -38,9 +38,13 @@ struct Args {
     #[arg(long, env = "PIXEL_TLS_KEY", default_value = "/etc/ssl/private/server.key")]
     tls_key: PathBuf,
 
-    /// Server bind address
+    /// Server bind address (for pixel tracking)
     #[arg(long, env = "BIND_ADDRESS", default_value = "0.0.0.0:8443")]
     bind_address: SocketAddr,
+
+    /// Reports API bind address (separate port for reports/stats)
+    #[arg(long, env = "REPORTS_BIND_ADDRESS")]
+    reports_bind_address: Option<SocketAddr>,
 
     /// Log level
     #[arg(long, env = "LOG_LEVEL", default_value = "info")]
@@ -156,13 +160,57 @@ async fn main() -> Result<()> {
     info!("Application state created");
 
     debug!("Creating application router");
-    let app = create_app(state);
+    let app = create_app(state.clone());
     info!("Application router created");
+
+    // Start reports server on separate port if configured
+    if let Some(reports_addr) = args.reports_bind_address {
+        let reports_state = state.clone();
+        let reports_tls_cert = args.tls_cert.clone();
+        let reports_tls_key = args.tls_key.clone();
+        let reports_use_tls = use_tls;
+        
+        tokio::spawn(async move {
+            // Create reports-only router (only stats and message endpoints, no pixel tracking)
+            let reports_app = Router::new()
+                .route("/", get(status_handler))
+                .route("/health", get(health_handler))
+                .route("/msg/:id/meta", get(message_meta_handler))
+                .route("/msg/:id/body", get(message_body_handler))
+                .route("/msg/:id/headers", get(message_headers_handler))
+                .route("/stats", get(stats_handler))
+                .layer(tower_http::trace::TraceLayer::new_for_http())
+                .layer(tower_http::cors::CorsLayer::permissive())
+                .layer(Extension(reports_state));
+            
+            info!(bind_address = %reports_addr, "Starting reports API server");
+            if !reports_use_tls {
+                if let Err(e) = axum::Server::bind(&reports_addr)
+                    .serve(reports_app.into_make_service())
+                    .await {
+                    error!(error = %e, "Reports server error");
+                }
+            } else {
+                match RustlsConfig::from_pem_file(&reports_tls_cert, &reports_tls_key).await {
+                    Ok(config) => {
+                        if let Err(e) = axum_server::bind_rustls(reports_addr, config)
+                            .serve(reports_app.into_make_service_with_connect_info::<SocketAddr>())
+                            .await {
+                            error!(error = %e, "Reports server error");
+                        }
+                    }
+                    Err(e) => {
+                        error!(error = %e, "Failed to load TLS config for reports server");
+                    }
+                }
+            }
+        });
+    }
 
     if !use_tls {
         info!(
             bind_address = %args.bind_address,
-            "Starting server in development mode (HTTP)"
+            "Starting pixel tracking server in development mode (HTTP)"
         );
         axum::Server::bind(&args.bind_address)
             .serve(app.into_make_service())
@@ -181,7 +229,7 @@ async fn main() -> Result<()> {
 
         info!(
             bind_address = %args.bind_address,
-            "Starting server with TLS"
+            "Starting pixel tracking server with TLS"
         );
         axum_server::bind_rustls(args.bind_address, config)
             .serve(app.into_make_service_with_connect_info::<SocketAddr>())
