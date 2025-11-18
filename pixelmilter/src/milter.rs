@@ -261,11 +261,20 @@ async fn handle_connection_impl<T: MilterCallbacks, S: AsyncRead + AsyncWrite + 
                     
                     match process_milter_command(&ctx_id, command, data, callbacks, &mut current_state, milter_options).await {
                         Ok((Some(response), should_continue)) => {
+                            let response_command = if response.len() > 4 { response[4] as char } else { '?' };
                             debug!(
                                 ctx_id = %ctx_id,
                                 response_size = response.len(),
+                                response_command = %response_command,
                                 "Sending response to client"
                             );
+                            if response_command == 'b' {
+                                info!(
+                                    ctx_id = %ctx_id,
+                                    response_size = response.len(),
+                                    "Sending ReplaceBody response"
+                                );
+                            }
                             if let Err(e) = stream.write_all(&response).await {
                                 error!(
                                     ctx_id = %ctx_id,
@@ -781,7 +790,10 @@ fn milter_response_from_result(result: MilterResult) -> Option<Vec<u8>> {
         MilterResult::Reject => Some(create_response(SMFIR_REJECT, &[])),
         MilterResult::TempFail => Some(create_response(SMFIR_TEMPFAIL, &[])),
         MilterResult::Discard => Some(create_response(SMFIR_DISCARD, &[])),
-        MilterResult::ReplaceBody(body) => Some(create_response(SMFIR_REPLACEBODY, &body)),
+        MilterResult::ReplaceBody(body) => {
+            info!("Sending ReplaceBody response with body size: {}", body.len());
+            Some(create_response(SMFIR_REPLACEBODY, &body))
+        },
         // TODO: Handle AddHeader, ChangeHeader, etc. if implemented
         _ => Some(create_response(SMFIR_ACCEPT, &[])), // Default to accept for unhandled results
     }
