@@ -147,12 +147,14 @@ impl<T: MilterCallbacks + 'static> MilterServer<T> {
 
     pub async fn run_inet(&self, address: &str) -> Result<()> {
         info!("Attempting to bind to TCP address: {}", address);
+        eprintln!("DEBUG: Attempting to bind to TCP address: {}", address);
         
         let listener = TcpListener::bind(address)
             .await
             .with_context(|| format!("Failed to bind to TCP address: {}. Check if the port is available.", address))?;
 
         info!("Milter server listening on TCP: {}", address);
+        eprintln!("DEBUG: Milter server listening on TCP: {}", address);
 
         let callbacks = std::sync::Arc::new(self.callbacks.clone());
         

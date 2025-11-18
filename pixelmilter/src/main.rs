@@ -772,6 +772,7 @@ async fn main() -> Result<()> {
 
     // Run the server - this should never return unless there's an error
     if use_inet {
+        info!("Starting TCP server on {}", address);
         if let Err(e) = server.run_inet(&address).await {
             error!(error = %e, "Fatal error running milter server");
             eprintln!("Fatal error: {}", e);
@@ -779,6 +780,7 @@ async fn main() -> Result<()> {
         }
     } else {
         let socket_path = PathBuf::from(&address);
+        info!("Starting Unix socket server on {:?}", socket_path);
         if let Err(e) = server.run_unix(&socket_path).await {
             error!(error = %e, "Fatal error running milter server");
             eprintln!("Fatal error: {}", e);
@@ -788,5 +790,6 @@ async fn main() -> Result<()> {
 
     // This should never be reached, but if it is, log it
     error!("Milter server exited unexpectedly");
+    eprintln!("ERROR: Milter server exited unexpectedly - this should never happen!");
     std::process::exit(1);
 }
