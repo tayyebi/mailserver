@@ -101,6 +101,15 @@ services:
       - DOVECOT_LMTP_PORT=24
       - OPENDKIM_IP=${OPENDKIM_IP}
       - PIXEL_MILTER_IP=${PIXEL_MILTER_IP}
+      # Content filter environment variables
+      - PIXEL_BASE_URL=${PIXEL_BASE_URL:-https://${MAIL_HOST}:8443/pixel?id=}
+      - TRACKING_REQUIRES_OPT_IN=${TRACKING_REQUIRES_OPT_IN:-false}
+      - OPT_IN_HEADER=${OPT_IN_HEADER:-X-Track-Open}
+      - DISCLOSURE_HEADER=${DISCLOSURE_HEADER:-X-Tracking-Notice}
+      - INJECT_DISCLOSURE=${INJECT_DISCLOSURE:-true}
+      - DATA_DIR=/data/pixel
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - FOOTER_HTML_FILE=/opt/pixelmilter/domain-wide-footer.html
     healthcheck:
       test: ["CMD-SHELL", "postfix status | grep -qi running && /usr/local/bin/healthcheck.sh"]
       interval: 60s
@@ -129,6 +138,11 @@ services:
       - ./postfix/virtual_aliases.tmpl:/templates/virtual_aliases.tmpl:ro
       - ./postfix/virtual_domains.tmpl:/templates/virtual_domains.tmpl:ro
       - ./postfix/vmailbox.tmpl:/templates/vmailbox.tmpl:ro
+      - ./postfix/pixel-content-filter.sh:/usr/local/bin/pixel-content-filter.sh:ro
+      # Share pixelmilter binary and data directory
+      - pixelmilter_binary:/usr/local/bin/pixelmilter:ro
+      - pixelmilter_data:/data/pixel:ro
+      - pixelmilter_footer:/opt/pixelmilter:ro
     depends_on:
       dovecot:
         condition: service_healthy
@@ -162,6 +176,8 @@ services:
       - RUST_LOG_STYLE=never
     volumes:
       - ./data/pixel:/data/pixel
+      - pixelmilter_binary:/usr/local/bin/pixelmilter
+      - pixelmilter_footer:/opt/pixelmilter
     labels:
       com.mailserver.role: "milter"
     logging:
@@ -218,6 +234,11 @@ services:
       interval: 60s
       timeout: 10s
       retries: 1
+
+volumes:
+  pixelmilter_binary:
+  pixelmilter_data:
+  pixelmilter_footer:
 
 networks:
   mailnet:

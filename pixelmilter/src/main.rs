@@ -4,6 +4,7 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
+use std::io::{self, BufReader};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -12,9 +13,11 @@ use uuid::Uuid;
 
 mod milter;
 mod pixel_injector;
+mod content_filter;
 
 use milter::{MilterCallbacks, MilterResult, MilterServer, MilterOptions};
 use pixel_injector::PixelInjector;
+use content_filter::ContentFilter;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -54,6 +57,10 @@ struct Args {
     /// Log level
     #[arg(long, env = "LOG_LEVEL", default_value = "info")]
     log_level: String,
+
+    /// Run as content filter (read from stdin, write to stdout) instead of milter server
+    #[arg(long, env = "CONTENT_FILTER_MODE", default_value = "false", value_parser = parse_bool)]
+    content_filter_mode: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -650,6 +657,67 @@ async fn main() -> Result<()> {
     if let Err(e) = setup_logging(&args.log_level) {
         eprintln!("Failed to setup logging: {}", e);
         std::process::exit(1);
+    }
+
+    // If content filter mode, process email from stdin
+    if args.content_filter_mode {
+        info!("Running in content filter mode");
+        info!("Pixel Base URL: {}", args.pixel_base_url);
+        info!("Tracking requires opt-in: {}", args.tracking_requires_opt_in);
+        info!("Data Directory: {:?}", args.data_dir);
+
+        // Ensure data directory exists
+        if let Err(e) = fs::create_dir_all(&args.data_dir) {
+            error!(
+                data_dir = ?args.data_dir,
+                error = %e,
+                "Failed to create data directory"
+            );
+            eprintln!("Failed to create data directory {:?}: {}", args.data_dir, e);
+            std::process::exit(1);
+        }
+
+        // Load footer HTML if available
+        let footer_html = if args.footer_html_file.exists() {
+            match fs::read_to_string(&args.footer_html_file) {
+                Ok(content) => {
+                    info!("Loaded footer HTML from {:?}", args.footer_html_file);
+                    Some(content)
+                }
+                Err(e) => {
+                    warn!(
+                        footer_file = ?args.footer_html_file,
+                        error = %e,
+                        "Failed to read footer HTML file, continuing without footer"
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        let filter = ContentFilter::new(
+            args.pixel_base_url,
+            footer_html,
+            args.data_dir,
+            args.tracking_requires_opt_in,
+            args.opt_in_header,
+            args.disclosure_header,
+            args.inject_disclosure,
+        );
+
+        let stdin = io::stdin();
+        let mut stdin_lock = BufReader::new(stdin.lock());
+        let mut stdout = io::stdout();
+
+        if let Err(e) = filter.process_email(&mut stdin_lock, &mut stdout) {
+            error!(error = %e, "Failed to process email");
+            eprintln!("Error processing email: {}", e);
+            std::process::exit(1);
+        }
+
+        return Ok(());
     }
 
     info!("Starting Pixel Milter");
