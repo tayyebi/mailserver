@@ -42,6 +42,9 @@ help:
 	@echo "  make update-config					Rebuild and reload services after config changes"
 	@echo "  make reload							Reload services (use after editing .cf templates)"
 	@echo "  make fix-ownerships					Fix ownerships of directories and files"
+	@echo ""
+	@echo "Git Commands:"
+	@echo "  make pull							Force pull from remote (stashes local changes)"
 
 validate:
 	@echo "Checking required dependencies..."
@@ -348,8 +351,10 @@ add-domain:
 		echo "Public key: $$PUBLIC_KEY"; \
 	else \
 		echo "Generating DKIM keys..."; \
+		mkdir -p "data/ssl/opendkim/keys"; \
 		mkdir -p "$$KEY_DIR"; \
 		$(DOCKER_COMPOSE) exec -T opendkim bash -c "\
+			mkdir -p /etc/opendkim/keys/$$DOMAIN && \
 			cd /etc/opendkim/keys/$$DOMAIN && \
 			opendkim-genkey -b 2048 -d $$DOMAIN -s $$SELECTOR -D /etc/opendkim/keys/$$DOMAIN -v && \
 			chmod 600 $$SELECTOR.private && \
@@ -732,3 +737,32 @@ fix-ownerships:
 	fi; \
 	echo ""; \
 	echo "✓ Ownership fixes completed!"
+
+pull:
+	@echo "Force pulling from git remote..."
+	@echo ""
+	@CURRENT_BRANCH=$$(git branch --show-current 2>/dev/null || echo "main"); \
+	REMOTE=$$(git remote | head -1 || echo "origin"); \
+	if [ -z "$$REMOTE" ]; then \
+		echo "✗ No git remote found"; \
+		exit 1; \
+	fi; \
+	echo "Current branch: $$CURRENT_BRANCH"; \
+	echo "Remote: $$REMOTE"; \
+	echo ""; \
+	if [ -n "$$(git status --porcelain 2>/dev/null)" ]; then \
+		echo "⚠ You have uncommitted changes. Stashing them..."; \
+		git stash push -m "Stashed before force pull on $$(date +%Y-%m-%d\ %H:%M:%S)" || exit 1; \
+		echo "✓ Changes stashed"; \
+		echo ""; \
+		echo "⚠ Your local changes have been stashed."; \
+		echo "  To restore them later, run: git stash list"; \
+		echo "  To apply them back: git stash pop"; \
+		echo ""; \
+	fi; \
+	echo "Fetching from $$REMOTE..."; \
+	git fetch $$REMOTE || exit 1; \
+	echo "Resetting to $$REMOTE/$$CURRENT_BRANCH..."; \
+	git reset --hard $$REMOTE/$$CURRENT_BRANCH || exit 1; \
+	echo ""; \
+	echo "✓ Force pull completed!"
