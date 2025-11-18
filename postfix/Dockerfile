@@ -22,6 +22,7 @@ RUN apt-get update \
         man-db \
         postfix-doc \
         mailutils \
+        netcat-openbsd \
 	&& ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime \
 	&& dpkg-reconfigure -f noninteractive tzdata
 
