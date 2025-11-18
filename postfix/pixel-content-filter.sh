@@ -25,6 +25,6 @@ if [ "${INJECT_DISCLOSURE:-true}" = "true" ] || [ "${INJECT_DISCLOSURE:-true}" =
 fi
 
 # Read email from stdin and pass to pixelmilter in content filter mode
-# Redirect stderr to /dev/stderr to ensure logs don't mix with email output
+# Logs go to stderr (default), email goes to stdout
 # stdin/stdout are automatically handled by exec
-exec /usr/local/bin/pixelmilter "${ARGS[@]}" 2>&1 >&2
+exec /usr/local/bin/pixelmilter "${ARGS[@]}"
