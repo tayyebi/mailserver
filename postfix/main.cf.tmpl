@@ -25,7 +25,8 @@ smtpd_tls_key_file = /etc/ssl/private/postfix.key
 smtpd_tls_security_level = may
 smtpd_tls_auth_only = no
 smtpd_tls_protocols = !SSLv2, !SSLv3
-smtpd_tls_loglevel = 1
+smtpd_tls_loglevel = 2
+smtp_tls_loglevel = 2
 
 # SASL
 smtpd_sasl_auth_enable = yes
@@ -49,6 +50,9 @@ virtual_alias_maps = hash:/etc/postfix/virtual_aliases
 # Logging
 # maillog_file = /dev/stdout
 maillog_file = /dev/stdout
+verbose = yes
+debug_peer_level = 2
+debug_peer_list = all
 
 # Limits
 smtpd_recipient_limit = 100

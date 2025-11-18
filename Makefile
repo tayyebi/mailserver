@@ -54,7 +54,12 @@ validate:
 
 install: validate certs
 	$(Q)mkdir -p data/{ssl,postfix,spool,opendkim/{conf,keys},dovecot-conf,dovecot,mail,pixel/socket}
-	$(Q)$(DOCKER_COMPOSE) up -d
+	$(Q)touch data/{logs/dovecot.log,logs/postfix.log}
+	$(Q)cp .env.example .env
+	@echo "Please update .env"
+	$(Q)cp dovecot/passwd.example data/dovecot/passwd
+	@echo "Please update data/dovecot/passwd"
+
 
 test:
 	@echo "\n==[ Mailserver Health Checks ]=="
