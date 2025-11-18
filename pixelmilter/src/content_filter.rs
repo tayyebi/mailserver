@@ -108,7 +108,7 @@ impl ContentFilter {
             .map(|ct| ct.contains("text/html") || ct.contains("html"))
             .unwrap_or(false);
 
-        debug!(
+        trace!(
             message_id = %message_id,
             is_html = is_html,
             should_track = should_track,
@@ -150,7 +150,7 @@ impl ContentFilter {
                     stdout.write_all(&modified_body)
                         .context("Failed to write modified body to stdout")?;
                     
-                    info!(
+                    debug!(
                         message_id = %message_id,
                         original_size = body_bytes.len(),
                         modified_size = modified_body.len(),

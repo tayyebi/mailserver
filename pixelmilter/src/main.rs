@@ -661,10 +661,12 @@ async fn main() -> Result<()> {
 
     // If content filter mode, process email from stdin
     if args.content_filter_mode {
-        info!("Running in content filter mode");
-        info!("Pixel Base URL: {}", args.pixel_base_url);
-        info!("Tracking requires opt-in: {}", args.tracking_requires_opt_in);
-        info!("Data Directory: {:?}", args.data_dir);
+        // Suppress info logs in content filter mode to avoid mixing with email output
+        // Only log warnings and errors to stderr
+        debug!("Running in content filter mode");
+        debug!("Pixel Base URL: {}", args.pixel_base_url);
+        debug!("Tracking requires opt-in: {}", args.tracking_requires_opt_in);
+        debug!("Data Directory: {:?}", args.data_dir);
 
         // Ensure data directory exists
         if let Err(e) = fs::create_dir_all(&args.data_dir) {
@@ -681,7 +683,7 @@ async fn main() -> Result<()> {
         let footer_html = if args.footer_html_file.exists() {
             match fs::read_to_string(&args.footer_html_file) {
                 Ok(content) => {
-                    info!("Loaded footer HTML from {:?}", args.footer_html_file);
+                    debug!("Loaded footer HTML from {:?}", args.footer_html_file);
                     Some(content)
                 }
                 Err(e) => {
