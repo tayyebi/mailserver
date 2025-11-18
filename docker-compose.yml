@@ -139,8 +139,7 @@ services:
       - ./postfix/virtual_domains.tmpl:/templates/virtual_domains.tmpl:ro
       - ./postfix/vmailbox.tmpl:/templates/vmailbox.tmpl:ro
       - ./postfix/pixel-content-filter.sh:/usr/local/bin/pixel-content-filter.sh:ro
-      # Share pixelmilter binary and data directory
-      - pixelmilter_binary:/usr/local/bin/pixelmilter:ro
+      # Share pixelmilter data directory and footer
       - pixelmilter_data:/data/pixel:ro
       - pixelmilter_footer:/opt/pixelmilter:ro
     depends_on:
@@ -176,7 +175,6 @@ services:
       - RUST_LOG_STYLE=never
     volumes:
       - ./data/pixel:/data/pixel
-      - pixelmilter_binary:/usr/local/bin/pixelmilter
       - pixelmilter_footer:/opt/pixelmilter
     labels:
       com.mailserver.role: "milter"
@@ -236,7 +234,6 @@ services:
       retries: 1
 
 volumes:
-  pixelmilter_binary:
   pixelmilter_data:
   pixelmilter_footer:
 

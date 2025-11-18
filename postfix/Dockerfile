@@ -66,3 +66,7 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # Copy content filter script (will be replaced by volume mount if available)
 COPY pixel-content-filter.sh /usr/local/bin/pixel-content-filter.sh
 RUN chmod +x /usr/local/bin/pixel-content-filter.sh || true
+
+# Copy pixelmilter binary from pixelmilter image (if available at build time)
+# This will be overridden by volume mount if pixelmilter container is running
+RUN mkdir -p /usr/local/bin

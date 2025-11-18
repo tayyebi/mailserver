@@ -39,6 +39,20 @@ done
 # auto upgrade postfix configuration to match the current version
 postfix upgrade-configuration
 
+# Copy pixelmilter binary from pixelmilter container if available
+if command -v docker >/dev/null 2>&1; then
+  PIXELMILTER_CONTAINER=$(docker ps --filter "name=pixelmilter" --format "{{.Names}}" | head -1)
+  if [ -n "$PIXELMILTER_CONTAINER" ]; then
+    log "Copying pixelmilter binary from container $PIXELMILTER_CONTAINER"
+    if docker cp "${PIXELMILTER_CONTAINER}:/usr/local/bin/pixelmilter" /usr/local/bin/pixelmilter 2>/dev/null; then
+      chmod +x /usr/local/bin/pixelmilter
+      log "Successfully copied pixelmilter binary"
+    else
+      log "Warning: Could not copy pixelmilter binary, content filter may not work"
+    fi
+  fi
+fi
+
 # Lint the entire Postfix configuration
 log "Running postfix check"
 if ! postfix check; then
