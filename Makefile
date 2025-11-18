@@ -541,10 +541,11 @@ outbound-status:
 
 send:
 	@[ -n "$(TO)" ] || (echo "Usage: make send TO=recipient@example.com [FROM=sender@example.com] [SUBJECT=Subject]" && exit 1)
-	@FROM="$${FROM:-postmaster@$${MAIL_DOMAIN:-localhost}}"
-	@SUBJECT="$${SUBJECT:-Test Email from Mailserver}"
-	@SUBMISSION_USER="$${SUBMISSION_USER:-$$FROM}"
-	@SUBMISSION_PASS="$${SUBMISSION_PASS:-}"; \
+	@MAIL_DOMAIN=$$([ -f .env ] && grep "^MAIL_DOMAIN=" .env 2>/dev/null | cut -d'=' -f2 || echo "localhost"); \
+	FROM="$${FROM:-postmaster@$$MAIL_DOMAIN}"; \
+	SUBJECT="$${SUBJECT:-Test Email from Mailserver}"; \
+	SUBMISSION_USER="$${SUBMISSION_USER:-$$FROM}"; \
+	SUBMISSION_PASS="$${SUBMISSION_PASS:-}"; \
 	# Try to read password from passwd file first \
 	if [ -z "$$SUBMISSION_PASS" ] && [ -f data/dovecot/passwd ]; then \
 		PASSWD_ENTRY=$$(grep "^$$SUBMISSION_USER:" data/dovecot/passwd 2>/dev/null || echo ""); \
