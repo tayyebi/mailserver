@@ -335,22 +335,103 @@ remove-user:
 
 add-domain:
 	@[ -n "$(DOMAIN)" ] || (echo "Usage: make add-domain DOMAIN=example.net [SELECTOR]" && exit 1)
-	$(Q)docker exec opendkim bash -lc "/scripts/add-domain.sh $(DOMAIN) $${SELECTOR:-default}"
-	@echo "Remember to add DNS records for $(DOMAIN)"
+	@SELECTOR="$${SELECTOR:-default}"; \
+	DOMAIN="$(DOMAIN)"; \
+	KEY_DIR="data/ssl/opendkim/keys/$$DOMAIN"; \
+	PRIVATE_KEY="$$KEY_DIR/$$SELECTOR.private"; \
+	PUBLIC_KEY="$$KEY_DIR/$$SELECTOR.txt"; \
+	echo "Adding DKIM domain: $$DOMAIN (selector: $$SELECTOR)"; \
+	echo ""; \
+	if [ -f "$$PRIVATE_KEY" ] && [ -f "$$PUBLIC_KEY" ]; then \
+		echo "⚠ DKIM keys already exist for $$DOMAIN with selector $$SELECTOR"; \
+		echo "Private key: $$PRIVATE_KEY"; \
+		echo "Public key: $$PUBLIC_KEY"; \
+	else \
+		echo "Generating DKIM keys..."; \
+		mkdir -p "$$KEY_DIR"; \
+		$(DOCKER_COMPOSE) exec -T opendkim bash -c "\
+			cd /etc/opendkim/keys/$$DOMAIN && \
+			opendkim-genkey -b 2048 -d $$DOMAIN -s $$SELECTOR -D /etc/opendkim/keys/$$DOMAIN -v && \
+			chmod 600 $$SELECTOR.private && \
+			chmod 644 $$SELECTOR.txt" || exit 1; \
+		echo "✓ DKIM keys generated successfully"; \
+	fi; \
+	echo ""; \
+	echo "Updating KeyTable and SigningTable..."; \
+	KEYTABLE_ENTRY="$$SELECTOR._domainkey.$$DOMAIN  $$DOMAIN:$$SELECTOR:/etc/opendkim/keys/$$DOMAIN/$$SELECTOR.private"; \
+	SIGNINGTABLE_ENTRY="*@$$DOMAIN       $$SELECTOR._domainkey.$$DOMAIN"; \
+	if ! grep -q "$$SELECTOR._domainkey.$$DOMAIN" opendkim/KeyTable 2>/dev/null; then \
+		echo "$$KEYTABLE_ENTRY" >> opendkim/KeyTable; \
+		echo "✓ Added to KeyTable"; \
+	else \
+		echo "⚠ KeyTable entry already exists"; \
+	fi; \
+	if ! grep -q "@$$DOMAIN" opendkim/SigningTable 2>/dev/null; then \
+		echo "$$SIGNINGTABLE_ENTRY" >> opendkim/SigningTable; \
+		echo "✓ Added to SigningTable"; \
+	else \
+		echo "⚠ SigningTable entry already exists"; \
+	fi; \
+	echo ""; \
+	echo "Reloading OpenDKIM to apply changes..."; \
+	$(DOCKER_COMPOSE) exec opendkim pkill -HUP opendkim || true; \
+	echo ""; \
+	echo "✓ Domain $$DOMAIN added successfully!"; \
+	echo ""; \
+	echo "Next steps:"; \
+	echo "1. Add DNS TXT record: $$SELECTOR._domainkey.$$DOMAIN"; \
+	echo "2. Get the DNS value with: make show-dkim DOMAIN=$$DOMAIN SELECTOR=$$SELECTOR"; \
+	echo ""
 
 show-dkim:
 	@[ -n "$(DOMAIN)" ] || (echo "Usage: make show-dkim DOMAIN=example.net [SELECTOR]" && exit 1)
 	@SELECTOR="$${SELECTOR:-default}"; \
 	DOMAIN="$(DOMAIN)"; \
 	KEY_FILE="data/opendkim/keys/$$DOMAIN/$$SELECTOR.txt"; \
+	KEY_DIR="data/opendkim/keys/$$DOMAIN"; \
 	echo ""; \
 	echo "=== DKIM Information for $$DOMAIN ==="; \
 	echo ""; \
+	HAS_KEYTABLE=0; \
+	HAS_SIGNINGTABLE=0; \
+	if grep -q "$$SELECTOR._domainkey.$$DOMAIN" opendkim/KeyTable 2>/dev/null; then \
+		HAS_KEYTABLE=1; \
+	fi; \
+	if grep -q "@$$DOMAIN" opendkim/SigningTable 2>/dev/null; then \
+		HAS_SIGNINGTABLE=1; \
+	fi; \
 	if [ ! -f "$$KEY_FILE" ]; then \
 		echo "✗ DKIM key not found: $$KEY_FILE"; \
 		echo ""; \
-		echo "Available domains:"; \
-		ls -1 data/opendkim/keys/ 2>/dev/null | sed 's/^/  - /' || echo "  (none)"; \
+		if [ "$$HAS_KEYTABLE" -eq 1 ] || [ "$$HAS_SIGNINGTABLE" -eq 1 ]; then \
+			echo "⚠ Configuration exists but key file is missing!"; \
+			echo ""; \
+			if [ "$$HAS_KEYTABLE" -eq 1 ]; then \
+				echo "KeyTable Entry:"; \
+				grep "$$SELECTOR._domainkey.$$DOMAIN" opendkim/KeyTable | sed 's/^/  /'; \
+				echo ""; \
+			fi; \
+			if [ "$$HAS_SIGNINGTABLE" -eq 1 ]; then \
+				echo "SigningTable Entry:"; \
+				grep "@$$DOMAIN" opendkim/SigningTable | sed 's/^/  /'; \
+				echo ""; \
+			fi; \
+			echo "To create the missing DKIM keys, run:"; \
+			echo "  make add-domain DOMAIN=$$DOMAIN SELECTOR=$$SELECTOR"; \
+		else \
+			echo "No DKIM configuration found for this domain."; \
+			echo ""; \
+			echo "To create DKIM keys for $$DOMAIN, run:"; \
+			echo "  make add-domain DOMAIN=$$DOMAIN SELECTOR=$$SELECTOR"; \
+		fi; \
+		echo ""; \
+		if [ -d "data/opendkim/keys" ] && [ "$$(ls -A data/opendkim/keys 2>/dev/null)" ]; then \
+			echo "Available domains with DKIM keys:"; \
+			ls -1 data/opendkim/keys/ 2>/dev/null | sed 's/^/  - /' || echo "  (none)"; \
+		else \
+			echo "No DKIM keys directory found or it's empty."; \
+		fi; \
+		echo ""; \
 		exit 1; \
 	fi; \
 	echo "Domain: $$DOMAIN"; \
@@ -360,26 +441,22 @@ show-dkim:
 	echo "  $$SELECTOR._domainkey.$$DOMAIN"; \
 	echo ""; \
 	echo "DNS TXT Record Value:"; \
-	if [ -f "$$KEY_FILE" ]; then \
-		PUBLIC_KEY=$$(cat "$$KEY_FILE" | grep -v '^---' | grep -v 'BEGIN' | grep -v 'END' | tr -d '\n\r ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$$//'); \
-		if [ -n "$$PUBLIC_KEY" ]; then \
-			echo "  v=DKIM1; k=rsa; p=$$PUBLIC_KEY"; \
-		else \
-			echo "  (could not read public key from file)"; \
-		fi; \
+	PUBLIC_KEY=$$(cat "$$KEY_FILE" | grep -v '^---' | grep -v 'BEGIN' | grep -v 'END' | tr -d '\n\r ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$$//'); \
+	if [ -n "$$PUBLIC_KEY" ]; then \
+		echo "  v=DKIM1; k=rsa; p=$$PUBLIC_KEY"; \
 	else \
-		echo "  (key file not found)"; \
+		echo "  ✗ (could not read public key from file)"; \
 	fi; \
 	echo ""; \
 	echo "Key File Location:"; \
 	echo "  $$KEY_FILE"; \
 	echo ""; \
-	if grep -q "$$SELECTOR._domainkey.$$DOMAIN" opendkim/KeyTable 2>/dev/null; then \
+	if [ "$$HAS_KEYTABLE" -eq 1 ]; then \
 		echo "KeyTable Entry:"; \
 		grep "$$SELECTOR._domainkey.$$DOMAIN" opendkim/KeyTable | sed 's/^/  /'; \
 		echo ""; \
 	fi; \
-	if grep -q "@$$DOMAIN" opendkim/SigningTable 2>/dev/null; then \
+	if [ "$$HAS_SIGNINGTABLE" -eq 1 ]; then \
 		echo "SigningTable Entry:"; \
 		grep "@$$DOMAIN" opendkim/SigningTable | sed 's/^/  /'; \
 		echo ""; \
