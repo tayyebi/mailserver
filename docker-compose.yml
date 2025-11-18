@@ -124,6 +124,11 @@ services:
       - ./data/logs/postfix.log:/var/log/mail.log
       - ./postfix/resolv.conf:/var/spool/postfix/etc/resolv.conf:ro
       - ./postfix/resolv.conf:/etc/resolv.conf:ro
+      - ./postfix/main.cf.tmpl:/templates/main.cf.tmpl:ro
+      - ./postfix/master.cf.tmpl:/templates/master.cf.tmpl:ro
+      - ./postfix/virtual_aliases.tmpl:/templates/virtual_aliases.tmpl:ro
+      - ./postfix/virtual_domains.tmpl:/templates/virtual_domains.tmpl:ro
+      - ./postfix/vmailbox.tmpl:/templates/vmailbox.tmpl:ro
     depends_on:
       dovecot:
         condition: service_healthy

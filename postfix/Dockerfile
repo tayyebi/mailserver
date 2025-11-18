@@ -47,12 +47,8 @@ RUN mkdir -p /usr/share/doc/postfix \
 RUN postfix set-permissions
 RUN postfix check
 
-# Copy Postfix config templates
-COPY main.cf.tmpl			/templates/main.cf.tmpl
-COPY master.cf.tmpl			/templates/master.cf.tmpl
-COPY virtual_aliases.tmpl	/templates/virtual_aliases.tmpl
-COPY virtual_domains.tmpl	/templates/virtual_domains.tmpl
-COPY vmailbox.tmpl			/templates/vmailbox.tmpl
+# Create templates directory (templates will be mounted via volumes)
+RUN mkdir -p /templates
 
 # Add users and groups
 RUN if ! id -nG postfix | grep -qw postdrop; then \
