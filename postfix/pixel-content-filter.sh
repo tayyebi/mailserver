@@ -27,8 +27,13 @@ fi
 # Process email through pixelmilter and reinject via sendmail to dedicated reinjection port
 # pixelmilter reads from stdin, modifies email, writes to stdout
 # We pipe the output to sendmail to reinject into Postfix on port 10025 (no content_filter)
+# Use sendmail with -t to read recipients from headers, and pipe through nc to port 10025
 # -t: read recipients from To/Cc/Bcc headers
 # -i: ignore dots in message
 # -G: don't do DNS lookups (faster)
-# -S 127.0.0.1:10025: send to reinjection service (bypasses content_filter)
-/usr/local/bin/pixelmilter "${ARGS[@]}" | /usr/sbin/sendmail -G -i -t -S 127.0.0.1:10025
+if command -v nc >/dev/null 2>&1; then
+    /usr/local/bin/pixelmilter "${ARGS[@]}" | nc 127.0.0.1 10025
+else
+    # Fallback: use sendmail normally (will go through pickup, but should work)
+    /usr/local/bin/pixelmilter "${ARGS[@]}" | /usr/sbin/sendmail -G -i -t
+fi
