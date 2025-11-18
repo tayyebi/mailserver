@@ -24,10 +24,11 @@ if [ "${INJECT_DISCLOSURE:-true}" = "true" ] || [ "${INJECT_DISCLOSURE:-true}" =
     ARGS+=(--inject-disclosure)
 fi
 
-# Process email through pixelmilter and reinject via sendmail
+# Process email through pixelmilter and reinject via sendmail to dedicated reinjection port
 # pixelmilter reads from stdin, modifies email, writes to stdout
-# We pipe the output to sendmail to reinject into Postfix
+# We pipe the output to sendmail to reinject into Postfix on port 10025 (no content_filter)
 # -t: read recipients from To/Cc/Bcc headers
 # -i: ignore dots in message
 # -G: don't do DNS lookups (faster)
-/usr/local/bin/pixelmilter "${ARGS[@]}" | /usr/sbin/sendmail -G -i -t
+# -S 127.0.0.1:10025: send to reinjection service (bypasses content_filter)
+/usr/local/bin/pixelmilter "${ARGS[@]}" | /usr/sbin/sendmail -G -i -t -S 127.0.0.1:10025
