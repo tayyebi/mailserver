@@ -51,9 +51,10 @@ services:
     healthcheck:
       test: >-
         SNI=${MAIL_HOST:-localhost};
-        echo -e "a1 CAPABILITY\na2 LOGOUT" |
+        (echo -e "a1 CAPABILITY\na2 LOGOUT" |
         openssl s_client -quiet -connect ${DOVECOT_IP}:993 -servername $${SNI} \
-          2>/dev/null | grep -q 'CAPABILITY'
+          2>/dev/null | grep -q 'CAPABILITY') &&
+        (timeout 2 bash -c "echo > /dev/tcp/${DOVECOT_IP}/12345" 2>/dev/null || exit 0)
       interval: 60s
       timeout: 10s
       retries: 1
@@ -64,7 +65,8 @@ services:
       - ./ssl/key.pem:/etc/ssl/private/key.pem:ro
       - ./data/logs/dovecot.log:/var/log/mail.log
       - ./data/mail:/mail
-      - ./dovecot/passwd:/etc/dovecot/passwd
+      - ./dovecot/passwd:/etc/dovecot/passwd:rw
+      - ./dovecot/dovecot.conf:/etc/dovecot/dovecot.conf:ro
     logging:
       driver: "json-file"
       options:
@@ -94,6 +96,7 @@ services:
     env_file: .env
     environment:
       - TZ=${TZ}
+      - DOVECOT_IP=${DOVECOT_IP}
       - DOVECOT_AUTH_PORT=12345
       - DOVECOT_LMTP_PORT=24
     healthcheck:

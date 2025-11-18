@@ -70,15 +70,37 @@ test:
 	@$(DOCKER_COMPOSE) exec -T dovecot doveadm who 2>/dev/null && echo "✓ Dovecot responds" || (echo "✗ Dovecot not responding" && exit 1)
 	@echo "4. Postfix liveness:"
 	@$(DOCKER_COMPOSE) exec -T postfix postfix status 2>/dev/null && echo "✓ Postfix responds" || (echo "✗ Postfix not responding" && exit 1)
-	@echo "5. SASL auth (Postfix→Dovecot):"
-	@$(DOCKER_COMPOSE) exec -T postfix testsaslauthd -u testuser -p testpass 2>&1 | grep -q 'OK' \
-		&& echo "✓ SASL auth works (testuser)" \
-		|| echo "⚠ SASL auth failed (ensure testuser exists in dovecot/passwd)"
-	@echo "6. pixelmilter health:"
+	@echo "5. SASL auth service (Dovecot port 12345):"
+	@if $(DOCKER_COMPOSE) exec -T dovecot ss -tlnp 2>/dev/null | grep -q ":12345 " || \
+		$(DOCKER_COMPOSE) exec -T dovecot netstat -tlnp 2>/dev/null | grep -q ":12345 "; then \
+		echo "✓ Dovecot SASL service listening on port 12345"; \
+	else \
+		echo "✗ Dovecot SASL service NOT listening on port 12345"; \
+		echo "  Checking configuration..."; \
+		if grep -q "^ service auth {" dovecot/dovecot.conf 2>/dev/null; then \
+			echo "  ⚠ Found leading space in 'service auth' - fixing..."; \
+			sed -i 's/^ service auth {/service auth {/' dovecot/dovecot.conf; \
+			echo "  ✓ Fixed. Restart Dovecot: make restart"; \
+		fi; \
+		if [ ! -f dovecot/passwd ] || [ -d dovecot/passwd ]; then \
+			echo "  ⚠ dovecot/passwd is missing or a directory - creating file..."; \
+			rm -rf dovecot/passwd; touch dovecot/passwd; chmod 644 dovecot/passwd; \
+			echo "  ✓ Created. Add users with: make add-user USER=... PASS=..."; \
+		fi; \
+		exit 1; \
+	fi
+	@echo "6. SASL connectivity (Postfix→Dovecot):"
+	@if $(DOCKER_COMPOSE) exec -T postfix timeout 2 bash -c "echo > /dev/tcp/$${DOVECOT_IP:-172.18.0.5}/12345" 2>/dev/null; then \
+		echo "✓ Postfix can connect to Dovecot SASL"; \
+	else \
+		echo "✗ Postfix cannot connect to Dovecot SASL (check DOVECOT_IP in .env)"; \
+		exit 1; \
+	fi
+	@echo "7. pixelmilter health:"
 	@$(MAKE) verify-pixelmilter
-	@echo "7. Connectivity and Network Checks:"
+	@echo "8. Connectivity and Network Checks:"
 	@$(MAKE) test-connectivity
-	@echo "8. Log error scan (last 50 lines):"
+	@echo "9. Log error scan (last 50 lines):"
 	@tail -n 50 data/logs/dovecot.log 2>/dev/null | grep -iE 'error|fail|fatal' && echo "⚠ Dovecot log errors found" || echo "✓ Dovecot logs clean"
 	@tail -n 50 data/logs/postfix.log 2>/dev/null | grep -iE 'error|fail|fatal' && echo "⚠ Postfix log errors found" || echo "✓ Postfix logs clean"
 	@echo "\n==[ All health checks complete ]=="
@@ -270,18 +292,31 @@ certs-force:
 # Add or update a user's password in dovecot/passwd
 add-user update-user:
 		@[ -n "$(USER)" ] && [ -n "$(PASS)" ] || (echo "Usage: make $@ USER=me@example.com PASS=secret" && exit 1)
-		$(Q)HASH=$$(docker run --rm dovecot bash -lc "doveadm pw -s SHA512-CRYPT -p '$(PASS)'"); \
-		docker exec dovecot bash -lc "\
-			touch /etc/dovecot/passwd; \
-			if grep -q '^$(USER):' /etc/dovecot/passwd; then \
-				sed -i 's#^$(USER):.*#$(USER):'$${HASH}'#' /etc/dovecot/passwd; \
-				echo 'Password updated for $(USER)'; \
-			else \
-				echo '$(USER):'$${HASH} >> /etc/dovecot/passwd; \
-				echo 'User added: $(USER)'; \
+		@# Ensure passwd file exists and is a file, not directory
+		@if [ ! -f dovecot/passwd ]; then \
+			if [ -d dovecot/passwd ]; then \
+				echo "Removing dovecot/passwd directory..."; \
+				rm -rf dovecot/passwd; \
 			fi; \
-			chown dovecot:dovecot /etc/dovecot/passwd; \
-			chmod 640 /etc/dovecot/passwd"
+			touch dovecot/passwd; \
+			chmod 644 dovecot/passwd; \
+		fi
+		$(Q)HASH=$$($(DOCKER_COMPOSE) exec -T dovecot doveadm pw -s SHA512-CRYPT -p '$(PASS)' 2>&1 | grep -v "the input device" | tail -1); \
+		if [ -z "$$HASH" ] || echo "$$HASH" | grep -q "TTY"; then \
+			HASH=$$(docker run --rm $$($(DOCKER_COMPOSE) config | grep 'dovecot:' -A 5 | grep 'image:' | awk '{print $$2}' || echo 'dovecot:latest') doveadm pw -s SHA512-CRYPT -p '$(PASS)' 2>&1 | tail -1); \
+		fi; \
+		if [ -z "$$HASH" ]; then \
+			echo "Error: Failed to generate password hash"; \
+			exit 1; \
+		fi; \
+		if grep -q '^$(USER):' dovecot/passwd; then \
+			sed -i "s#^$(USER):.*#$(USER):$${HASH}#" dovecot/passwd; \
+			echo "Password updated for $(USER)"; \
+		else \
+			echo "$(USER):$${HASH}" >> dovecot/passwd; \
+			echo "User added: $(USER)"; \
+		fi; \
+		chmod 644 dovecot/passwd
 
 show-users:
 	@echo "Users and password hashes (from dovecot/passwd):"
