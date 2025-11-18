@@ -30,7 +30,7 @@ services:
       - ./opendkim/TrustedHosts:/etc/opendkim/TrustedHosts:ro
       - ./opendkim/KeyTable:/etc/opendkim/KeyTable:ro
       - ./opendkim/SigningTable:/etc/opendkim/SigningTable:ro
-      - ./data/ssl/opendkim/keys:/etc/opendkim/keys
+      - ./data/opendkim/keys:/etc/opendkim/keys
     networks:
       mailnet:
         ipv4_address: ${OPENDKIM_IP}

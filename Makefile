@@ -340,7 +340,7 @@ add-domain:
 	@[ -n "$(DOMAIN)" ] || (echo "Usage: make add-domain DOMAIN=example.net [SELECTOR]" && exit 1)
 	@SELECTOR="$${SELECTOR:-default}"; \
 	DOMAIN="$(DOMAIN)"; \
-	KEY_DIR="data/ssl/opendkim/keys/$$DOMAIN"; \
+	KEY_DIR="data/opendkim/keys/$$DOMAIN"; \
 	PRIVATE_KEY="$$KEY_DIR/$$SELECTOR.private"; \
 	PUBLIC_KEY="$$KEY_DIR/$$SELECTOR.txt"; \
 	echo "Adding DKIM domain: $$DOMAIN (selector: $$SELECTOR)"; \
@@ -351,14 +351,28 @@ add-domain:
 		echo "Public key: $$PUBLIC_KEY"; \
 	else \
 		echo "Generating DKIM keys..."; \
-		mkdir -p "data/ssl/opendkim/keys"; \
 		mkdir -p "$$KEY_DIR"; \
-		$(DOCKER_COMPOSE) exec -T opendkim bash -c "\
-			mkdir -p /etc/opendkim/keys/$$DOMAIN && \
-			cd /etc/opendkim/keys/$$DOMAIN && \
-			opendkim-genkey -b 2048 -d $$DOMAIN -s $$SELECTOR -D /etc/opendkim/keys/$$DOMAIN -v && \
-			chmod 600 $$SELECTOR.private && \
-			chmod 644 $$SELECTOR.txt" || exit 1; \
+		OPENDKIM_IMAGE=$$(cd opendkim && docker build -q . 2>/dev/null || echo ''); \
+		if [ -z "$$OPENDKIM_IMAGE" ]; then \
+			echo "Building opendkim image..."; \
+			OPENDKIM_IMAGE=$$($(DOCKER_COMPOSE) build -q opendkim 2>/dev/null | tail -1 || echo ''); \
+		fi; \
+		if [ -z "$$OPENDKIM_IMAGE" ]; then \
+			echo "✗ Failed to build/find opendkim image"; \
+			exit 1; \
+		fi; \
+		docker run --rm \
+			-v "$$(pwd)/$$KEY_DIR:/keys" \
+			-w /keys \
+			$$OPENDKIM_IMAGE \
+			bash -c "\
+				opendkim-genkey -b 2048 -d $$DOMAIN -s $$SELECTOR -D /keys -v && \
+				chmod 600 $$SELECTOR.private && \
+				chmod 644 $$SELECTOR.txt" || (echo "✗ Failed to generate DKIM keys" && exit 1); \
+		if [ ! -f "$$PRIVATE_KEY" ] || [ ! -f "$$PUBLIC_KEY" ]; then \
+			echo "✗ DKIM key files were not created"; \
+			exit 1; \
+		fi; \
 		echo "✓ DKIM keys generated successfully"; \
 	fi; \
 	echo ""; \
@@ -705,13 +719,6 @@ fix-ownerships:
 	if [ -f ssl/key.pem ]; then \
 	       sudo chown root:root ssl/key.pem 2>/dev/null || true; \
 	       sudo chmod 600 ssl/key.pem 2>/dev/null || true; \
-	fi; \
-	if [ -d ssl/opendkim ]; then \
-	       sudo chown -R root:root ssl/opendkim 2>/dev/null || true; \
-	       sudo chmod 755 ssl/opendkim 2>/dev/null || true; \
-	       if [ -d ssl/opendkim/keys ]; then \
-		       sudo chmod -R 755 ssl/opendkim/keys 2>/dev/null || true; \
-	       fi; \
 	fi; \
 	# Also ensure any generated certs under data/ssl are owned correctly
 	if [ -d data/ssl ]; then \
