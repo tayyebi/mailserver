@@ -7,7 +7,7 @@ set -euo pipefail
 # Read email from stdin and pass to pixelmilter in content filter mode
 # stdin/stdout are automatically handled by exec
 exec /usr/local/bin/pixelmilter \
-    --content-filter-mode true \
+    --content-filter-mode \
     --pixel-base-url "${PIXEL_BASE_URL:-https://localhost:8443/pixel?id=}" \
     --tracking-requires-opt-in "${TRACKING_REQUIRES_OPT_IN:-false}" \
     --opt-in-header "${OPT_IN_HEADER:-X-Track-Open}" \
