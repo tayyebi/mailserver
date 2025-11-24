@@ -10,6 +10,12 @@ Self-contained, persistent mail stack:
 
 ---
 
+## Architecture
+
+![Mail Server Architecture](docs/architecture.svg)
+
+---
+
 ## Prerequisites
 
 - Docker and Docker Compose
