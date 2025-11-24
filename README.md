@@ -169,3 +169,7 @@ After modifying `main.cf.tmpl` or `master.cf.tmpl`, always run `make update-conf
 - Consider firewalling 25/587/993 as appropriate
 
 ---
+
+## Troubleshooting
+
+For detailed troubleshooting steps, diagnostic commands, and common issues, please refer to [TROUBLESHOOTING.md](TROUBLESHOOTING.md).

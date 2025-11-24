@@ -962,4 +962,8 @@ build-binaries:
 		echo "Building postfix-reinject..." && \
 		cd postfix/reinject && cargo build --release && \
 		cp target/release/postfix-reinject /app/bin/ && \
+		cd ../.. && \
+		echo "Building honeypot..." && \
+		cd honeypot && cargo build --release && \
+		cp target/release/honeypot /app/bin/ && \
 		echo "Done! Binaries are in bin/"'
