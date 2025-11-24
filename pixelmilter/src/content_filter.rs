@@ -1,3 +1,19 @@
+/*
+ * Content Filter Implementation
+ * 
+ * This module implements the "content filter" mode of the application.
+ * Unlike the Milter mode which interacts via the Milter protocol, this mode works
+ * as a standard Unix filter: reading an email from stdin and writing the processed email to stdout.
+ * 
+ * Key responsibilities:
+ * - Reading the raw email stream line by line.
+ * - Parsing headers to extract metadata (Sender, Content-Type, Opt-in headers).
+ * - Determining if tracking should be applied.
+ * - Injecting the tracking pixel (using `PixelInjector`) and disclosure headers.
+ * - Saving message metadata to disk for the tracking server.
+ * - Writing the modified email to stdout for the MTA to pick up.
+ */
+
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

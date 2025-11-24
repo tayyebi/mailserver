@@ -1,3 +1,17 @@
+/*
+ * Milter Protocol Server Implementation
+ * 
+ * This module implements the server side of the Sendmail Milter protocol.
+ * It handles the low-level communication with the MTA (Mail Transfer Agent, e.g., Postfix).
+ * 
+ * Key responsibilities:
+ * - Defining Milter protocol constants (commands, responses, flags).
+ * - Implementing the `MilterServer` to accept connections (TCP or Unix socket).
+ * - Managing the connection state machine (Connect -> Helo -> Mail -> Rcpt -> Header -> Body -> EOM).
+ * - Parsing Milter commands and dispatching them to the `MilterCallbacks` trait implementation.
+ * - Sending appropriate responses back to the MTA.
+ */
+
 use anyhow::{Context, Result};
 use std::path::Path;
 use tokio::net::{UnixListener, TcpListener};

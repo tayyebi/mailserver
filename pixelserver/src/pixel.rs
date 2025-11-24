@@ -1,3 +1,11 @@
+/*
+ * Pixel Image Data
+ * 
+ * This module contains the binary data for the tracking pixel.
+ * It defines a constant byte array representing a 1x1 transparent GIF image.
+ * This data is served efficiently to clients requesting the tracking URL.
+ */
+
 /// 1x1 transparent GIF image data
 /// This is a minimal GIF89a format image that is 1 pixel wide, 1 pixel tall, and transparent
 pub const PIXEL_GIF: &[u8] = &[

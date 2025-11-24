@@ -1,3 +1,17 @@
+/*
+ * Postfix Reinjection Utility
+ * 
+ * This utility is designed to reinject processed emails back into Postfix.
+ * It is typically used in a content filter pipeline where an email is passed via stdin,
+ * processed, and then needs to be sent back to the MTA for final delivery.
+ * 
+ * Key responsibilities:
+ * - Reading the raw email content from stdin.
+ * - Parsing the email to extract the envelope sender (From) and recipient (To).
+ * - Constructing a new SMTP message.
+ * - Sending the message to a specific Postfix listener port (default 10025) via SMTP.
+ */
+
 use std::env;
 use std::fs::File;
 use std::io::{self, Read};

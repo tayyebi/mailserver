@@ -1,3 +1,18 @@
+/*
+ * Pixel Server - Main Entry Point
+ * 
+ * This file serves as the entry point for the Pixel Server service.
+ * It sets up an HTTP/HTTPS server using Axum to handle tracking requests and API calls.
+ * 
+ * Key responsibilities:
+ * - Serving the 1x1 transparent GIF pixel (`/pixel`).
+ * - Recording tracking events (opens) when the pixel is requested.
+ * - Providing API endpoints for message metadata and statistics (`/msg/...`, `/stats`).
+ * - Serving a simple HTML reports viewer.
+ * - Handling TLS configuration for secure connections.
+ * - Managing application state (data directory, stats collector).
+ */
+
 use anyhow::{Context, Result};
 use axum::{
     extract::{Path, Query},

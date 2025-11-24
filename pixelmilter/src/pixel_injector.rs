@@ -1,3 +1,16 @@
+/*
+ * Pixel Injector Logic
+ * 
+ * This module is responsible for the core logic of injecting tracking pixels into email bodies.
+ * 
+ * Key responsibilities:
+ * - Detecting if the email content is HTML.
+ * - Generating the tracking pixel HTML tag (<img>).
+ * - Analyzing the HTML structure to find the best injection point (e.g., before </body>, before </html>).
+ * - Handling edge cases like missing body tags or malformed HTML.
+ * - Optionally injecting a footer along with the pixel.
+ */
+
 use anyhow::Result;
 use regex::Regex;
 use std::sync::OnceLock;

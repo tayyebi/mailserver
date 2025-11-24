@@ -1,3 +1,6 @@
+# Binaries
+bin/
+
 # Secrets & env
 .env
 dovecot/passwd

@@ -13,7 +13,7 @@ include .env
 export
 endif
 
-.PHONY: help validate install test test-connectivity send certs certs-force add-user add-domain show-dkim reload restart logs backup-dkim reports view-reports tail-reports build-rust test-pixel pixel-stats pixel-health pixel-logs pixel-debug verify-pixelmilter update-config fix-ownerships queue-status queue-flush outbound-status
+.PHONY: help validate install test test-connectivity send certs certs-force add-user add-domain show-dkim reload restart logs backup-dkim reports view-reports tail-reports build-rust test-pixel pixel-stats pixel-health pixel-logs pixel-debug verify-pixelmilter update-config fix-ownerships queue-status queue-flush outbound-status build-binaries
 
 help:
 	@echo "Available targets:"
@@ -41,6 +41,7 @@ help:
 	@echo ""
 	@echo "Pixel Tracking Commands:"
 	@echo "  make build-rust						Build Rust pixel tracking components"
+	@echo "  make build-binaries					Build standalone binaries for deployment"
 	@echo "  make test-pixel						Test pixel tracking system"
 	@echo "  make pixel-health					  Check pixel server health"
 	@echo "  make pixel-stats					   View pixel tracking statistics"
@@ -53,6 +54,9 @@ help:
 	@echo ""
 	@echo "Git Commands:"
 	@echo "  make pull							Force pull from remote (stashes local changes)"
+	@echo ""
+	@echo "Binary Management:"
+	@echo "  make build-binaries				 Build standalone binaries for pixelmilter, pixelserver, and postfix-reinject"
 
 validate:
 	@echo "Checking required dependencies..."
@@ -935,3 +939,22 @@ pull:
 	git reset --hard $$REMOTE/$$CURRENT_BRANCH || exit 1; \
 	echo ""; \
 	echo "✓ Force pull completed!"
+
+# Build standalone binaries for deployment
+build-binaries:
+	@echo "Building static binaries for Linux..."
+	@mkdir -p bin
+	@docker run --rm -v "$$(pwd):/app" -w /app rust:latest bash -c '\
+		apt-get update && apt-get install -y libssl-dev pkg-config && \
+		echo "Building pixelmilter..." && \
+		cd pixelmilter && cargo build --release && \
+		cp target/release/pixelmilter /app/bin/ && \
+		cd .. && \
+		echo "Building pixelserver..." && \
+		cd pixelserver && cargo build --release && \
+		cp target/release/pixelserver /app/bin/ && \
+		cd .. && \
+		echo "Building postfix-reinject..." && \
+		cd postfix-reinject && cargo build --release && \
+		cp target/release/postfix-reinject /app/bin/ && \
+		echo "Done! Binaries are in bin/"'

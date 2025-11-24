@@ -1,3 +1,16 @@
+/*
+ * Statistics Collection and Aggregation
+ * 
+ * This module handles the collection, storage, and computation of tracking statistics.
+ * 
+ * Key responsibilities:
+ * - Recording individual pixel requests in memory.
+ * - Aggregating statistics from the file system (scanning metadata files).
+ * - Computing metrics like total messages, open rates, unique IPs, and top user agents.
+ * - Managing recent activity logs.
+ * - Providing a thread-safe structure (`StatsCollector`) for the application state.
+ */
+
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use serde_json::Value;

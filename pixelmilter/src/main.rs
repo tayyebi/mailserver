@@ -1,3 +1,17 @@
+/*
+ * Pixel Milter - Main Entry Point
+ * 
+ * This file serves as the entry point for the Pixel Milter service. It is responsible for:
+ * 1. Parsing command-line arguments and environment variables.
+ * 2. Configuring logging and tracing.
+ * 3. Initializing the application state and configuration.
+ * 4. Starting the Milter server (TCP or Unix socket) to process incoming emails.
+ * 5. Alternatively, running in "content filter" mode to process emails via stdin/stdout.
+ * 
+ * The service intercepts emails, checks for opt-in/tracking headers, and injects
+ * tracking pixels into HTML bodies.
+ */
+
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use clap::Parser;
