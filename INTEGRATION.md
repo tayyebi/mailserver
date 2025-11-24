@@ -165,3 +165,11 @@ If you cannot use the Milter protocol, `pixelmilter` can run as a content filter
     ```
 2.  **Postfix Integration**:
     Requires setting up a `pipe` transport in `master.cf` that pipes to a script running the above command, and then uses `postfix-reinject` (also provided in `bin/`) to feed the result back into Postfix on a different port (e.g., 10025).
+
+
+## View logs
+
+```
+#!/bin/bash
+sudo journalctl -u postfix -u pixelmilter -u pixelserver -f "$@"
+```

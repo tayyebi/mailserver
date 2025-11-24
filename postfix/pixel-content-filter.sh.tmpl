@@ -27,5 +27,5 @@ fi
 
 # Process email through pixelmilter and reinject via SMTP to dedicated reinjection port
 # pixelmilter reads from stdin, modifies email, writes to stdout
-# We pipe the output to a Python script that sends it via SMTP to port 10025 (no content_filter)
-/usr/local/bin/pixelmilter "${ARGS[@]}" | python3 /usr/local/bin/reinject.py
+# We pipe the output to a Rust binary that sends it via SMTP to port 10025 (no content_filter)
+/usr/local/bin/pixelmilter "${ARGS[@]}" | /usr/local/bin/postfix-reinject

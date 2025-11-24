@@ -1,3 +1,10 @@
+# Build stage for postfix-reinject
+FROM rust:bookworm as builder
+WORKDIR /app
+COPY reinject/ .
+RUN cargo build --release
+
+# Final stage
 FROM debian:bookworm
 
 LABEL maintainer="Mohammad R. Tayyebi <m@tyyi.net>"
@@ -71,9 +78,9 @@ COPY pixel-content-filter.sh.tmpl /templates/pixel-content-filter.sh.tmpl
 COPY pixel-content-filter.sh /usr/local/bin/pixel-content-filter.sh
 RUN chmod +x /usr/local/bin/pixel-content-filter.sh || true
 
-# Copy reinjection script
-COPY reinject.py /usr/local/bin/reinject.py
-RUN chmod +x /usr/local/bin/reinject.py || true
+# Copy reinjection binary from builder
+COPY --from=builder /app/target/release/postfix-reinject /usr/local/bin/postfix-reinject
+RUN chmod +x /usr/local/bin/postfix-reinject || true
 
 # Copy pixelmilter binary from pixelmilter image (if available at build time)
 # This will be overridden by volume mount if pixelmilter container is running

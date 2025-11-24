@@ -88,6 +88,11 @@ install: validate certs
 	$(Q)cp dovecot/passwd.example data/dovecot/passwd
 	@echo "Please update data/dovecot/passwd"
 
+up:
+	$(Q)$(DOCKER_COMPOSE) up -d --build
+	@echo "Stack is up!"
+
+
 
 test:
 	@echo "\n==[ Mailserver Health Checks ]=="
@@ -955,6 +960,6 @@ build-binaries:
 		cp target/release/pixelserver /app/bin/ && \
 		cd .. && \
 		echo "Building postfix-reinject..." && \
-		cd postfix-reinject && cargo build --release && \
+		cd postfix/reinject && cargo build --release && \
 		cp target/release/postfix-reinject /app/bin/ && \
 		echo "Done! Binaries are in bin/"'
