@@ -37,7 +37,7 @@ The Pixel Server serves the tracking image. It should be publicly accessible via
     ```
 
 2.  **Install Binary**:
-    Copy `bin/pixelserver` to `/usr/local/bin/`.
+    Copy `bin/pixelserver` to `/opt/pixel-tracking/`.
 
 3.  **Create Systemd Service** (`/etc/systemd/system/pixelserver.service`):
     ```ini
@@ -51,11 +51,11 @@ The Pixel Server serves the tracking image. It should be publicly accessible via
     Group=nogroup
     # Bind to 0.0.0.0:8443
     # Point to your SSL certs
-    ExecStart=/usr/local/bin/pixelserver \
+    ExecStart=/opt/pixel-tracking/pixelserver \
         --data-dir /var/lib/pixel-tracking \
         --bind-address 0.0.0.0:8443 \
-        --tls-cert /etc/ssl/certs/your-cert.pem \
-        --tls-key /etc/ssl/private/your-key.pem \
+        --tls-cert /var/lib/pixel-tracking/ssl/cert.pem \
+        --tls-key /var/lib/pixel-tracking/ssl/key.pem \
         --log-level info
     Restart=always
 
@@ -75,10 +75,10 @@ The Pixel Server serves the tracking image. It should be publicly accessible via
 
 The Milter runs locally to Postfix (or accessible via network) and processes emails.
 
-1.  **Install Binary**:
-    Copy `bin/pixelmilter` to `/usr/local/bin/`.
+2.  **Install Binary**:
+    Copy `bin/pixelmilter` to `/opt/pixel-tracking/`.
 
-2.  **Create Systemd Service** (`/etc/systemd/system/pixelmilter.service`):
+3.  **Create Systemd Service** (`/etc/systemd/system/pixelmilter.service`):
     ```ini
     [Unit]
     Description=Pixel Tracking Milter
@@ -90,11 +90,11 @@ The Milter runs locally to Postfix (or accessible via network) and processes ema
     Group=nogroup
     # PIXEL_BASE_URL must match your public pixelserver URL
     # Address can be a TCP port (0.0.0.0:8892) or Unix socket
-    ExecStart=/usr/local/bin/pixelmilter \
+    ExecStart=/opt/pixel-tracking/pixelmilter \
         --address 127.0.0.1:8892 \
         --data-dir /var/lib/pixel-tracking \
-        --pixel-base-url "https://mail.yourdomain.com:8443/pixel?id=" \
-        --tracking-requires-opt-in false \
+        --pixel-base-url "https://relay.example.com:8443/pixel?id=" \
+        --tracking-requires-opt-in=false \
         --log-level info
     Restart=always
 
@@ -121,7 +121,7 @@ You need to tell Postfix to send outgoing mail to the Milter.
         ```postfix
         # In /etc/postfix/master.cf, under the submission service:
         submission inet n       -       y       -       -       smtpd
-          -o smtpd_milters=inet:127.0.0.1:8892
+          -o smtpd_milters=inet:localhost:8891,inet:127.0.0.1:8892
         ```
 
     *   **Global Configuration (main.cf)**:
@@ -161,7 +161,7 @@ If you cannot use the Milter protocol, `pixelmilter` can run as a content filter
 
 1.  **Command**:
     ```bash
-    /usr/local/bin/pixelmilter --content-filter-mode --data-dir ...
+    /opt/pixel-tracking/pixelmilter --content-filter-mode --data-dir ...
     ```
 2.  **Postfix Integration**:
     Requires setting up a `pipe` transport in `master.cf` that pipes to a script running the above command, and then uses `postfix-reinject` (also provided in `bin/`) to feed the result back into Postfix on a different port (e.g., 10025).
