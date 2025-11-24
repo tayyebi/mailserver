@@ -4,6 +4,26 @@
 
 set -euo pipefail
 
+SENDER=""
+RECIPIENT=""
+
+# Parse arguments passed from master.cf
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --sender)
+            SENDER="$2"
+            shift 2
+            ;;
+        --recipient)
+            RECIPIENT="$2"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
 # Build command arguments
 # PIXEL_BASE_URL is substituted at container startup via envsubst
 ARGS=(
@@ -28,4 +48,5 @@ fi
 # Process email through pixelmilter and reinject via SMTP to dedicated reinjection port
 # pixelmilter reads from stdin, modifies email, writes to stdout
 # We pipe the output to a Rust binary that sends it via SMTP to port 10025 (no content_filter)
-/usr/local/bin/pixelmilter "${ARGS[@]}" | /usr/local/bin/postfix-reinject
+# We pass sender and recipient explicitly to preserve envelope information (e.g. Bcc)
+/usr/local/bin/pixelmilter "${ARGS[@]}" | /usr/local/bin/postfix-reinject --sender "$SENDER" --recipient "$RECIPIENT"
