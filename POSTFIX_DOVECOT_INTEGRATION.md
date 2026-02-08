@@ -104,13 +104,13 @@ The SQLite database is persisted in `data/admin/database.sqlite` on the host. Th
 
 ## Network Security
 
-The admin panel and database are only accessible within the Docker network (`mailnet`) except:
-- Admin panel: Port 8080 (HTTP interface for administrators)
+The admin panel and database are only accessible within the Docker network (`mailnet`). External access is limited to:
+- HTTPS reverse proxy: Port 443 (routes to the admin panel and PixelServer)
+- HTTP: Port 80 (redirects to HTTPS)
 - Postfix: Ports 25, 587, 465 (SMTP)
-- Dovecot: Ports 143, 993 (IMAP)
-- PixelServer: Ports 8443, 8444 (HTTPS analytics & reports)
+- Dovecot: Ports 143, 993, 110, 995 (IMAP/POP3)
 
-All internal communication happens via the internal Docker network.
+All internal communication (including between the reverse proxy, admin panel, PixelServer, Postfix, and Dovecot) happens via the internal Docker network.
 
 ## Future Enhancements
 

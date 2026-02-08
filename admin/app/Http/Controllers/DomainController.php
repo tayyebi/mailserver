@@ -26,6 +26,9 @@ class DomainController extends Controller
             'domain' => 'required|string|unique:domains',
             'description' => 'nullable|string',
             'active' => 'boolean',
+            'dkim_selector' => 'nullable|string|max:255',
+            'dkim_private_key' => 'nullable|string',
+            'dkim_public_key' => 'nullable|string',
         ]);
 
         $validated['active'] = $request->has('active');
@@ -50,6 +53,9 @@ class DomainController extends Controller
         $validated = $request->validate([
             'domain' => 'string|unique:domains,domain,' . $domain->id,
             'description' => 'nullable|string',
+            'dkim_selector' => 'nullable|string|max:255',
+            'dkim_private_key' => 'nullable|string',
+            'dkim_public_key' => 'nullable|string',
         ]);
 
         $validated['active'] = $request->has('active');

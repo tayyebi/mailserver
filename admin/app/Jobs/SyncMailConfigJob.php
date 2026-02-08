@@ -72,62 +72,36 @@ class SyncMailConfigJob implements ShouldQueue
             ->map(fn($account) => $account->email . ':{BLF-CRYPT}' . $account->password)
             ->toArray();
 
-        // Write to temporary files first (atomic writes)
-        $this->writeConfigFile('/tmp/virtual_domains', $domains);
-        $this->writeConfigFile('/tmp/vmailbox', $mailboxes);
-        $this->writeConfigFile('/tmp/virtual_aliases', $aliases);
-        $this->writeConfigFile('/tmp/dovecot_passwd', $passwords);
-
-        // Move to final locations if they exist
-        $this->moveIfTargetExists('/tmp/virtual_domains', '/etc/postfix/virtual_domains', 0644);
-        $this->moveIfTargetExists('/tmp/vmailbox', '/etc/postfix/vmailbox', 0644);
-        $this->moveIfTargetExists('/tmp/virtual_aliases', '/etc/postfix/virtual_aliases', 0644);
-        $this->moveIfTargetExists('/tmp/dovecot_passwd', '/etc/dovecot/passwd', 0600);
-
-        // Generate postmap databases
-        $this->runCommand('postmap /etc/postfix/vmailbox');
-        $this->runCommand('postmap /etc/postfix/virtual_aliases');
-
-        // Reload services
-        $this->runCommand('postfix reload');
-        $this->runCommand('doveadm reload');
-
-        Log::info('Mail configuration synced successfully');
-    }
-
-    /**
-     * Write content to a file.
-     */
-    protected function writeConfigFile(string $path, array $lines): void
-    {
-        file_put_contents($path, implode("\n", $lines) . "\n");
-    }
-
-    /**
-     * Move file to target if target directory exists.
-     */
-    protected function moveIfTargetExists(string $source, string $target, int $permissions): void
-    {
-        $targetDir = dirname($target);
+        // Write to shared config directory that's mounted in Postfix/Dovecot containers
+        $configDir = storage_path('app/mail-config');
         
-        if (is_dir($targetDir)) {
-            rename($source, $target);
-            chmod($target, $permissions);
-        } else {
-            // Clean up temp file if target doesn't exist
-            @unlink($source);
+        // Ensure directory exists
+        if (!is_dir($configDir)) {
+            mkdir($configDir, 0755, true);
         }
+
+        // Write config files atomically (write to temp, then rename)
+        $this->writeConfigFileAtomic($configDir . '/virtual_domains', $domains, 0644);
+        $this->writeConfigFileAtomic($configDir . '/vmailbox', $mailboxes, 0644);
+        $this->writeConfigFileAtomic($configDir . '/virtual_aliases', $aliases, 0644);
+        $this->writeConfigFileAtomic($configDir . '/dovecot_passwd', $passwords, 0600);
+
+        Log::info('Mail configuration synced successfully', [
+            'domains' => count($domains),
+            'mailboxes' => count($mailboxes),
+            'aliases' => count($aliases),
+            'passwords' => count($passwords),
+        ]);
     }
 
     /**
-     * Run a system command and log any errors.
+     * Write content to a file atomically.
      */
-    protected function runCommand(string $command): void
+    protected function writeConfigFileAtomic(string $path, array $lines, int $permissions): void
     {
-        exec($command . ' 2>&1', $output, $return);
-        
-        if ($return !== 0) {
-            Log::warning("Command failed: $command", ['output' => $output]);
-        }
+        $tempFile = $path . '.tmp';
+        file_put_contents($tempFile, implode("\n", $lines) . "\n");
+        chmod($tempFile, $permissions);
+        rename($tempFile, $path);
     }
 }
