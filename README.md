@@ -15,6 +15,7 @@ Self-contained, persistent mail stack with web administration:
 ```mermaid
 graph TB
     subgraph "Mail Server Stack"
+        Proxy[Nginx Reverse Proxy<br/>Ports 80/443]
         Admin[Web Admin Panel<br/>Laravel + SQLite]
         DB[(SQLite<br/>Database)]
         Postfix[Postfix<br/>SMTP Server]
@@ -24,9 +25,11 @@ graph TB
         PixelServer[Pixel Server<br/>Analytics]
     end
     
-    User[Administrator] -->|HTTP Port 8080| Admin
-    User -->|HTTPS Port 8443| PixelServer
-    User -->|HTTP Port 8444| PixelServer
+    User[Administrator] -->|HTTPS 443| Proxy
+    Proxy -->|/admin| Admin
+    Proxy -->|/pixel| PixelServer
+    Proxy -->|/reports| PixelServer
+    
     Admin -->|Manages| DB
     DB -->|Virtual Config| Postfix
     DB -->|Auth & Mailbox| Dovecot
@@ -39,6 +42,7 @@ graph TB
     Postfix -->|LMTP Port 24| Dovecot
     PixelMilter -->|Pixel Data| PixelServer
     
+    style Proxy fill:#f093fb
     style Admin fill:#667eea
     style DB fill:#48bb78
     style Postfix fill:#ed8936
@@ -107,8 +111,8 @@ cp .env.example .env
 # One‑shot bootstrap (idempotent)
 make install
 
-# Start admin panel
-docker-compose up -d admin
+# Start admin panel and reverse proxy
+docker-compose up -d admin nginx-proxy
 ```
 
 `make install` will:
@@ -117,7 +121,12 @@ docker-compose up -d admin
 - Start opendkim, dovecot, and postfix
 - Run health checks
 
-The admin panel will be available at `http://your-server:8080`
+The admin panel and pixel server will be available at:
+- **Admin Panel**: `https://your-server/admin`
+- **Pixel Tracking**: `https://your-server/pixel`
+- **Reports API**: `https://your-server/reports`
+
+All services are accessible through the reverse proxy on standard HTTPS port 443.
 
 ---
 
@@ -236,23 +245,29 @@ After modifying `main.cf.tmpl` or `master.cf.tmpl`, always run `make update-conf
 
 ## Administration Panel
 
-The mailserver includes a simple Laravel-based web admin panel for managing domains, email accounts, and aliases.
+The mailserver includes a simple Laravel-based web admin panel for managing domains, email accounts, and aliases. All services are accessed through a dedicated Nginx reverse proxy.
 
 ### Access the Admin Panel
 
-1. **Start the admin service**:
+1. **Start all services**:
    ```bash
-   docker-compose up -d admin
+   docker-compose up -d
    ```
 
 2. **Access the interface**:
-   Open your browser to `http://your-server:8080`
+   - Admin Panel: `https://your-server/admin`
+   - Pixel Tracking: `https://your-server/pixel`
+   - Reports API: `https://your-server/reports`
+
+All services use self-signed SSL certificates and are accessible through standard HTTPS port 443.
 
 ### Features
 
 - **No Authentication Required** - Direct access for simplicity
 - **No JavaScript** - Pure HTML forms, works everywhere
 - **SQLite Database** - Lightweight file-based storage
+- **Reverse Proxy** - Single entry point on standard ports 80/443
+- **Self-Signed SSL** - HTTPS encryption without third-party certificates
 - **Full CRUD Operations**:
   - Create, edit, delete domains
   - Manage email accounts with passwords and quotas
@@ -261,7 +276,8 @@ The mailserver includes a simple Laravel-based web admin panel for managing doma
 ### Quick Start
 
 1. **Add a Domain**:
-   - Navigate to "Domains" → "Add Domain"
+   - Navigate to `https://your-server/admin`
+   - Click "Domains" → "Add Domain"
    - Enter domain name (e.g., `example.com`)
    - Click "Create Domain"
 
@@ -276,6 +292,14 @@ The mailserver includes a simple Laravel-based web admin panel for managing doma
    - Set source (e.g., `info@example.com`)
    - Set destination (e.g., `admin@example.com`)
    - Click "Create Alias"
+
+### Reverse Proxy Configuration
+
+The Nginx reverse proxy provides:
+- **Automatic HTTPS redirect** - All HTTP traffic redirected to HTTPS
+- **Path-based routing** - `/admin`, `/pixel`, `/reports` routes
+- **Self-signed certificates** - Generated automatically during build
+- **Security headers** - X-Frame-Options, X-Content-Type-Options, X-XSS-Protection
 
 ### Database Location
 

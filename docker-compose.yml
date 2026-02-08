@@ -227,9 +227,9 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    ports:
-      - "0.0.0.0:8443:8443"
-      - "0.0.0.0:${REPORTS_PORT:-8444}:${REPORTS_PORT:-8444}"
+    expose:
+      - "8443"
+      - "8444"
     networks:
       mailnet:
         ipv4_address: ${PIXEL_SERVER_IP}
@@ -253,12 +253,12 @@ services:
       - APP_NAME="Mail Server Admin"
       - APP_ENV=production
       - APP_DEBUG=false
-      - APP_URL=http://${MAIL_HOST}:8080
+      - APP_URL=https://${MAIL_HOST}/admin
     volumes:
       - ./admin:/var/www/html
       - ./data/admin:/var/www/html/database:rw
-    ports:
-      - "8080:80"
+    expose:
+      - "80"
     networks:
       mailnet:
         ipv4_address: ${ADMIN_IP:-172.18.0.31}
@@ -269,6 +269,36 @@ services:
       retries: 3
     labels:
       com.mailserver.role: "admin"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  nginx-proxy:
+    build:
+      context: ./nginx-proxy
+      dockerfile: Dockerfile
+    container_name: nginx_proxy
+    hostname: proxy.${MAIL_DOMAIN}
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - admin
+      - pixelserver
+    networks:
+      mailnet:
+        ipv4_address: ${PROXY_IP:-172.18.0.40}
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      com.mailserver.role: "reverse-proxy"
     logging:
       driver: "json-file"
       options:
