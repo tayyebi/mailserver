@@ -254,8 +254,9 @@ services:
       - APP_ENV=production
       - APP_DEBUG=false
       - APP_URL=https://${MAIL_HOST}/admin
+      - APP_KEY=${APP_KEY}
+      - QUEUE_CONNECTION=database
     volumes:
-      - ./admin:/var/www/html
       - ./data/admin:/var/www/html/database:rw
     expose:
       - "${ADMIN_INTERNAL_PORT:-80}"

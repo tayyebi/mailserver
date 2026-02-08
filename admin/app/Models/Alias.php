@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Jobs\SyncMailConfigJob;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -36,9 +37,7 @@ class Alias extends Model
 
     protected static function syncConfig(): void
     {
-        // Trigger config sync in background
-        if (file_exists(base_path('sync-config.sh'))) {
-            exec('bash ' . base_path('sync-config.sh') . ' > /dev/null 2>&1 &');
-        }
+        // Dispatch sync job with debouncing via job queue
+        SyncMailConfigJob::dispatch()->onQueue('mail-sync');
     }
 }

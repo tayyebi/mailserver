@@ -8,6 +8,6 @@ use App\Http\Controllers\AliasController;
 
 Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
-Route::resource('domains', DomainController::class);
-Route::resource('email-accounts', EmailAccountController::class);
-Route::resource('aliases', AliasController::class);
+Route::resource('domains', DomainController::class)->except(['show']);
+Route::resource('email-accounts', EmailAccountController::class)->except(['show']);
+Route::resource('aliases', AliasController::class)->except(['show']);

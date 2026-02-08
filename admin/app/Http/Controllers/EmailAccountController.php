@@ -33,21 +33,22 @@ class EmailAccountController extends Controller
             'quota' => 'integer|min:0',
         ]);
 
+        // Convert quota from MB to bytes
+        if (isset($validated['quota'])) {
+            $validated['quota'] = $validated['quota'] * 1048576;
+        }
+
         $validated['active'] = $request->has('active');
         EmailAccount::create($validated);
         
         return redirect()->route('email-accounts.index')->with('success', 'Email account created successfully');
     }
 
-    public function show(EmailAccount $emailAccount): View
-    {
-        $emailAccount->load('domain');
-        return view('email-accounts.show', compact('emailAccount'));
-    }
-
     public function edit(EmailAccount $emailAccount): View
     {
         $domains = Domain::where('active', true)->get();
+        // Convert quota from bytes to MB for display
+        $emailAccount->quota = $emailAccount->quota ? round($emailAccount->quota / 1048576) : 0;
         return view('email-accounts.edit', compact('emailAccount', 'domains'));
     }
 
@@ -64,6 +65,11 @@ class EmailAccountController extends Controller
 
         if (!isset($validated['password']) || empty($validated['password'])) {
             unset($validated['password']);
+        }
+
+        // Convert quota from MB to bytes
+        if (isset($validated['quota'])) {
+            $validated['quota'] = $validated['quota'] * 1048576;
         }
 
         $validated['active'] = $request->has('active');

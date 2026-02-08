@@ -10,7 +10,8 @@ RUN apt-get update && apt-get install -y \
     zip \
     unzip \
     nginx \
-    supervisor
+    supervisor \
+    sqlite3
 
 # Clear cache
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
