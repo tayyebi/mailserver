@@ -261,7 +261,7 @@ services:
       mailnet:
         ipv4_address: ${ADMIN_IP:-172.18.0.31}
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:80 || exit 1"]
+      test: ["CMD-SHELL", "test -f /var/www/html/public/index.php || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
