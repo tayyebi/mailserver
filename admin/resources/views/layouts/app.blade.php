@@ -50,6 +50,7 @@
                 <a href="{{ route('domains.index') }}">Domains</a>
                 <a href="{{ route('email-accounts.index') }}">Email Accounts</a>
                 <a href="{{ route('aliases.index') }}">Aliases</a>
+                <a href="{{ route('containers.index') }}">Containers</a>
             </nav>
         </div>
     </header>
@@ -57,6 +58,10 @@
     <div class="container">
         @if(session('success'))
             <div class="alert alert-success">{{ session('success') }}</div>
+        @endif
+        
+        @if(session('error'))
+            <div class="alert" style="background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb;">{{ session('error') }}</div>
         @endif
 
         @yield('content')

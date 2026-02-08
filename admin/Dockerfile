@@ -13,7 +13,8 @@ RUN apt-get update && apt-get install -y \
     supervisor \
     sqlite3 \
     libsqlite3-dev \
-    openssl
+    openssl \
+    docker.io
 
 # Clear cache
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*

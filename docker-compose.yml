@@ -280,6 +280,7 @@ services:
     volumes:
       - ./data/admin:/var/www/html/database:rw
       - ./data/mail-config:/var/www/html/storage/app/mail-config:rw
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     expose:
       - "${ADMIN_INTERNAL_PORT:-80}"
     networks:

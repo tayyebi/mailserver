@@ -3,6 +3,11 @@ set -e
 
 echo "[admin] Starting initialization..."
 
+# Add www-data to docker group if it exists (for Docker socket access)
+if getent group docker > /dev/null 2>&1; then
+    usermod -aG docker www-data 2>/dev/null || true
+fi
+
 # Create required directories first
 mkdir -p /var/www/html/database
 mkdir -p /var/www/html/storage/app/mail-config/opendkim/keys
