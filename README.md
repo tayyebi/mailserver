@@ -168,6 +168,68 @@ After modifying `main.cf.tmpl` or `master.cf.tmpl`, always run `make update-conf
 
 ---
 
+## Administration Panel
+
+The mailserver includes a Laravel-based web administration panel for managing domains, email accounts, and aliases.
+
+### Features
+
+- **Domain Management**: Add and configure email domains with DKIM keys
+- **Email Account Management**: Create mailboxes with passwords and quotas
+- **Alias Management**: Set up email forwarding and aliases
+- **Webmail**: Integrated Roundcube webmail client
+- **Database Backend**: MySQL-backed configuration for Postfix and Dovecot
+
+### Quick Setup
+
+1. **Start admin services**:
+   ```bash
+   docker-compose up -d db admin webmail
+   ```
+
+2. **Run database migrations**:
+   ```bash
+   docker-compose exec admin php artisan migrate
+   ```
+
+3. **Create an admin user**:
+   ```bash
+   docker-compose exec admin php artisan tinker
+   ```
+   Then in the Tinker console:
+   ```php
+   \App\Models\AdminUser::create([
+       'name' => 'Admin',
+       'email' => 'admin@yourdomain.com',
+       'password' => bcrypt('your-secure-password')
+   ]);
+   ```
+
+4. **Access the admin panel**:
+   - Admin Panel: `http://your-server:8080`
+   - Webmail: `http://your-server:8081`
+
+### Database Configuration
+
+The admin panel requires MySQL. Configure in your `.env` file:
+```
+DB_DATABASE=mailserver
+DB_USERNAME=mailuser
+DB_PASSWORD=mailpassword
+```
+
+### Integration with Postfix/Dovecot
+
+The admin panel stores domain, user, and alias information in MySQL. To integrate:
+
+1. Configure Postfix to use MySQL virtual maps (see `admin/ADMIN_README.md`)
+2. Configure Dovecot to use MySQL authentication (see `admin/ADMIN_README.md`)
+3. Restart services: `make restart`
+
+For detailed documentation, see [admin/ADMIN_README.md](admin/ADMIN_README.md)
+
+---
+
 ## Security notes
 
 - Replace self‑signed TLS cert with a real one when ready (overwrite in data/ssl and `docker compose restart mail dovecot`)

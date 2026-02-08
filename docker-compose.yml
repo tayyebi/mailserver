@@ -237,6 +237,124 @@ services:
       timeout: 10s
       retries: 1
 
+  db:
+    image: mysql:8.0
+    container_name: mailserver_db
+    hostname: db.${MAIL_DOMAIN}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD:-rootpassword}
+      - MYSQL_DATABASE=${DB_DATABASE:-mailserver}
+      - MYSQL_USER=${DB_USERNAME:-mailuser}
+      - MYSQL_PASSWORD=${DB_PASSWORD:-mailpassword}
+      - TZ=${TZ}
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      mailnet:
+        ipv4_address: ${DB_IP:-172.18.0.30}
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD:-rootpassword}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      com.mailserver.role: "database"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  admin:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+    container_name: mailserver_admin
+    hostname: admin.${MAIL_DOMAIN}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - TZ=${TZ}
+      - DB_CONNECTION=mysql
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_DATABASE=${DB_DATABASE:-mailserver}
+      - DB_USERNAME=${DB_USERNAME:-mailuser}
+      - DB_PASSWORD=${DB_PASSWORD:-mailpassword}
+      - APP_NAME="Mail Server Admin"
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - APP_URL=http://${MAIL_HOST}:8080
+    volumes:
+      - ./admin:/var/www/html
+      - ./admin/storage:/var/www/html/storage
+    ports:
+      - "8080:80"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      mailnet:
+        ipv4_address: ${ADMIN_IP:-172.18.0.31}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      com.mailserver.role: "admin"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  webmail:
+    image: roundcube/roundcubemail:latest
+    container_name: mailserver_webmail
+    hostname: webmail.${MAIL_DOMAIN}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - TZ=${TZ}
+      - ROUNDCUBEMAIL_DEFAULT_HOST=ssl://${DOVECOT_IP}
+      - ROUNDCUBEMAIL_DEFAULT_PORT=993
+      - ROUNDCUBEMAIL_SMTP_SERVER=tls://${POSTFIX_IP}
+      - ROUNDCUBEMAIL_SMTP_PORT=587
+      - ROUNDCUBEMAIL_DB_TYPE=mysql
+      - ROUNDCUBEMAIL_DB_HOST=db
+      - ROUNDCUBEMAIL_DB_USER=${DB_USERNAME:-mailuser}
+      - ROUNDCUBEMAIL_DB_PASSWORD=${DB_PASSWORD:-mailpassword}
+      - ROUNDCUBEMAIL_DB_NAME=${DB_DATABASE:-mailserver}_webmail
+    ports:
+      - "8081:80"
+    depends_on:
+      db:
+        condition: service_healthy
+      dovecot:
+        condition: service_healthy
+      postfix:
+        condition: service_healthy
+    networks:
+      mailnet:
+        ipv4_address: ${WEBMAIL_IP:-172.18.0.32}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      com.mailserver.role: "webmail"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   pixelmilter_data:
   pixelmilter_footer:
