@@ -66,6 +66,7 @@ services:
       - ./data/logs/dovecot.log:/var/log/mail.log
       - ./data/mail:/mail
       - ./data/dovecot/passwd:/etc/dovecot/passwd:rw
+      - ./data/admin:/var/www/html/database:ro
       - ./dovecot/dovecot.conf:/etc/dovecot/dovecot.conf:ro
     logging:
       driver: "json-file"
@@ -132,6 +133,7 @@ services:
       - ./data/ssl/cert.pem:/etc/ssl/certs/postfix.pem:ro
       - ./data/ssl/key.pem:/etc/ssl/private/postfix.key:ro
       - ./data/logs/postfix.log:/var/log/mail.log
+      - ./data/admin:/var/www/html/database:ro
       - ./postfix/resolv.conf:/var/spool/postfix/etc/resolv.conf:ro
       - ./postfix/resolv.conf:/etc/resolv.conf:ro
       - ./postfix/main.cf.tmpl:/templates/main.cf.tmpl:ro
@@ -254,7 +256,7 @@ services:
       - APP_URL=http://${MAIL_HOST}:8080
     volumes:
       - ./admin:/var/www/html
-      - ./data/admin:/var/www/html/database
+      - ./data/admin:/var/www/html/database:rw
     ports:
       - "8080:80"
     networks:

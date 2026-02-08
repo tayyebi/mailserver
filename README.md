@@ -24,23 +24,26 @@ graph TB
         PixelServer[Pixel Server<br/>Analytics]
     end
     
-    User[Administrator] -->|Port 8080| Admin
+    User[Administrator] -->|HTTP Port 8080| Admin
+    User -->|HTTPS Port 8443| PixelServer
+    User -->|HTTP Port 8444| PixelServer
     Admin -->|Manages| DB
-    DB -->|Config Data| Postfix
-    DB -->|Config Data| Dovecot
+    DB -->|Virtual Config| Postfix
+    DB -->|Auth & Mailbox| Dovecot
     
-    Client[Email Client] -->|SMTP:25,587| Postfix
-    Client -->|IMAP:993| Dovecot
+    EmailClient[Email Client] -->|SMTP 25,587,465| Postfix
+    EmailClient -->|IMAP 143,993| Dovecot
     
-    Postfix -->|DKIM Sign| OpenDKIM
-    Postfix -->|Track| PixelMilter
-    Postfix -->|Deliver| Dovecot
-    PixelMilter -->|Log| PixelServer
+    Postfix -->|Port 8891| OpenDKIM
+    Postfix -->|Port 8892| PixelMilter
+    Postfix -->|LMTP Port 24| Dovecot
+    PixelMilter -->|Pixel Data| PixelServer
     
     style Admin fill:#667eea
     style DB fill:#48bb78
     style Postfix fill:#ed8936
     style Dovecot fill:#4299e1
+    style PixelServer fill:#f56565
 ```
 
 ---

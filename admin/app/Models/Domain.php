@@ -29,4 +29,23 @@ class Domain extends Model
     {
         return $this->hasMany(Alias::class);
     }
+
+    protected static function booted(): void
+    {
+        static::saved(function () {
+            self::syncConfig();
+        });
+
+        static::deleted(function () {
+            self::syncConfig();
+        });
+    }
+
+    protected static function syncConfig(): void
+    {
+        // Trigger config sync in background
+        if (file_exists(base_path('sync-config.sh'))) {
+            exec('bash ' . base_path('sync-config.sh') . ' > /dev/null 2>&1 &');
+        }
+    }
 }
