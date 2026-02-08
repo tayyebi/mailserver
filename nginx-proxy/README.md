@@ -17,15 +17,15 @@ Dedicated reverse proxy for the mail server stack, providing unified access to a
 - **Backend**: `mailserver_admin` container (port 80)
 - **Access**: `https://your-server/admin`
 
+### Reports API
+- **Path**: `/admin/reports`
+- **Backend**: `pixelserver` container (port 8444)
+- **Access**: `https://your-server/admin/reports`
+
 ### Pixel Tracking
 - **Path**: `/pixel`
 - **Backend**: `pixelserver` container (port 8443)
 - **Access**: `https://your-server/pixel?id=...`
-
-### Reports API
-- **Path**: `/reports`
-- **Backend**: `pixelserver` container (port 8444)
-- **Access**: `https://your-server/reports`
 
 ### Health Check
 - **Path**: `/health`

@@ -28,7 +28,7 @@ graph TB
     User[Administrator] -->|HTTPS 443| Proxy
     Proxy -->|/admin| Admin
     Proxy -->|/pixel| PixelServer
-    Proxy -->|/reports| PixelServer
+    Proxy -->|/admin/reports| PixelServer
     
     Admin -->|Manages| DB
     DB -->|Virtual Config| Postfix
@@ -124,7 +124,7 @@ docker-compose up -d admin nginx-proxy
 The admin panel and pixel server will be available at:
 - **Admin Panel**: `https://your-server/admin`
 - **Pixel Tracking**: `https://your-server/pixel`
-- **Reports API**: `https://your-server/reports`
+- **Reports API**: `https://your-server/admin/reports`
 
 All services are accessible through the reverse proxy on standard HTTPS port 443.
 
@@ -257,7 +257,7 @@ The mailserver includes a simple Laravel-based web admin panel for managing doma
 2. **Access the interface**:
    - Admin Panel: `https://your-server/admin`
    - Pixel Tracking: `https://your-server/pixel`
-   - Reports API: `https://your-server/reports`
+   - Reports API: `https://your-server/admin/reports`
 
 All services use self-signed SSL certificates and are accessible through standard HTTPS port 443.
 
@@ -297,7 +297,7 @@ All services use self-signed SSL certificates and are accessible through standar
 
 The Nginx reverse proxy provides:
 - **Automatic HTTPS redirect** - All HTTP traffic redirected to HTTPS
-- **Path-based routing** - `/admin`, `/pixel`, `/reports` routes
+- **Path-based routing** - `/admin`, `/admin/reports`, `/pixel` routes
 - **Self-signed certificates** - Generated automatically during build
 - **Security headers** - X-Frame-Options, X-Content-Type-Options, X-XSS-Protection
 

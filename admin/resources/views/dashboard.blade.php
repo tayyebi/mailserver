@@ -34,4 +34,14 @@
         <a href="{{ route('aliases.create') }}" class="btn">+ Add Alias</a>
     </div>
 </div>
+
+<div class="card">
+    <h3>Analytics</h3>
+    <div class="actions">
+        <a href="/admin/reports" class="btn btn-success" target="_blank">📊 View Tracking Reports</a>
+    </div>
+    <p style="margin-top: 0.5rem; color: #666; font-size: 0.875rem;">
+        View email tracking statistics and analytics from the pixel server
+    </p>
+</div>
 @endsection
