@@ -59,6 +59,12 @@ class DomainController extends Controller
         ]);
 
         $validated['active'] = $request->has('active');
+        
+        // If DKIM private key is empty, keep the existing one
+        if (empty($validated['dkim_private_key'])) {
+            unset($validated['dkim_private_key']);
+        }
+        
         $domain->update($validated);
         
         return redirect()->route('domains.index')->with('success', 'Domain updated successfully');

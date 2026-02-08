@@ -19,6 +19,7 @@ class Domain extends Model
 
     protected $casts = [
         'active' => 'boolean',
+        'dkim_private_key' => 'encrypted',
     ];
 
     public function emailAccounts(): HasMany

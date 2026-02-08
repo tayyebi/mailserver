@@ -41,8 +41,11 @@
 
         <div class="form-group">
             <label for="dkim_private_key">DKIM Private Key</label>
-            <textarea id="dkim_private_key" name="dkim_private_key" rows="6" placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;...&#10;-----END RSA PRIVATE KEY-----">{{ old('dkim_private_key', $domain->dkim_private_key) }}</textarea>
-            <small style="color: #666;">PEM format private key for signing</small>
+            <textarea id="dkim_private_key" name="dkim_private_key" rows="6" placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;...&#10;-----END RSA PRIVATE KEY-----&#10;&#10;Leave empty to keep existing key"></textarea>
+            <small style="color: #666;">PEM format private key for signing. Leave empty to keep existing key (encrypted at rest).</small>
+            @if($domain->dkim_private_key)
+                <small style="color: #28a745;">✓ DKIM private key is configured</small>
+            @endif
         </div>
 
         <div class="form-group">

@@ -77,7 +77,10 @@ class SyncMailConfigJob implements ShouldQueue
         
         // Ensure directory exists
         if (!is_dir($configDir)) {
-            mkdir($configDir, 0755, true);
+            if (!mkdir($configDir, 0755, true)) {
+                Log::error('Failed to create mail config directory: ' . $configDir);
+                throw new \RuntimeException('Failed to create mail config directory');
+            }
         }
 
         // Write config files atomically (write to temp, then rename)
@@ -100,8 +103,30 @@ class SyncMailConfigJob implements ShouldQueue
     protected function writeConfigFileAtomic(string $path, array $lines, int $permissions): void
     {
         $tempFile = $path . '.tmp';
-        file_put_contents($tempFile, implode("\n", $lines) . "\n");
-        chmod($tempFile, $permissions);
-        rename($tempFile, $path);
+        
+        try {
+            // Write to temp file
+            if (file_put_contents($tempFile, implode("\n", $lines) . "\n") === false) {
+                throw new \RuntimeException("Failed to write to temp file: $tempFile");
+            }
+            
+            // Set permissions
+            if (!chmod($tempFile, $permissions)) {
+                throw new \RuntimeException("Failed to set permissions on: $tempFile");
+            }
+            
+            // Atomic rename
+            if (!rename($tempFile, $path)) {
+                throw new \RuntimeException("Failed to rename $tempFile to $path");
+            }
+        } catch (\Exception $e) {
+            // Clean up temp file on failure
+            @unlink($tempFile);
+            Log::error('Failed to write config file', [
+                'path' => $path,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
     }
 }
