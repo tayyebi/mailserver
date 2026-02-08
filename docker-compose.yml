@@ -2,6 +2,18 @@ version: '3.8'
 
 services:
 
+  init:
+    image: alpine:latest
+    container_name: mailserver_init
+    volumes:
+      - ./docker-init.sh:/init.sh:ro
+      - ./data:/data
+    entrypoint: ["/bin/sh", "/init.sh"]
+    environment:
+      - MAIL_HOST=${MAIL_HOST}
+    networks:
+      mailnet:
+
   opendkim:
     build:
       context: ./opendkim
@@ -34,6 +46,9 @@ services:
     networks:
       mailnet:
         ipv4_address: ${OPENDKIM_IP}
+    depends_on:
+      init:
+        condition: service_completed_successfully
     entrypoint: ["opendkim", "-f", "-x", "/etc/opendkim/opendkim.conf"]
 
   dovecot:
@@ -85,6 +100,9 @@ services:
     networks:
       mailnet:
         ipv4_address: ${DOVECOT_IP}
+    depends_on:
+      init:
+        condition: service_completed_successfully
     command: ["dovecot", "-F"]
 
   postfix:
@@ -155,6 +173,8 @@ services:
         condition: service_started
       pixelmilter:
         condition: service_started
+      init:
+        condition: service_completed_successfully
     networks:
       mailnet:
         ipv4_address: ${POSTFIX_IP}
