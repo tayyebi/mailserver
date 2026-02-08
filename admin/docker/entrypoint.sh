@@ -51,7 +51,7 @@ MAIL_MAILER=log
 EOF
     
     chmod 644 /var/www/html/.env
-    echo "[admin] ✓ .env file created with generated APP_KEY"
+    echo "[admin] ✓ .env file created with auto-generated APP_KEY"
 fi
 
 # Run migrations

@@ -133,7 +133,11 @@ class DkimService
             }
 
             // Set proper permissions
-            chmod($privateKeyFile, 0600);
+            $chmodResult = chmod($privateKeyFile, 0600);
+            if (!$chmodResult) {
+                Log::error("Failed to set permissions on private key file: {$privateKeyFile}");
+                return false;
+            }
 
             // Update KeyTable
             $this->updateKeyTable($domain, $selector);

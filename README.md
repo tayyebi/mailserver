@@ -97,8 +97,8 @@ cd mailserver
 
 # Create config from template
 cp .env.example .env
-# Edit .env: Set MAIL_DOMAIN, MAIL_HOST, TZ, and APP_KEY
-# Generate APP_KEY with: openssl rand -base64 32
+# Edit .env: Set MAIL_DOMAIN, MAIL_HOST, and TZ
+# Note: APP_KEY will be auto-generated on first start
 
 # Start all services
 docker compose up -d

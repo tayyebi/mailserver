@@ -45,27 +45,20 @@ class DomainController extends Controller
         // Auto-generate DKIM keys if requested
         if ($request->has('generate_dkim') && $request->generate_dkim) {
             $selector = $validated['dkim_selector'] ?: 'mail';
-            try {
-                $keys = $this->dkimService->generateKeys($validated['domain'], $selector);
+            $dkimResult = $this->generateAndStoreDkimKeys($validated['domain'], $selector);
+            
+            if ($dkimResult['success']) {
                 $validated['dkim_selector'] = $selector;
-                $validated['dkim_private_key'] = $keys['private_key'];
-                $validated['dkim_public_key'] = $keys['public_key'];
-                
-                // Write keys to OpenDKIM directory structure
-                $this->dkimService->writeKeysToOpendkim(
-                    $validated['domain'],
-                    $selector,
-                    $keys['private_key']
-                );
+                $validated['dkim_private_key'] = $dkimResult['private_key'];
+                $validated['dkim_public_key'] = $dkimResult['public_key'];
                 
                 $domain = Domain::create($validated);
                 
                 return redirect()->route('domains.show-dkim', $domain)
                     ->with('success', 'Domain created successfully with DKIM keys');
-            } catch (\Exception $e) {
-                Log::error("Failed to generate DKIM keys: " . $e->getMessage());
+            } else {
                 return back()->withInput()
-                    ->with('error', 'Failed to generate DKIM keys: ' . $e->getMessage());
+                    ->with('error', 'Failed to generate DKIM keys: ' . $dkimResult['error']);
             }
         }
         
@@ -131,28 +124,52 @@ class DomainController extends Controller
         ]);
 
         $selector = $validated['dkim_selector'] ?? $domain->dkim_selector ?? 'mail';
-
-        try {
-            $keys = $this->dkimService->generateKeys($domain->domain, $selector);
-            
+        $dkimResult = $this->generateAndStoreDkimKeys($domain->domain, $selector);
+        
+        if ($dkimResult['success']) {
             $domain->update([
                 'dkim_selector' => $selector,
-                'dkim_private_key' => $keys['private_key'],
-                'dkim_public_key' => $keys['public_key'],
+                'dkim_private_key' => $dkimResult['private_key'],
+                'dkim_public_key' => $dkimResult['public_key'],
             ]);
-
-            // Write keys to OpenDKIM directory structure
-            $this->dkimService->writeKeysToOpendkim(
-                $domain->domain,
-                $selector,
-                $keys['private_key']
-            );
 
             return redirect()->route('domains.show-dkim', $domain)
                 ->with('success', 'DKIM keys generated successfully');
+        } else {
+            return back()->with('error', 'Failed to generate DKIM keys: ' . $dkimResult['error']);
+        }
+    }
+
+    /**
+     * Generate DKIM keys and write to OpenDKIM directory
+     * 
+     * @param string $domainName
+     * @param string $selector
+     * @return array ['success' => bool, 'private_key' => string, 'public_key' => string, 'error' => string]
+     */
+    private function generateAndStoreDkimKeys(string $domainName, string $selector): array
+    {
+        try {
+            $keys = $this->dkimService->generateKeys($domainName, $selector);
+            
+            // Write keys to OpenDKIM directory structure
+            $this->dkimService->writeKeysToOpendkim(
+                $domainName,
+                $selector,
+                $keys['private_key']
+            );
+            
+            return [
+                'success' => true,
+                'private_key' => $keys['private_key'],
+                'public_key' => $keys['public_key'],
+            ];
         } catch (\Exception $e) {
-            Log::error("Failed to generate DKIM keys for {$domain->domain}: " . $e->getMessage());
-            return back()->with('error', 'Failed to generate DKIM keys: ' . $e->getMessage());
+            Log::error("Failed to generate DKIM keys for {$domainName}: " . $e->getMessage());
+            return [
+                'success' => false,
+                'error' => $e->getMessage(),
+            ];
         }
     }
 }
