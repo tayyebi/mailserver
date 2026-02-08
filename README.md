@@ -310,6 +310,23 @@ data/admin/database.sqlite
 
 Regular backups of this file are recommended.
 
+### Port Configuration
+
+All ports are standardized and configurable via environment variables. See [PORT_CONFIGURATION.md](PORT_CONFIGURATION.md) for detailed documentation.
+
+**External Ports** (exposed to host):
+- `80, 443` - HTTP/HTTPS (Reverse Proxy)
+- `25, 587, 465` - SMTP (Postfix)
+- `143, 993` - IMAP (Dovecot)
+- `110, 995` - POP3 (Dovecot)
+
+**Internal Ports** (Docker network only):
+- `8891` - OpenDKIM
+- `8892` - PixelMilter
+- `8443, 8444` - PixelServer
+- `24, 12345` - Dovecot Internal
+- `80` - Admin Panel Internal
+
 ---
 
 ## Security notes
