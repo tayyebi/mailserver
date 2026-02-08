@@ -3,67 +3,68 @@
 namespace App\Http\Controllers;
 
 use App\Models\Alias;
+use App\Models\Domain;
 use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
+use Illuminate\View\View;
+use Illuminate\Http\RedirectResponse;
 
 class AliasController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index(): JsonResponse
+    public function index(): View
     {
         $aliases = Alias::with('domain')->get();
-        return response()->json($aliases);
+        return view('aliases.index', compact('aliases'));
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request): JsonResponse
+    public function create(): View
+    {
+        $domains = Domain::where('active', true)->get();
+        return view('aliases.create', compact('domains'));
+    }
+
+    public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
             'domain_id' => 'required|exists:domains,id',
             'source' => 'required|string',
             'destination' => 'required|string',
-            'active' => 'boolean',
         ]);
 
-        $alias = Alias::create($validated);
-        return response()->json($alias, 201);
+        $validated['active'] = $request->has('active');
+        Alias::create($validated);
+        
+        return redirect()->route('aliases.index')->with('success', 'Alias created successfully');
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(Alias $alias): JsonResponse
+    public function show(Alias $alias): View
     {
         $alias->load('domain');
-        return response()->json($alias);
+        return view('aliases.show', compact('alias'));
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, Alias $alias): JsonResponse
+    public function edit(Alias $alias): View
+    {
+        $domains = Domain::where('active', true)->get();
+        return view('aliases.edit', compact('alias', 'domains'));
+    }
+
+    public function update(Request $request, Alias $alias): RedirectResponse
     {
         $validated = $request->validate([
             'domain_id' => 'exists:domains,id',
             'source' => 'string',
             'destination' => 'string',
-            'active' => 'boolean',
         ]);
 
+        $validated['active'] = $request->has('active');
         $alias->update($validated);
-        return response()->json($alias);
+        
+        return redirect()->route('aliases.index')->with('success', 'Alias updated successfully');
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(Alias $alias): JsonResponse
+    public function destroy(Alias $alias): RedirectResponse
     {
         $alias->delete();
-        return response()->json(['message' => 'Alias deleted successfully']);
+        return redirect()->route('aliases.index')->with('success', 'Alias deleted successfully');
     }
 }

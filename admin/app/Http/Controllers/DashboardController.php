@@ -5,14 +5,11 @@ namespace App\Http\Controllers;
 use App\Models\Domain;
 use App\Models\EmailAccount;
 use App\Models\Alias;
-use Illuminate\Http\JsonResponse;
+use Illuminate\View\View;
 
 class DashboardController extends Controller
 {
-    /**
-     * Display dashboard statistics.
-     */
-    public function index(): JsonResponse
+    public function index(): View
     {
         $stats = [
             'total_domains' => Domain::count(),
@@ -21,10 +18,8 @@ class DashboardController extends Controller
             'active_email_accounts' => EmailAccount::where('active', true)->count(),
             'total_aliases' => Alias::count(),
             'active_aliases' => Alias::where('active', true)->count(),
-            'recent_domains' => Domain::latest()->take(5)->get(),
-            'recent_accounts' => EmailAccount::with('domain')->latest()->take(5)->get(),
         ];
 
-        return response()->json($stats);
+        return view('dashboard', compact('stats'));
     }
 }

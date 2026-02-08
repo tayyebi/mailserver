@@ -3,24 +3,26 @@
 namespace App\Http\Controllers;
 
 use App\Models\EmailAccount;
+use App\Models\Domain;
 use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
+use Illuminate\View\View;
+use Illuminate\Http\RedirectResponse;
 
 class EmailAccountController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index(): JsonResponse
+    public function index(): View
     {
         $accounts = EmailAccount::with('domain')->get();
-        return response()->json($accounts);
+        return view('email-accounts.index', compact('accounts'));
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request): JsonResponse
+    public function create(): View
+    {
+        $domains = Domain::where('active', true)->get();
+        return view('email-accounts.create', compact('domains'));
+    }
+
+    public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
             'domain_id' => 'required|exists:domains,id',
@@ -28,27 +30,28 @@ class EmailAccountController extends Controller
             'email' => 'required|email|unique:email_accounts',
             'password' => 'required|string|min:8',
             'name' => 'nullable|string',
-            'active' => 'boolean',
             'quota' => 'integer|min:0',
         ]);
 
-        $account = EmailAccount::create($validated);
-        return response()->json($account, 201);
+        $validated['active'] = $request->has('active');
+        EmailAccount::create($validated);
+        
+        return redirect()->route('email-accounts.index')->with('success', 'Email account created successfully');
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(EmailAccount $emailAccount): JsonResponse
+    public function show(EmailAccount $emailAccount): View
     {
         $emailAccount->load('domain');
-        return response()->json($emailAccount);
+        return view('email-accounts.show', compact('emailAccount'));
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, EmailAccount $emailAccount): JsonResponse
+    public function edit(EmailAccount $emailAccount): View
+    {
+        $domains = Domain::where('active', true)->get();
+        return view('email-accounts.edit', compact('emailAccount', 'domains'));
+    }
+
+    public function update(Request $request, EmailAccount $emailAccount): RedirectResponse
     {
         $validated = $request->validate([
             'domain_id' => 'exists:domains,id',
@@ -56,25 +59,22 @@ class EmailAccountController extends Controller
             'email' => 'email|unique:email_accounts,email,' . $emailAccount->id,
             'password' => 'nullable|string|min:8',
             'name' => 'nullable|string',
-            'active' => 'boolean',
             'quota' => 'integer|min:0',
         ]);
 
-        // Only update password if provided
         if (!isset($validated['password']) || empty($validated['password'])) {
             unset($validated['password']);
         }
 
+        $validated['active'] = $request->has('active');
         $emailAccount->update($validated);
-        return response()->json($emailAccount);
+        
+        return redirect()->route('email-accounts.index')->with('success', 'Email account updated successfully');
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(EmailAccount $emailAccount): JsonResponse
+    public function destroy(EmailAccount $emailAccount): RedirectResponse
     {
         $emailAccount->delete();
-        return response()->json(['message' => 'Email account deleted successfully']);
+        return redirect()->route('email-accounts.index')->with('success', 'Email account deleted successfully');
     }
 }

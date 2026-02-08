@@ -1,18 +1,76 @@
 # 📧 Dockerized Postfix + Dovecot + OpenDKIM Mailserver
 
-Self-contained, persistent mail stack:
+Self-contained, persistent mail stack with web administration:
 - Postfix SMTP (25, 587) with DKIM signing
 - Dovecot IMAP/IMAPS and SASL auth
 - Dovecot LMTP for final delivery to Maildir
+- **Web Admin Panel** for managing domains, email accounts, and aliases
 - Shared TLS certificates (read-only) for Postfix and Dovecot
-- Catch‑all routing to your submission user by default
 - Multi‑domain sending/signing with simple Make targets
 
 ---
 
-## Architecture
+## System Architecture
 
-![Mail Server Architecture](docs/architecture.svg)
+```mermaid
+graph TB
+    subgraph "Mail Server Stack"
+        Admin[Web Admin Panel<br/>Laravel + SQLite]
+        DB[(SQLite<br/>Database)]
+        Postfix[Postfix<br/>SMTP Server]
+        Dovecot[Dovecot<br/>IMAP Server]
+        OpenDKIM[OpenDKIM<br/>Email Signing]
+        PixelMilter[Pixel Milter<br/>Tracking]
+        PixelServer[Pixel Server<br/>Analytics]
+    end
+    
+    User[Administrator] -->|Port 8080| Admin
+    Admin -->|Manages| DB
+    DB -->|Config Data| Postfix
+    DB -->|Config Data| Dovecot
+    
+    Client[Email Client] -->|SMTP:25,587| Postfix
+    Client -->|IMAP:993| Dovecot
+    
+    Postfix -->|DKIM Sign| OpenDKIM
+    Postfix -->|Track| PixelMilter
+    Postfix -->|Deliver| Dovecot
+    PixelMilter -->|Log| PixelServer
+    
+    style Admin fill:#667eea
+    style DB fill:#48bb78
+    style Postfix fill:#ed8936
+    style Dovecot fill:#4299e1
+```
+
+---
+
+## Admin Panel Screenshots
+
+### Dashboard
+![Dashboard](https://github.com/user-attachments/assets/d75f1bb9-fcfe-41d9-a417-9cf63e1c4e3a)
+
+### Create Email Account
+![Create Email Account](https://github.com/user-attachments/assets/af376448-9e2b-4002-a196-8d9de45dadd8)
+
+---
+
+## Features
+
+### Web Administration Panel
+- 🎨 **Clean UI** - Simple, responsive interface with NO JavaScript
+- 🏢 **Domain Management** - Add and configure email domains
+- 👥 **Email Accounts** - Create mailboxes with passwords and quotas
+- 🔄 **Aliases** - Set up email forwarding and catch-all addresses
+- 📊 **Dashboard** - View statistics at a glance
+- 💾 **SQLite Database** - Lightweight, file-based storage
+
+### Mail Server Features
+- 📧 SMTP sending and receiving (ports 25, 587, 465)
+- 📬 IMAP access (ports 143, 993)
+- 🔐 DKIM email signing for authenticity
+- 📊 Email tracking with pixel insertion
+- 🗂️ Maildir storage format
 
 ---
 
@@ -45,6 +103,9 @@ cp .env.example .env
 
 # One‑shot bootstrap (idempotent)
 make install
+
+# Start admin panel
+docker-compose up -d admin
 ```
 
 `make install` will:
@@ -52,6 +113,8 @@ make install
 - Generate self‑signed TLS certs if missing
 - Start opendkim, dovecot, and postfix
 - Run health checks
+
+The admin panel will be available at `http://your-server:8080`
 
 ---
 
@@ -170,63 +233,55 @@ After modifying `main.cf.tmpl` or `master.cf.tmpl`, always run `make update-conf
 
 ## Administration Panel
 
-The mailserver includes a Laravel-based web administration panel for managing domains, email accounts, and aliases.
+The mailserver includes a simple Laravel-based web admin panel for managing domains, email accounts, and aliases.
+
+### Access the Admin Panel
+
+1. **Start the admin service**:
+   ```bash
+   docker-compose up -d admin
+   ```
+
+2. **Access the interface**:
+   Open your browser to `http://your-server:8080`
 
 ### Features
 
-- **Domain Management**: Add and configure email domains with DKIM keys
-- **Email Account Management**: Create mailboxes with passwords and quotas
-- **Alias Management**: Set up email forwarding and aliases
-- **Webmail**: Integrated Roundcube webmail client
-- **Database Backend**: MySQL-backed configuration for Postfix and Dovecot
+- **No Authentication Required** - Direct access for simplicity
+- **No JavaScript** - Pure HTML forms, works everywhere
+- **SQLite Database** - Lightweight file-based storage
+- **Full CRUD Operations**:
+  - Create, edit, delete domains
+  - Manage email accounts with passwords and quotas
+  - Configure email aliases and forwarding
 
-### Quick Setup
+### Quick Start
 
-1. **Start admin services**:
-   ```bash
-   docker-compose up -d db admin webmail
-   ```
+1. **Add a Domain**:
+   - Navigate to "Domains" → "Add Domain"
+   - Enter domain name (e.g., `example.com`)
+   - Click "Create Domain"
 
-2. **Run database migrations**:
-   ```bash
-   docker-compose exec admin php artisan migrate
-   ```
+2. **Create Email Account**:
+   - Navigate to "Email Accounts" → "Add Email Account"
+   - Select domain, enter username and password
+   - Set quota (0 = unlimited)
+   - Click "Create Account"
 
-3. **Create an admin user**:
-   ```bash
-   docker-compose exec admin php artisan tinker
-   ```
-   Then in the Tinker console:
-   ```php
-   \App\Models\AdminUser::create([
-       'name' => 'Admin',
-       'email' => 'admin@yourdomain.com',
-       'password' => bcrypt('your-secure-password')
-   ]);
-   ```
+3. **Set Up Alias** (Optional):
+   - Navigate to "Aliases" → "Add Alias"
+   - Set source (e.g., `info@example.com`)
+   - Set destination (e.g., `admin@example.com`)
+   - Click "Create Alias"
 
-4. **Access the admin panel**:
-   - Admin Panel: `http://your-server:8080`
-   - Webmail: `http://your-server:8081`
+### Database Location
 
-### Database Configuration
-
-The admin panel requires MySQL. Configure in your `.env` file:
+The admin panel stores all data in:
 ```
-DB_DATABASE=mailserver
-DB_USERNAME=mailuser
-DB_PASSWORD=mailpassword
+data/admin/database.sqlite
 ```
 
-### Integration with Postfix/Dovecot
-
-The admin panel stores domain, user, and alias information in MySQL. To integrate:
-
-1. Configure Postfix to use MySQL virtual maps (see `admin/ADMIN_README.md`)
-2. Configure Dovecot to use MySQL authentication (see `admin/ADMIN_README.md`)
-3. Restart services: `make restart`
-
-For detailed documentation, see [admin/ADMIN_README.md](admin/ADMIN_README.md)
+Regular backups of this file are recommended.
 
 ---
 

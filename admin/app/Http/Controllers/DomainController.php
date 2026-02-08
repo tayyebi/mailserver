@@ -4,68 +4,63 @@ namespace App\Http\Controllers;
 
 use App\Models\Domain;
 use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
+use Illuminate\View\View;
+use Illuminate\Http\RedirectResponse;
 
 class DomainController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index(): JsonResponse
+    public function index(): View
     {
         $domains = Domain::with('emailAccounts', 'aliases')->get();
-        return response()->json($domains);
+        return view('domains.index', compact('domains'));
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request): JsonResponse
+    public function create(): View
+    {
+        return view('domains.create');
+    }
+
+    public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
             'domain' => 'required|string|unique:domains',
             'description' => 'nullable|string',
             'active' => 'boolean',
-            'dkim_selector' => 'string',
         ]);
 
-        $domain = Domain::create($validated);
-        return response()->json($domain, 201);
+        $validated['active'] = $request->has('active');
+        Domain::create($validated);
+        
+        return redirect()->route('domains.index')->with('success', 'Domain created successfully');
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(Domain $domain): JsonResponse
+    public function show(Domain $domain): View
     {
         $domain->load('emailAccounts', 'aliases');
-        return response()->json($domain);
+        return view('domains.show', compact('domain'));
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, Domain $domain): JsonResponse
+    public function edit(Domain $domain): View
+    {
+        return view('domains.edit', compact('domain'));
+    }
+
+    public function update(Request $request, Domain $domain): RedirectResponse
     {
         $validated = $request->validate([
             'domain' => 'string|unique:domains,domain,' . $domain->id,
             'description' => 'nullable|string',
-            'active' => 'boolean',
-            'dkim_selector' => 'string',
-            'dkim_private_key' => 'nullable|string',
-            'dkim_public_key' => 'nullable|string',
         ]);
 
+        $validated['active'] = $request->has('active');
         $domain->update($validated);
-        return response()->json($domain);
+        
+        return redirect()->route('domains.index')->with('success', 'Domain updated successfully');
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(Domain $domain): JsonResponse
+    public function destroy(Domain $domain): RedirectResponse
     {
         $domain->delete();
-        return response()->json(['message' => 'Domain deleted successfully']);
+        return redirect()->route('domains.index')->with('success', 'Domain deleted successfully');
     }
 }
