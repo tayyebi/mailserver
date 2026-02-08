@@ -3,6 +3,12 @@ set -e
 
 echo "[admin] Starting initialization..."
 
+# Create .env file if it doesn't exist
+if [ ! -f /var/www/html/.env ]; then
+    echo "[admin] Creating .env file..."
+    cp /var/www/html/.env.example /var/www/html/.env
+fi
+
 # Create required directories
 mkdir -p /var/www/html/database
 mkdir -p /var/www/html/storage/app/mail-config/opendkim/keys

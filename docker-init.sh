@@ -43,5 +43,11 @@ mkdir -p /data/pixel/socket
 touch /data/logs/dovecot.log
 touch /data/logs/postfix.log
 
+# Create dovecot passwd file if it doesn't exist
+if [ ! -f /data/dovecot/passwd ]; then
+    touch /data/dovecot/passwd
+    chmod 644 /data/dovecot/passwd
+fi
+
 echo "[init] ✓ All required directories created"
 echo "[init] Initialization complete"
