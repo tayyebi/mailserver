@@ -4,9 +4,9 @@ Self-contained, persistent mail stack with web administration:
 - Postfix SMTP (25, 587) with DKIM signing
 - Dovecot IMAP/IMAPS and SASL auth
 - Dovecot LMTP for final delivery to Maildir
-- **Web Admin Panel** for managing domains, email accounts, and aliases
+- **Web Admin Panel** for managing domains, email accounts, aliases, and DKIM keys
 - Shared TLS certificates (read-only) for Postfix and Dovecot
-- Multi‑domain sending/signing with simple Make targets
+- Multi‑domain sending/signing with simple web interface
 
 ---
 
@@ -67,6 +67,7 @@ graph TB
 ### Web Administration Panel
 - 🎨 **Clean UI** - Simple, responsive interface with NO JavaScript
 - 🏢 **Domain Management** - Add and configure email domains
+- 🔑 **DKIM Management** - Generate and manage DKIM signing keys
 - 👥 **Email Accounts** - Create mailboxes with passwords and quotas
 - 🔄 **Aliases** - Set up email forwarding and catch-all addresses
 - 📊 **Dashboard** - View statistics at a glance
@@ -84,16 +85,6 @@ graph TB
 ## Prerequisites
 
 - Docker and Docker Compose
-- GNU Make
-
-Install GNU Make:
-- Debian/Ubuntu: `sudo apt update && sudo apt install make`
-- Fedora/RHEL: `sudo dnf install make` (or `sudo yum install make`)
-- Arch: `sudo pacman -S make`
-- macOS: `brew install make` (use `gmake` if installed as GNU Make)
-- Windows: use WSL (then follow Linux), or MSYS2 (`pacman -S make`)
-
-Verify: `make --version`
 
 ---
 
@@ -106,20 +97,18 @@ cd mailserver
 
 # Create config from template
 cp .env.example .env
-# Edit: MAIL_DOMAIN, MAIL_HOST, TZ
+# Edit .env: Set MAIL_DOMAIN, MAIL_HOST, TZ, and APP_KEY
+# Generate APP_KEY with: openssl rand -base64 32
 
-# One‑shot bootstrap (idempotent)
-make install
-
-# Start admin panel and reverse proxy
-docker-compose up -d admin nginx-proxy
+# Start all services
+docker compose up -d
 ```
 
-`make install` will:
-- Ensure data directories exist
-- Generate self‑signed TLS certs if missing
-- Start opendkim, dovecot, and postfix
-- Run health checks
+The system will automatically:
+- Generate self‑signed TLS certificates if missing
+- Create all required data directories
+- Initialize the admin panel database
+- Start all mail services
 
 The admin panel and pixel server will be available at:
 - **Admin Panel**: `https://your-server/admin`
@@ -187,43 +176,36 @@ OPT_IN_HEADER=X-Track-Open
 To ensure pixelmilter is correctly applied to the whole project:
 
 ```bash
-make verify-pixelmilter
+# Check pixelmilter container status
+docker compose ps pixelmilter
+
+# Check pixelmilter logs
+docker compose logs pixelmilter
 ```
 
-This command checks:
+This should show:
 - pixelmilter container is running
-- Socket file exists and is accessible
+- No errors in logs
 - Postfix configuration includes pixelmilter
-- Postfix can communicate with pixelmilter
 
 ### Updating Configuration Files (.cf files)
 
 Postfix configuration files (`main.cf`, `master.cf`) are generated from templates (`.tmpl` files) when the container starts. To ensure configuration files are updated after editing templates:
 
-**Option 1: Use the update-config target (recommended)**
+**Rebuild and restart Postfix:**
 ```bash
-make update-config
+docker compose build postfix
+docker compose restart postfix
 ```
 
-This will:
-1. Rebuild the Postfix container to apply template changes
-2. Restart Postfix to load the new configuration
-3. Verify the configuration is valid
-4. Reload Postfix to apply changes
-
-**Option 2: Manual restart**
+**Or restart all services:**
 ```bash
-# Rebuild and restart Postfix
-docker-compose build postfix
-docker-compose restart postfix
-
-# Or restart all services
-make restart
+docker compose restart
 ```
 
-**Option 3: Reload only (if no template changes)**
+**Reload only (if no template changes):**
 ```bash
-make reload
+docker compose exec postfix postfix reload
 ```
 
 ### Configuration File Locations
@@ -239,7 +221,10 @@ Pixelmilter is configured in `postfix/main.cf.tmpl`:
 - Pixelmilter listens on TCP port 8892 (configurable via `PIXEL_MILTER_ADDRESS` environment variable)
 - Postfix connects to pixelmilter via the Docker network using the `PIXEL_MILTER_IP` address
 
-After modifying `main.cf.tmpl` or `master.cf.tmpl`, always run `make update-config` to apply changes.
+After modifying `main.cf.tmpl` or `master.cf.tmpl`, rebuild and restart Postfix:
+```bash
+docker compose build postfix && docker compose restart postfix
+```
 
 ---
 
@@ -279,15 +264,21 @@ All services use self-signed SSL certificates and are accessible through standar
    - Navigate to `https://your-server/admin`
    - Click "Domains" → "Add Domain"
    - Enter domain name (e.g., `example.com`)
+   - Check "Auto-generate DKIM keys" for automatic DKIM setup
    - Click "Create Domain"
 
-2. **Create Email Account**:
+2. **Configure DNS**:
+   - After creating the domain, click the DKIM link
+   - Copy the DNS TXT record shown
+   - Add it to your DNS provider
+
+3. **Create Email Account**:
    - Navigate to "Email Accounts" → "Add Email Account"
    - Select domain, enter username and password
    - Set quota (0 = unlimited)
    - Click "Create Account"
 
-3. **Set Up Alias** (Optional):
+4. **Set Up Alias** (Optional):
    - Navigate to "Aliases" → "Add Alias"
    - Set source (e.g., `info@example.com`)
    - Set destination (e.g., `admin@example.com`)
