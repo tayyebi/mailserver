@@ -74,9 +74,6 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Copy content filter script template (will be rendered at startup)
 COPY pixel-content-filter.sh.tmpl /templates/pixel-content-filter.sh.tmpl
-# Copy original as fallback (will be replaced by rendered version at startup)
-COPY pixel-content-filter.sh /usr/local/bin/pixel-content-filter.sh
-RUN chmod +x /usr/local/bin/pixel-content-filter.sh || true
 
 # Copy reinjection binary from builder
 COPY --from=builder /app/target/release/postfix-reinject /usr/local/bin/postfix-reinject

@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y \
     nginx \
     supervisor \
     sqlite3 \
+    libsqlite3-dev \
     openssl
 
 # Clear cache
