@@ -124,7 +124,12 @@ class ContainerController extends Controller
             abort(404);
         }
 
-        $lines = $request->get('lines', 100);
+        // Validate lines parameter
+        $validated = $request->validate([
+            'lines' => 'nullable|integer|min:1|max:10000',
+        ]);
+
+        $lines = $validated['lines'] ?? 100;
         $logs = $this->getContainerLogs($container, $lines);
         
         return view('containers.logs', compact('container', 'logs', 'lines'));
@@ -172,6 +177,9 @@ class ContainerController extends Controller
     private function getContainerLogs(string $container, int $lines = 100): string
     {
         try {
+            // Validate lines is within bounds
+            $lines = max(1, min(10000, (int)$lines));
+            
             $cmd = sprintf('docker logs --tail %d %s 2>&1', $lines, escapeshellarg($container));
             exec($cmd, $output, $returnCode);
             

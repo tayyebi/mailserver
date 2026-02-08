@@ -40,7 +40,7 @@
     <div style="background: #f0f9ff; padding: 1rem; border-radius: 4px; margin-top: 1rem; border-left: 4px solid #0ea5e9;">
         <strong>ℹ️ Log Tips:</strong>
         <ul style="margin: 0.5rem 0 0 1.5rem;">
-            <li>Logs are displayed in reverse chronological order (newest at bottom)</li>
+            <li>Logs are displayed in chronological order (most recent at the bottom)</li>
             <li>Use the dropdown to adjust the number of lines displayed</li>
             <li>Click Refresh to get the latest logs</li>
         </ul>
