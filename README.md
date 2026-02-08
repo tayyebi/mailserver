@@ -1,18 +1,83 @@
 # 📧 Dockerized Postfix + Dovecot + OpenDKIM Mailserver
 
-Self-contained, persistent mail stack:
+Self-contained, persistent mail stack with web administration:
 - Postfix SMTP (25, 587) with DKIM signing
 - Dovecot IMAP/IMAPS and SASL auth
 - Dovecot LMTP for final delivery to Maildir
+- **Web Admin Panel** for managing domains, email accounts, and aliases
 - Shared TLS certificates (read-only) for Postfix and Dovecot
-- Catch‑all routing to your submission user by default
 - Multi‑domain sending/signing with simple Make targets
 
 ---
 
-## Architecture
+## System Architecture
 
-![Mail Server Architecture](docs/architecture.svg)
+```mermaid
+graph TB
+    subgraph "Mail Server Stack"
+        Proxy[Nginx Reverse Proxy<br/>Ports 80/443]
+        Admin[Web Admin Panel<br/>Laravel + SQLite]
+        DB[(SQLite<br/>Database)]
+        Postfix[Postfix<br/>SMTP Server]
+        Dovecot[Dovecot<br/>IMAP Server]
+        OpenDKIM[OpenDKIM<br/>Email Signing]
+        PixelMilter[Pixel Milter<br/>Tracking]
+        PixelServer[Pixel Server<br/>Analytics]
+    end
+    
+    User[Administrator] -->|HTTPS 443| Proxy
+    Proxy -->|/admin| Admin
+    Proxy -->|/pixel| PixelServer
+    Proxy -->|/admin/reports| PixelServer
+    
+    Admin -->|Manages| DB
+    DB -->|Virtual Config| Postfix
+    DB -->|Auth & Mailbox| Dovecot
+    
+    EmailClient[Email Client] -->|SMTP 25,587,465| Postfix
+    EmailClient -->|IMAP 143,993| Dovecot
+    
+    Postfix -->|Port 8891| OpenDKIM
+    Postfix -->|Port 8892| PixelMilter
+    Postfix -->|LMTP Port 24| Dovecot
+    PixelMilter -->|Pixel Data| PixelServer
+    
+    style Proxy fill:#f093fb
+    style Admin fill:#667eea
+    style DB fill:#48bb78
+    style Postfix fill:#ed8936
+    style Dovecot fill:#4299e1
+    style PixelServer fill:#f56565
+```
+
+---
+
+## Admin Panel Screenshots
+
+### Dashboard
+![Dashboard](https://github.com/user-attachments/assets/d75f1bb9-fcfe-41d9-a417-9cf63e1c4e3a)
+
+### Create Email Account
+![Create Email Account](https://github.com/user-attachments/assets/af376448-9e2b-4002-a196-8d9de45dadd8)
+
+---
+
+## Features
+
+### Web Administration Panel
+- 🎨 **Clean UI** - Simple, responsive interface with NO JavaScript
+- 🏢 **Domain Management** - Add and configure email domains
+- 👥 **Email Accounts** - Create mailboxes with passwords and quotas
+- 🔄 **Aliases** - Set up email forwarding and catch-all addresses
+- 📊 **Dashboard** - View statistics at a glance
+- 💾 **SQLite Database** - Lightweight, file-based storage
+
+### Mail Server Features
+- 📧 SMTP sending and receiving (ports 25, 587, 465)
+- 📬 IMAP access (ports 143, 993)
+- 🔐 DKIM email signing for authenticity
+- 📊 Email tracking with pixel insertion
+- 🗂️ Maildir storage format
 
 ---
 
@@ -45,6 +110,9 @@ cp .env.example .env
 
 # One‑shot bootstrap (idempotent)
 make install
+
+# Start admin panel and reverse proxy
+docker-compose up -d admin nginx-proxy
 ```
 
 `make install` will:
@@ -52,6 +120,13 @@ make install
 - Generate self‑signed TLS certs if missing
 - Start opendkim, dovecot, and postfix
 - Run health checks
+
+The admin panel and pixel server will be available at:
+- **Admin Panel**: `https://your-server/admin`
+- **Pixel Tracking**: `https://your-server/pixel`
+- **Reports API**: `https://your-server/admin/reports`
+
+All services are accessible through the reverse proxy on standard HTTPS port 443.
 
 ---
 
@@ -165,6 +240,92 @@ Pixelmilter is configured in `postfix/main.cf.tmpl`:
 - Postfix connects to pixelmilter via the Docker network using the `PIXEL_MILTER_IP` address
 
 After modifying `main.cf.tmpl` or `master.cf.tmpl`, always run `make update-config` to apply changes.
+
+---
+
+## Administration Panel
+
+The mailserver includes a simple Laravel-based web admin panel for managing domains, email accounts, and aliases. All services are accessed through a dedicated Nginx reverse proxy.
+
+### Access the Admin Panel
+
+1. **Start all services**:
+   ```bash
+   docker-compose up -d
+   ```
+
+2. **Access the interface**:
+   - Admin Panel: `https://your-server/admin`
+   - Pixel Tracking: `https://your-server/pixel`
+   - Reports API: `https://your-server/admin/reports`
+
+All services use self-signed SSL certificates and are accessible through standard HTTPS port 443.
+
+### Features
+
+- **No Authentication Required** - Direct access for simplicity
+- **No JavaScript** - Pure HTML forms, works everywhere
+- **SQLite Database** - Lightweight file-based storage
+- **Reverse Proxy** - Single entry point on standard ports 80/443
+- **Self-Signed SSL** - HTTPS encryption without third-party certificates
+- **Full CRUD Operations**:
+  - Create, edit, delete domains
+  - Manage email accounts with passwords and quotas
+  - Configure email aliases and forwarding
+
+### Quick Start
+
+1. **Add a Domain**:
+   - Navigate to `https://your-server/admin`
+   - Click "Domains" → "Add Domain"
+   - Enter domain name (e.g., `example.com`)
+   - Click "Create Domain"
+
+2. **Create Email Account**:
+   - Navigate to "Email Accounts" → "Add Email Account"
+   - Select domain, enter username and password
+   - Set quota (0 = unlimited)
+   - Click "Create Account"
+
+3. **Set Up Alias** (Optional):
+   - Navigate to "Aliases" → "Add Alias"
+   - Set source (e.g., `info@example.com`)
+   - Set destination (e.g., `admin@example.com`)
+   - Click "Create Alias"
+
+### Reverse Proxy Configuration
+
+The Nginx reverse proxy provides:
+- **Automatic HTTPS redirect** - All HTTP traffic redirected to HTTPS
+- **Path-based routing** - `/admin`, `/admin/reports`, `/pixel` routes
+- **Self-signed certificates** - Generated automatically during build
+- **Security headers** - X-Frame-Options, X-Content-Type-Options, X-XSS-Protection
+
+### Database Location
+
+The admin panel stores all data in:
+```
+data/admin/database.sqlite
+```
+
+Regular backups of this file are recommended.
+
+### Port Configuration
+
+All ports are standardized and configurable via environment variables. See [PORT_CONFIGURATION.md](PORT_CONFIGURATION.md) for detailed documentation.
+
+**External Ports** (exposed to host):
+- `80, 443` - HTTP/HTTPS (Reverse Proxy)
+- `25, 587, 465` - SMTP (Postfix)
+- `143, 993` - IMAP (Dovecot)
+- `110, 995` - POP3 (Dovecot)
+
+**Internal Ports** (Docker network only):
+- `8891` - OpenDKIM
+- `8892` - PixelMilter
+- `8443, 8444` - PixelServer
+- `24, 12345` - Dovecot Internal
+- `80` - Admin Panel Internal
 
 ---
 

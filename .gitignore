@@ -27,6 +27,17 @@ target/
 Cargo.lock
 *.pdb
 
+# Laravel / PHP
+admin/vendor/
+admin/node_modules/
+admin/.env
+admin/storage/*.key
+admin/storage/framework/
+admin/storage/logs/
+admin/bootstrap/cache/*
+admin/public/storage
+admin/public/hot
+
 # Editor/OS junk
 .vscode/
 !.vscode/setings.json

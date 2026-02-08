@@ -25,7 +25,7 @@ services:
         max-size: "10m"
         max-file: "3"
     expose:
-      - "8891"
+      - "${OPENDKIM_PORT:-8891}"
     volumes:
       - ./opendkim/TrustedHosts:/etc/opendkim/TrustedHosts:ro
       - ./opendkim/KeyTable:/etc/opendkim/KeyTable:ro
@@ -66,6 +66,8 @@ services:
       - ./data/logs/dovecot.log:/var/log/mail.log
       - ./data/mail:/mail
       - ./data/dovecot/passwd:/etc/dovecot/passwd:rw
+      - ./data/admin:/var/www/html/database:ro
+      - ./data/mail-config:/var/mailserver/config:ro
       - ./dovecot/dovecot.conf:/etc/dovecot/dovecot.conf:ro
     logging:
       driver: "json-file"
@@ -73,13 +75,13 @@ services:
         max-size: "10m"
         max-file: "3"
     ports:
-      - "143:143"
-      - "993:993"
-      - "110:110"
-      - "995:995"
+      - "${IMAP_PORT:-143}:143"
+      - "${IMAPS_PORT:-993}:993"
+      - "${POP3_PORT:-110}:110"
+      - "${POP3S_PORT:-995}:995"
     expose:
-      - "24"
-      - "12345"
+      - "${DOVECOT_LMTP_PORT:-24}"
+      - "${DOVECOT_AUTH_PORT:-12345}"
     networks:
       mailnet:
         ipv4_address: ${DOVECOT_IP}
@@ -97,8 +99,8 @@ services:
     environment:
       - TZ=${TZ}
       - DOVECOT_IP=${DOVECOT_IP}
-      - DOVECOT_AUTH_PORT=12345
-      - DOVECOT_LMTP_PORT=24
+      - DOVECOT_AUTH_PORT=${DOVECOT_AUTH_PORT:-12345}
+      - DOVECOT_LMTP_PORT=${DOVECOT_LMTP_PORT:-24}
       - OPENDKIM_IP=${OPENDKIM_IP}
       - PIXEL_MILTER_IP=${PIXEL_MILTER_IP}
       # Content filter environment variables
@@ -123,15 +125,17 @@ services:
         max-size: "10m"
         max-file: "3"
     ports:
-      - "25:25"
-      - "587:587"
-      - "465:465"
+      - "${SMTP_PORT:-25}:25"
+      - "${SUBMISSION_PORT:-587}:587"
+      - "${SMTPS_PORT:-465}:465"
     volumes:
       - /var/log/mailserver/postfix:/var/log/postfix:rw
       - /var/spool/postfix
       - ./data/ssl/cert.pem:/etc/ssl/certs/postfix.pem:ro
       - ./data/ssl/key.pem:/etc/ssl/private/postfix.key:ro
       - ./data/logs/postfix.log:/var/log/mail.log
+      - ./data/admin:/var/www/html/database:ro
+      - ./data/mail-config:/var/mailserver/config:ro
       - ./postfix/resolv.conf:/var/spool/postfix/etc/resolv.conf:ro
       - ./postfix/resolv.conf:/etc/resolv.conf:ro
       - ./postfix/main.cf.tmpl:/templates/main.cf.tmpl:ro
@@ -166,14 +170,14 @@ services:
     env_file: .env
     environment:
       - TZ=${TZ}
-      - PIXEL_BASE_URL=${PIXEL_BASE_URL:-https://${MAIL_HOST}:8443/pixel?id=}
+      - PIXEL_BASE_URL=${PIXEL_BASE_URL:-https://${MAIL_HOST}:${PIXEL_SERVER_HTTPS_PORT:-8443}/pixel?id=}
       - TRACKING_REQUIRES_OPT_IN=${TRACKING_REQUIRES_OPT_IN:-false}
       - OPT_IN_HEADER=${OPT_IN_HEADER:-X-Track-Open}
       - DISCLOSURE_HEADER=${DISCLOSURE_HEADER:-X-Tracking-Notice}
       - INJECT_DISCLOSURE=${INJECT_DISCLOSURE:-true}
       - DATA_DIR=/data/pixel
       - LOG_LEVEL=${LOG_LEVEL:-info}
-      - PIXEL_MILTER_ADDRESS=0.0.0.0:8892
+      - PIXEL_MILTER_ADDRESS=${PIXEL_MILTER_ADDRESS:-0.0.0.0:${PIXEL_MILTER_PORT:-8892}}
       - RUST_LOG_STYLE=never
     volumes:
       - ./data/pixel:/data/pixel
@@ -186,7 +190,7 @@ services:
         max-size: "10m"
         max-file: "3"
     expose:
-      - "8892"
+      - "${PIXEL_MILTER_PORT:-8892}"
     networks:
       mailnet:
         ipv4_address: ${PIXEL_MILTER_IP}
@@ -213,7 +217,7 @@ services:
       - PIXEL_TLS_KEY=/etc/ssl/private/server.key
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - RUST_LOG_STYLE=never
-      - REPORTS_BIND_ADDRESS=${REPORTS_BIND_ADDRESS:-0.0.0.0:8444}
+      - REPORTS_BIND_ADDRESS=${REPORTS_BIND_ADDRESS:-0.0.0.0:${PIXEL_SERVER_REPORTS_PORT:-8444}}
     volumes:
       - ./data/pixel:/data/pixel
       - ./data/ssl/cert.pem:/etc/ssl/certs/server.pem:ro
@@ -225,9 +229,9 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    ports:
-      - "0.0.0.0:8443:8443"
-      - "0.0.0.0:${REPORTS_PORT:-8444}:${REPORTS_PORT:-8444}"
+    expose:
+      - "${PIXEL_SERVER_HTTPS_PORT:-8443}"
+      - "${PIXEL_SERVER_REPORTS_PORT:-8444}"
     networks:
       mailnet:
         ipv4_address: ${PIXEL_SERVER_IP}
@@ -236,6 +240,74 @@ services:
       interval: 60s
       timeout: 10s
       retries: 1
+
+  admin:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+    container_name: mailserver_admin
+    hostname: admin.${MAIL_DOMAIN}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - TZ=${TZ}
+      - DB_CONNECTION=sqlite
+      - APP_NAME="Mail Server Admin"
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - APP_URL=https://${MAIL_HOST}/admin
+      - APP_KEY=${APP_KEY}
+      - QUEUE_CONNECTION=database
+    volumes:
+      - ./data/admin:/var/www/html/database:rw
+      - ./data/mail-config:/var/www/html/storage/app/mail-config:rw
+    expose:
+      - "${ADMIN_INTERNAL_PORT:-80}"
+    networks:
+      mailnet:
+        ipv4_address: ${ADMIN_IP:-172.18.0.31}
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /var/www/html/public/index.php || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      com.mailserver.role: "admin"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  nginx-proxy:
+    build:
+      context: ./nginx-proxy
+      dockerfile: Dockerfile
+    container_name: nginx_proxy
+    hostname: proxy.${MAIL_DOMAIN}
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    depends_on:
+      - admin
+      - pixelserver
+    networks:
+      mailnet:
+        ipv4_address: ${PROXY_IP:-172.18.0.40}
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      com.mailserver.role: "reverse-proxy"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   pixelmilter_data:
