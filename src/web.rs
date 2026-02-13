@@ -296,7 +296,7 @@ pub async fn start_server(state: AppState) {
     let addr = format!("0.0.0.0:{}", port);
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
-        .expect("Failed to bind address");
+        .unwrap_or_else(|e| panic!("Failed to bind address {}: {}", addr, e));
     info!("[web] admin dashboard listening on {}", addr);
     axum::serve(listener, app).await.expect("Server error");
 }
