@@ -42,6 +42,8 @@ mkdir -p /data/pixel/socket
 # Create log files if they don't exist
 touch /data/logs/dovecot.log
 touch /data/logs/postfix.log
+touch /data/logs/nginx-access.log
+touch /data/logs/nginx-error.log
 
 # Create dovecot passwd file if it doesn't exist
 if [ ! -f /data/dovecot/passwd ]; then

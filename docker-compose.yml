@@ -289,8 +289,12 @@ services:
     hostname: proxy.${MAIL_DOMAIN}
     restart: unless-stopped
     env_file: .env
+    entrypoint: ["/entrypoint.sh"]
     volumes:
+      - ./nginx-proxy/entrypoint.sh:/entrypoint.sh:ro
+      - ./nginx-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx-proxy/default.conf:/etc/nginx/templates/default.conf.template:ro
+      - ./data/nginx-ssl:/etc/nginx/ssl:rw
       - ./data/logs/nginx-access.log:/var/log/nginx/access.log:rw
       - ./data/logs/nginx-error.log:/var/log/nginx/error.log:rw
     ports:
