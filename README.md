@@ -31,10 +31,10 @@ graph LR
     end
 
     subgraph Persistent Volume /data
-        SSL[/data/ssl]
-        DKIM[/data/dkim]
-        Mail[/data/mail]
-        DB[/data/db]
+        SSL["/data/ssl"]
+        DKIM["/data/dkim"]
+        Mail["/data/mail"]
+        DB["/data/db"]
     end
 
     Internet -->|SMTP| Postfix
