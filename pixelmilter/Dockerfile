@@ -4,9 +4,13 @@ RUN apk add --no-cache musl-dev
 WORKDIR /app
 COPY Cargo.toml ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release && rm -rf src
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target \
+    cargo build --release && rm -rf src
 COPY src ./src
-RUN cargo build --release && cp target/release/pixelmilter /tmp/pixelmilter
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target \
+    cargo build --release && cp target/release/pixelmilter /tmp/pixelmilter
 
 # Runtime stage
 FROM alpine:3.21
