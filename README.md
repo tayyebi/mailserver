@@ -100,15 +100,18 @@ cp .env.example .env
 # Edit .env: Set MAIL_DOMAIN, MAIL_HOST, and TZ
 # Note: APP_KEY will be auto-generated on first start
 
+# One-time initialization (creates data dirs and self-signed certs)
+bash docker-init.sh
+
 # Start all services
 docker compose up -d
 ```
 
-The system will automatically:
-- Generate self‑signed TLS certificates if missing
-- Create all required data directories
-- Initialize the admin panel database
-- Start all mail services
+The one-time initialization script will:
+- Generate self‑signed TLS certificates in data/ssl if missing
+- Create all required data directories under data/
+- Create initial log files and Dovecot passwd file
+- Prepare shared volumes for Postfix, Dovecot, OpenDKIM, admin, and pixel services
 
 The admin panel and pixel server will be available at:
 - **Admin Panel**: `https://your-server/admin`
