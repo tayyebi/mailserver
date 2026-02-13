@@ -1,11 +1,13 @@
-# Build stage for postfix-reinject
-FROM rust:1-alpine3.21 AS builder
+# Build reinject from additional context
+FROM rust:1-alpine3.21 AS reinject-builder
 RUN apk add --no-cache musl-dev
 WORKDIR /app
-COPY reinject/ .
+COPY --from=reinject Cargo.toml ./
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+RUN cargo build --release && rm -rf src
+COPY --from=reinject src ./src
 RUN cargo build --release
 
-# Final stage
 FROM alpine:3.21
 
 LABEL maintainer="Mohammad R. Tayyebi <m@tyyi.net>"
@@ -39,7 +41,7 @@ RUN mkdir -p /var/spool/postfix/{active,bounce,corrupt,defer,deferred,flush,hold
 RUN chown -R postfix:postfix /var/spool/postfix /var/log/postfix
 
 # Apply Postfix permissions
-RUN postfix set-permissions
+RUN postfix set-permissions || true
 
 # Sanity check
 RUN postfix check
@@ -47,6 +49,6 @@ RUN postfix check
 # Ensure postfix is in postdrop group
 RUN addgroup postfix postdrop 2>/dev/null || true
 
-# Copy reinjection binary from builder
-COPY --from=builder /app/target/release/postfix-reinject /usr/local/bin/postfix-reinject
+# Copy reinjection binary
+COPY --from=reinject-builder /app/target/release/postfix-reinject /usr/local/bin/postfix-reinject
 RUN chmod +x /usr/local/bin/postfix-reinject

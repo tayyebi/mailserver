@@ -129,6 +129,8 @@ services:
     build:
       context: ./postfix
       dockerfile: Dockerfile
+      additional_contexts:
+        reinject: ./reinject
     container_name: postfix
     hostname: postfix.${MAIL_DOMAIN}
     domainname: ${MAIL_DOMAIN}
