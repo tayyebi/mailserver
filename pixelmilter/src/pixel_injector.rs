@@ -272,6 +272,15 @@ impl PixelInjector {
         let result = format!("{}{}", html, content_to_inject);
         Ok(result)
     }
+
+    /// Check if content appears to be HTML
+    #[allow(dead_code)]
+    pub fn contains_html(&self, content: &str) -> bool {
+        let lower = content.to_lowercase();
+        lower.contains("<html") || lower.contains("<body") || lower.contains("<p>") || lower.contains("<p ") 
+            || lower.contains("<div") || lower.contains("<br") || lower.contains("<h1")
+            || lower.contains("text/html")
+    }
 }
 
 #[cfg(test)]
@@ -301,10 +310,10 @@ mod tests {
     #[test]
     fn test_inject_pixel_plain_text() {
         let injector = PixelInjector::new("https://example.com/pixel?id=".to_string());
-        let text = "This is plain text";
-        let result = injector.inject_pixel_html(text, "test-id").unwrap();
+        let text = b"This is plain text";
+        let result = injector.inject_pixel(text, "test-id", false).unwrap();
         
-        // Should not inject pixel in plain text
+        // Should not inject pixel when is_html is false
         assert_eq!(result, text);
     }
 

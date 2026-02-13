@@ -81,19 +81,23 @@ struct Args {
 struct MessageMetadata {
     id: String,
     created: DateTime<Utc>,
+    created_str: String,
     sender: String,
     size: usize,
     tracking_enabled: bool,
     opened: bool,
     open_count: u32,
     first_open: Option<DateTime<Utc>>,
+    first_open_str: Option<String>,
     last_open: Option<DateTime<Utc>>,
+    last_open_str: Option<String>,
     tracking_events: Vec<TrackingEvent>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TrackingEvent {
     timestamp: DateTime<Utc>,
+    timestamp_str: String,
     client_ip: String,
     user_agent: String,
 }
@@ -227,16 +231,20 @@ impl PixelMilter {
 
         // Save metadata
         let total_size = message.raw_headers.len() + message.body.len();
+        let now = Utc::now();
         let metadata = MessageMetadata {
             id: message.id.clone(),
-            created: Utc::now(),
+            created: now,
+            created_str: now.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
             sender: message.sender.clone(),
             size: total_size,
             tracking_enabled: message.should_track,
             opened: false,
             open_count: 0,
             first_open: None,
+            first_open_str: None,
             last_open: None,
+            last_open_str: None,
             tracking_events: Vec::new(),
         };
 
@@ -388,7 +396,7 @@ impl MilterCallbacks for PixelMilter {
                 "Received header for unknown connection context - creating new state"
             );
             // Create a new connection state to handle orphaned events
-            let mut connections = self.connections.write().await;
+            // Note: we already hold the write lock from the outer scope
             let message = MessageState::new(String::new());
             connections.insert(ctx_id.to_string(), message);
         }
@@ -426,7 +434,7 @@ impl MilterCallbacks for PixelMilter {
                 "Received end_of_headers for unknown connection context - creating new state"
             );
             // Create a new connection state to handle orphaned events
-            let mut connections = self.connections.write().await;
+            // Note: we already hold the write lock from the outer scope
             let mut message = MessageState::new(String::new());
             if !self.config.tracking_requires_opt_in {
                 message.should_track = true;
@@ -475,7 +483,7 @@ impl MilterCallbacks for PixelMilter {
     async fn end_of_message(&self, ctx_id: &str) -> MilterResult {
         debug!(ctx_id = %ctx_id, "Processing end_of_message callback");
         let mut connections = self.connections.write().await;
-        if let Some(message) = connections.remove(ctx_id) {
+        if let Some(message) = connections.get_mut(ctx_id).map(|m| std::mem::replace(m, MessageState::new(String::new()))) {
             let message_size = message.raw_headers.len() + message.body.len();
             info!(
                 ctx_id = %ctx_id,
@@ -584,7 +592,7 @@ impl MilterCallbacks for PixelMilter {
                 "Received end_of_message for unknown connection context - no message to process"
             );
             // Create a minimal connection state just to prevent further errors
-            let mut connections = self.connections.write().await;
+            // Note: we already hold the write lock from the outer scope
             let message = MessageState::new(String::new());
             connections.insert(ctx_id.to_string(), message);
         }

@@ -54,15 +54,25 @@ pub const SMFIF_CHGBODY: u32 = 0x10;       // Change body
 pub const SMFIF_QUARANTINE: u32 = 0x20;    // Quarantine
 
 // Milter Step Flags (SMFIP_ defines)
+#[allow(dead_code)]
 pub const SMFIP_NOCONNECT: u32 = 0x01;     // Skip connect
+#[allow(dead_code)]
 pub const SMFIP_NOHELO: u32 = 0x02;        // Skip helo
+#[allow(dead_code)]
 pub const SMFIP_NOMAIL: u32 = 0x04;        // Skip mail from
+#[allow(dead_code)]
 pub const SMFIP_NORCPT: u32 = 0x08;        // Skip rcpt to
+#[allow(dead_code)]
 pub const SMFIP_NOBODY: u32 = 0x10;        // Skip body
+#[allow(dead_code)]
 pub const SMFIP_NOHEADERS: u32 = 0x20;     // Skip headers
+#[allow(dead_code)]
 pub const SMFIP_NOEOH: u32 = 0x40;         // Skip end of headers
+#[allow(dead_code)]
 pub const SMFIP_NOURI: u32 = 0x80;         // Skip URI
+#[allow(dead_code)]
 pub const SMFIP_SKIP: u32 = 0x100;         // Can skip messages
+#[allow(dead_code)]
 pub const SMFIP_REC_ONLY: u32 = 0x200;     // Recipient list only
 
 #[derive(Debug, Clone)]
@@ -681,6 +691,8 @@ async fn process_milter_command<T: MilterCallbacks>(
                 "End of message callback completed"
             );
             
+            // Reset state to Connected so the connection can handle subsequent messages
+            *state = MilterState::Connected;
             Ok((milter_response_from_result(result), true))
         }
         SMFIC_MACRO => {
@@ -707,10 +719,11 @@ async fn process_milter_command<T: MilterCallbacks>(
         }
         SMFIC_ABORT => {
             // SMFIC_ABORT - Abort current message. The MTA is cancelling the current message.
-            // No response is sent, and the connection handler loop is terminated.
-            info!(ctx_id = %ctx_id, "Processing abort command");
-            let _ = callbacks.close(ctx_id).await;
-            Ok((None, false))
+            // Per milter protocol, reset message state but keep connection open.
+            // No response is sent. The MTA may send a new MAIL FROM after ABORT.
+            info!(ctx_id = %ctx_id, "Processing abort command - resetting message state");
+            *state = MilterState::Connected;
+            Ok((None, true))
         }
         SMFIC_QUIT => {
             // SMFIC_QUIT - Quit command. The MTA is closing the connection.
@@ -779,7 +792,7 @@ fn parse_header_data(data: &[u8]) -> Result<(String, String)> {
         .map(|s| s.to_string())
         .context("Missing header name in header data")?;
     let value = parts.get(1)
-        .map(|s| s.to_string())
+        .map(|s| s.trim_end_matches('\0').to_string())
         .context("Missing header value in header data")?;
     
     Ok((name, value))
@@ -806,7 +819,11 @@ fn milter_response_from_result(result: MilterResult) -> Option<Vec<u8>> {
         MilterResult::Discard => Some(create_response(SMFIR_DISCARD, &[])),
         MilterResult::ReplaceBody(body) => {
             info!("Sending ReplaceBody response with body size: {}", body.len());
-            Some(create_response(SMFIR_REPLACEBODY, &body))
+            // Per milter protocol, ReplaceBody must be followed by a final action response.
+            // Concatenate the REPLACEBODY and ACCEPT responses so both are sent.
+            let mut combined = create_response(SMFIR_REPLACEBODY, &body);
+            combined.extend_from_slice(&create_response(SMFIR_ACCEPT, &[]));
+            Some(combined)
         },
         // TODO: Handle AddHeader, ChangeHeader, etc. if implemented
         _ => Some(create_response(SMFIR_ACCEPT, &[])), // Default to accept for unhandled results
