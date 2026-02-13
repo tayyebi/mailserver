@@ -50,6 +50,7 @@
                 <a href="{{ route('domains.index') }}">Domains</a>
                 <a href="{{ route('email-accounts.index') }}">Email Accounts</a>
                 <a href="{{ route('aliases.index') }}">Aliases</a>
+                <a href="{{ route('footer.edit') }}">Footer</a>
                 <a href="{{ route('containers.index') }}">Containers</a>
             </nav>
         </div>

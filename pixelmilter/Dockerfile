@@ -24,7 +24,6 @@ RUN chmod +x /usr/local/bin/pixelmilter
 
 COPY pixelmilter-entrypoint.sh /usr/local/bin/pixelmilter-entrypoint.sh
 RUN chmod +x /usr/local/bin/pixelmilter-entrypoint.sh
-COPY domain-wide-footer.html /opt/pixelmilter/domain-wide-footer.html
 
 ENV PIXEL_BASE_URL="https://localhost:8443/pixel?id="
 ENV TRACKING_REQUIRES_OPT_IN="false"

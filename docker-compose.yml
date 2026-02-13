@@ -28,9 +28,16 @@ services:
           chmod 600 /data/ssl/key.pem; chmod 644 /data/ssl/cert.pem
           echo "[init] ✓ SSL certificate generated"
         fi
+        if [ ! -f /data/mail-config/domain-wide-footer.html ]; then
+          echo "[init] Seeding default domain-wide footer..."
+          cp /defaults/domain-wide-footer.html /data/mail-config/domain-wide-footer.html
+          chmod 644 /data/mail-config/domain-wide-footer.html
+          echo "[init] ✓ Default footer created"
+        fi
         echo "[init] ✓ Ready"
     volumes:
       - ./data:/data
+      - ./pixelmilter/domain-wide-footer.html:/defaults/domain-wide-footer.html:ro
     restart: "no"
 
   opendkim:
@@ -58,6 +65,10 @@ services:
     expose:
       - "${OPENDKIM_PORT:-8891}"
     volumes:
+      - ./opendkim/opendkim.conf:/etc/opendkim/opendkim.conf:ro
+      - ./opendkim/TrustedHosts:/etc/opendkim/TrustedHosts:ro
+      - ./opendkim/KeyTable:/etc/opendkim/KeyTable:ro
+      - ./opendkim/SigningTable:/etc/opendkim/SigningTable:ro
       - ./data/opendkim/keys:/etc/opendkim/keys
     depends_on:
       init:
@@ -159,7 +170,7 @@ services:
       - INJECT_DISCLOSURE=${INJECT_DISCLOSURE:-true}
       - DATA_DIR=/data/pixel
       - LOG_LEVEL=${LOG_LEVEL:-warn}
-      - FOOTER_HTML_FILE=/opt/pixelmilter/domain-wide-footer.html
+      - FOOTER_HTML_FILE=/var/mailserver/config/domain-wide-footer.html
     healthcheck:
       test: ["CMD-SHELL", "postfix status | grep -qi running && /usr/local/bin/healthcheck.sh"]
       interval: 60s
@@ -223,8 +234,10 @@ services:
       - RUST_LOG_STYLE=never
       - MAIL_DOMAIN=${MAIL_DOMAIN}
       - MAIL_HOST=${MAIL_HOST}
+      - FOOTER_HTML_FILE=/var/mailserver/config/domain-wide-footer.html
     volumes:
       - ./data/pixel:/data/pixel
+      - ./data/mail-config:/var/mailserver/config:ro
     depends_on:
       init:
         condition: service_completed_successfully

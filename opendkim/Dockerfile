@@ -13,8 +13,3 @@ RUN apk add --no-cache \
         tzdata \
         openssl \
     && ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime
-
-COPY opendkim.conf /etc/opendkim/opendkim.conf
-COPY TrustedHosts /etc/opendkim/TrustedHosts
-COPY KeyTable /etc/opendkim/KeyTable
-COPY SigningTable /etc/opendkim/SigningTable

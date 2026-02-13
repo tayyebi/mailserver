@@ -6,6 +6,7 @@ use App\Http\Controllers\DomainController;
 use App\Http\Controllers\EmailAccountController;
 use App\Http\Controllers\AliasController;
 use App\Http\Controllers\ContainerController;
+use App\Http\Controllers\FooterController;
 
 Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
@@ -25,3 +26,7 @@ Route::post('containers/restart', [ContainerController::class, 'restart'])->name
 Route::post('containers/stop', [ContainerController::class, 'stop'])->name('containers.stop');
 Route::post('containers/start', [ContainerController::class, 'start'])->name('containers.start');
 Route::get('containers/{container}/logs', [ContainerController::class, 'logs'])->name('containers.logs');
+
+// Email footer management
+Route::get('footer', [FooterController::class, 'edit'])->name('footer.edit');
+Route::put('footer', [FooterController::class, 'update'])->name('footer.update');
