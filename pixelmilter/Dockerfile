@@ -38,15 +38,7 @@ WORKDIR /opt/pixelmilter
 
 # Copy the binary from builder stage
 COPY --from=builder /tmp/pixelmilter /usr/local/bin/pixelmilter
-
-# Copy entrypoint script
-COPY pixelmilter-entrypoint.sh /usr/local/bin/pixelmilter-entrypoint.sh
-
-# Copy footer HTML file
-COPY domain-wide-footer.html /opt/pixelmilter/domain-wide-footer.html
-
-RUN chmod +x /usr/local/bin/pixelmilter /usr/local/bin/pixelmilter-entrypoint.sh \
-    && chown pixel:pixel /opt/pixelmilter/domain-wide-footer.html
+RUN chmod +x /usr/local/bin/pixelmilter
 
 # Set default environment variables
 ENV PIXEL_BASE_URL="https://localhost:8443/pixel?id="

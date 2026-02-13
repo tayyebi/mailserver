@@ -15,10 +15,5 @@ RUN mkdir -p /etc/dovecot /var/lib/dovecot /mail \
 && chown -R root:root /etc/dovecot \
 && chown -R dovecot:dovecot /var/lib/dovecot /mail
 
-# Copy Dovecot configuration (only the conf file, not the entire directory)
-COPY dovecot.conf /etc/dovecot/dovecot.conf
-RUN chmod 644 /etc/dovecot/dovecot.conf && \
-    doveconf -n > /dev/null 2>&1 || echo "Warning: Dovecot config validation skipped (doveadm not available in build)"
-
 # Ensure passwd file exists if not mounted
 RUN touch /etc/dovecot/passwd && chown dovecot:dovecot /etc/dovecot/passwd && chmod 640 /etc/dovecot/passwd

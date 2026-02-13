@@ -13,10 +13,18 @@ mkdir -p /var/www/html/database
 mkdir -p /var/www/html/storage/app/mail-config/opendkim/keys
 mkdir -p /var/www/html/storage/app/mail-config/postfix
 mkdir -p /var/www/html/storage/app/mail-config/dovecot
-mkdir -p /var/www/html/storage/framework/cache
+mkdir -p /var/www/html/storage/framework/cache/data
 mkdir -p /var/www/html/storage/framework/sessions
 mkdir -p /var/www/html/storage/framework/views
 mkdir -p /var/www/html/bootstrap/cache
+
+# Set permissions early so artisan commands can run correctly
+chown -R www-data:www-data /var/www/html/storage
+chown -R www-data:www-data /var/www/html/bootstrap/cache
+chown -R www-data:www-data /var/www/html/database
+chmod -R 775 /var/www/html/storage
+chmod -R 775 /var/www/html/bootstrap/cache
+chmod -R 775 /var/www/html/database
 
 # Create .env if it doesn't exist
 ENV_CREATED=false

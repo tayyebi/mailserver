@@ -2,12 +2,14 @@
 set -e
 
 # --- Self-signed SSL (generate once, reuse on restart) ---
-if [ ! -f /etc/nginx/ssl/nginx-selfsigned.crt ]; then
+if [ ! -f /etc/nginx/ssl/nginx-selfsigned.crt ] || [ ! -f /etc/nginx/ssl/nginx-selfsigned.key ]; then
   echo "[nginx-proxy] Generating self-signed certificate..."
   openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -keyout /etc/nginx/ssl/nginx-selfsigned.key \
     -out /etc/nginx/ssl/nginx-selfsigned.crt \
     -subj "/CN=${MAIL_HOST:-localhost}" 2>/dev/null
+else
+  echo "[nginx-proxy] Using existing certificate found in /etc/nginx/ssl/"
 fi
 
 # --- Basic Auth ---

@@ -1,5 +1,38 @@
 services:
 
+  # One-shot init: creates data dirs, generates self-signed SSL if missing
+  init:
+    build:
+      context: ./init
+      dockerfile: Dockerfile
+    container_name: mailserver_init
+    env_file: .env
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        echo "[init] Creating data directories..."
+        mkdir -p /data/ssl /data/logs /data/mail /data/admin \
+                 /data/mail-config/opendkim/keys /data/mail-config/postfix \
+                 /data/mail-config/dovecot /data/opendkim/keys \
+                 /data/dovecot /data/pixel /data/nginx-ssl
+        touch /data/logs/dovecot.log /data/logs/postfix.log \
+              /data/logs/nginx-access.log /data/logs/nginx-error.log
+        [ -f /data/dovecot/passwd ] || { touch /data/dovecot/passwd; chmod 644 /data/dovecot/passwd; }
+        if [ ! -f /data/ssl/cert.pem ]; then
+          echo "[init] Generating self-signed SSL certificate..."
+          openssl req -x509 -nodes -newkey rsa:2048 -sha256 \
+            -subj "/CN=$${MAIL_HOST:-localhost}" \
+            -addext "subjectAltName=DNS:$${MAIL_HOST:-localhost}" \
+            -keyout /data/ssl/key.pem -out /data/ssl/cert.pem -days 365 2>/dev/null
+          chmod 600 /data/ssl/key.pem; chmod 644 /data/ssl/cert.pem
+          echo "[init] ✓ SSL certificate generated"
+        fi
+        echo "[init] ✓ Ready"
+    volumes:
+      - ./data:/data
+    restart: "no"
+
   opendkim:
     build:
       context: ./opendkim
@@ -25,10 +58,14 @@ services:
     expose:
       - "${OPENDKIM_PORT:-8891}"
     volumes:
+      - ./opendkim/opendkim.conf:/etc/opendkim/opendkim.conf:ro
       - ./opendkim/TrustedHosts:/etc/opendkim/TrustedHosts:ro
       - ./opendkim/KeyTable:/etc/opendkim/KeyTable:ro
       - ./opendkim/SigningTable:/etc/opendkim/SigningTable:ro
       - ./data/opendkim/keys:/etc/opendkim/keys
+    depends_on:
+      init:
+        condition: service_completed_successfully
     networks:
       mailnet:
         ipv4_address: ${OPENDKIM_IP}
@@ -84,6 +121,9 @@ services:
       mailnet:
         ipv4_address: ${DOVECOT_IP}
     command: ["dovecot", "-F"]
+    depends_on:
+      init:
+        condition: service_completed_successfully
 
   postfix:
     build:
@@ -127,6 +167,8 @@ services:
       - "${SUBMISSION_PORT:-587}:587"
       - "${SMTPS_PORT:-465}:465"
     volumes:
+      - ./postfix/entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
+      - ./postfix/healthcheck.sh:/usr/local/bin/healthcheck.sh:ro
       - /var/log/mailserver/postfix:/var/log/postfix:rw
       - /var/spool/postfix
       - ./data/ssl/cert.pem:/etc/ssl/certs/postfix.pem:ro
@@ -142,11 +184,11 @@ services:
       - ./postfix/virtual_domains.tmpl:/templates/virtual_domains.tmpl:ro
       - ./postfix/vmailbox.tmpl:/templates/vmailbox.tmpl:ro
       - ./postfix/pixel-content-filter.sh.tmpl:/templates/pixel-content-filter.sh.tmpl:ro
-      # Share pixelmilter data directory and footer (use same bind mount as pixelmilter)
-      # Note: Must be writable for content filter to save metadata
       - ./data/pixel:/data/pixel
-      - pixelmilter_footer:/opt/pixelmilter:ro
+      - ./pixelmilter/domain-wide-footer.html:/opt/pixelmilter/domain-wide-footer.html:ro
     depends_on:
+      init:
+        condition: service_completed_successfully
       dovecot:
         condition: service_healthy
       opendkim:
@@ -178,8 +220,12 @@ services:
       - PIXEL_MILTER_ADDRESS=${PIXEL_MILTER_ADDRESS:-0.0.0.0:${PIXEL_MILTER_PORT:-8892}}
       - RUST_LOG_STYLE=never
     volumes:
+      - ./pixelmilter/pixelmilter-entrypoint.sh:/usr/local/bin/pixelmilter-entrypoint.sh:ro
+      - ./pixelmilter/domain-wide-footer.html:/opt/pixelmilter/domain-wide-footer.html:ro
       - ./data/pixel:/data/pixel
-      - pixelmilter_footer:/opt/pixelmilter
+    depends_on:
+      init:
+        condition: service_completed_successfully
     labels:
       com.mailserver.role: "milter"
     logging:
@@ -217,9 +263,13 @@ services:
       - RUST_LOG_STYLE=never
       - REPORTS_BIND_ADDRESS=${REPORTS_BIND_ADDRESS:-0.0.0.0:${PIXEL_SERVER_REPORTS_PORT:-8444}}
     volumes:
+      - ./pixelserver/pixelserver-entrypoint.sh:/usr/local/bin/pixelserver-entrypoint.sh:ro
       - ./data/pixel:/data/pixel
       - ./data/ssl/cert.pem:/etc/ssl/certs/server.pem:ro
       - ./data/ssl/key.pem:/etc/ssl/private/server.key:ro
+    depends_on:
+      init:
+        condition: service_completed_successfully
     labels:
       com.mailserver.role: "pixel-server"
     logging:
@@ -253,8 +303,6 @@ services:
       - APP_NAME=${APP_NAME:-Administration}
       - APP_ENV=${APP_ENV:-production}
       - APP_DEBUG=${APP_DEBUG:-false}
-      # Let Laravel derive URL and port from proxy headers / Host
-      # Override APP_URL in .env if you need a fixed value
       - APP_URL=${APP_URL:-}
       - APP_KEY=${APP_KEY}
       - CACHE_STORE=${CACHE_STORE:-file}
@@ -269,9 +317,15 @@ services:
       - SUBMISSION_PORT=${SUBMISSION_PORT:-587}
       - SMTPS_PORT=${SMTPS_PORT:-465}
     volumes:
+      - ./admin/docker/entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
+      - ./admin/docker/nginx.conf:/etc/nginx/sites-available/default:ro
+      - ./admin/docker/supervisord.conf:/etc/supervisor/conf.d/supervisord.conf:ro
       - ./data/admin:/var/www/html/database:rw
       - ./data/mail-config:/var/www/html/storage/app/mail-config:rw
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      init:
+        condition: service_completed_successfully
     expose:
       - "${ADMIN_INTERNAL_PORT:-80}"
     networks:
@@ -310,8 +364,12 @@ services:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
     depends_on:
-      - admin
-      - pixelserver
+      init:
+        condition: service_completed_successfully
+      admin:
+        condition: service_started
+      pixelserver:
+        condition: service_started
     networks:
       mailnet:
         ipv4_address: ${PROXY_IP:-172.18.0.40}
@@ -327,10 +385,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-volumes:
-  pixelmilter_data:
-  pixelmilter_footer:
 
 networks:
   mailnet:

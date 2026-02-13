@@ -65,16 +65,6 @@ RUN if ! id -nG postfix | grep -qw postdrop; then \
         usermod -aG postdrop postfix; \
     fi
 
-# Copy HealthCheck Script
-COPY healthcheck.sh /usr/local/bin/healthcheck.sh
-
-# Copy entrypoint
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
-
-# Copy content filter script template (will be rendered at startup)
-COPY pixel-content-filter.sh.tmpl /templates/pixel-content-filter.sh.tmpl
-
 # Copy reinjection binary from builder
 COPY --from=builder /app/target/release/postfix-reinject /usr/local/bin/postfix-reinject
 RUN chmod +x /usr/local/bin/postfix-reinject || true

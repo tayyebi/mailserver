@@ -40,11 +40,7 @@ WORKDIR /opt/pixelserver
 
 # Copy the binary from builder stage
 COPY --from=builder /tmp/pixelserver /usr/local/bin/pixelserver
-
-# Copy entrypoint script
-COPY pixelserver-entrypoint.sh /usr/local/bin/pixelserver-entrypoint.sh
-
-RUN chmod +x /usr/local/bin/pixelserver /usr/local/bin/pixelserver-entrypoint.sh
+RUN chmod +x /usr/local/bin/pixelserver
 
 # Set default environment variables
 ENV DATA_DIR="/data/pixel"
