@@ -66,8 +66,3 @@ pub fn totp_uri(secret: &str, username: &str) -> String {
         username, secret
     )
 }
-
-pub fn generate_dovecot_password(password: &str) -> String {
-    let bcrypt_hash = hash(password, DEFAULT_COST).expect("failed to hash password");
-    format!("{{BLF-CRYPT}}{}", bcrypt_hash)
-}

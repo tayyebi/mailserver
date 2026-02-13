@@ -1,5 +1,6 @@
 services:
   mailserver:
+    image: ghcr.io/tayyebi/mailserver:main
     build: .
     env_file: .env
     ports:
