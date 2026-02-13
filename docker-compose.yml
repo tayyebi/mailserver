@@ -12,7 +12,7 @@ services:
       - |
         set -e
         echo "[init] Creating data directories..."
-        mkdir -p /data/ssl /data/logs /data/mail /data/admin \
+        mkdir -p /data/ssl /data/logs /data/mail /data/admin /data/bin \
                  /data/mail-config/opendkim/keys /data/mail-config/postfix \
                  /data/mail-config/dovecot /data/opendkim/keys \
                  /data/dovecot /data/pixel /data/nginx-ssl
@@ -125,12 +125,23 @@ services:
       init:
         condition: service_completed_successfully
 
+  reinject:
+    build:
+      context: ./reinject
+      dockerfile: Dockerfile
+    container_name: mailserver_reinject
+    entrypoint: ["/bin/sh", "-c", "cp /usr/local/bin/postfix-reinject /out/ && echo '[reinject] ✓ Binary ready'"]
+    volumes:
+      - ./data/bin:/out
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    restart: "no"
+
   postfix:
     build:
       context: ./postfix
       dockerfile: Dockerfile
-      additional_contexts:
-        reinject: ./reinject
     container_name: postfix
     hostname: postfix.${MAIL_DOMAIN}
     domainname: ${MAIL_DOMAIN}
@@ -186,9 +197,12 @@ services:
       - ./postfix/virtual_domains.tmpl:/templates/virtual_domains.tmpl:ro
       - ./postfix/vmailbox.tmpl:/templates/vmailbox.tmpl:ro
       - ./postfix/pixel-content-filter.sh.tmpl:/templates/pixel-content-filter.sh.tmpl:ro
+      - ./data/bin/postfix-reinject:/usr/local/bin/postfix-reinject:ro
       - ./data/pixel:/data/pixel
       - ./pixelmilter/domain-wide-footer.html:/opt/pixelmilter/domain-wide-footer.html:ro
     depends_on:
+      reinject:
+        condition: service_completed_successfully
       init:
         condition: service_completed_successfully
       dovecot:

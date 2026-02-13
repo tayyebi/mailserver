@@ -1,13 +1,3 @@
-# Build reinject from additional context
-FROM rust:1-alpine3.21 AS reinject-builder
-RUN apk add --no-cache musl-dev
-WORKDIR /app
-COPY --from=reinject Cargo.toml ./
-RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release && rm -rf src
-COPY --from=reinject src ./src
-RUN cargo build --release
-
 FROM alpine:3.21
 
 LABEL maintainer="Mohammad R. Tayyebi <m@tyyi.net>"
@@ -49,6 +39,4 @@ RUN postfix check
 # Ensure postfix is in postdrop group
 RUN addgroup postfix postdrop 2>/dev/null || true
 
-# Copy reinjection binary
-COPY --from=reinject-builder /app/target/release/postfix-reinject /usr/local/bin/postfix-reinject
-RUN chmod +x /usr/local/bin/postfix-reinject
+# postfix-reinject binary is bind-mounted at runtime from reinject service
