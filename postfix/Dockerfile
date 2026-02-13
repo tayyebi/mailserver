@@ -36,7 +36,7 @@ RUN mkdir -p /var/spool/postfix/active /var/spool/postfix/bounce /var/spool/post
         /var/spool/postfix/hold /var/spool/postfix/incoming /var/spool/postfix/private \
         /var/spool/postfix/maildrop /var/spool/postfix/pid /var/spool/postfix/public \
         /var/spool/postfix/saved /var/spool/postfix/trace \
-        /var/log/postfix
+        /var/log/postfix /usr/share/doc/postfix/readme
 RUN postfix set-permissions
 RUN postfix check
 
