@@ -27,8 +27,8 @@ COPY entrypoint.sh /entrypoint.sh
 COPY supervisord.conf /etc/supervisord.conf
 RUN chmod +x /entrypoint.sh \
     && mkdir -p /data/ssl /data/dkim /data/mail /data/db /var/spool/postfix \
-    && id vmail >/dev/null 2>&1 || adduser -D -s /sbin/nologin vmail \
-    && postconf compatibility_level=3.6
+    && addgroup -S vmail 2>/dev/null; adduser -S -D -H -G vmail -s /sbin/nologin vmail 2>/dev/null; \
+    postconf compatibility_level=3.6
 EXPOSE 25 587 465 143 993 110 995 8080
 VOLUME ["/data"]
 ENTRYPOINT ["/entrypoint.sh"]
