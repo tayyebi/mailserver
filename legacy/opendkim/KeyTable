@@ -1,5 +1,0 @@
-# Format:
-# selector._domainkey.domain.tld   domain.tld:selector:/etc/opendkim/keys/domain.tld/selector.private
-
-default._domainkey.gordarg.com  gordarg.com:default:/etc/opendkim/keys/gordarg.com/default.private
-default._domainkey.tyyi.net     tyyi.net:default:/etc/opendkim/keys/tyyi.net/default.private
