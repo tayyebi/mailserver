@@ -19,8 +19,8 @@ ENV TZ=${TZ}
 RUN apk add --no-cache \
         postfix \
         postfix-pcre \
+        cyrus-sasl \
         cyrus-sasl-login \
-        cyrus-sasl-plain \
         openssl \
         bash \
         ca-certificates \
