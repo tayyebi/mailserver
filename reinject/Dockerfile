@@ -1,6 +1,6 @@
 # Build stage
 FROM rust:1-alpine3.21 AS builder
-RUN apk add --no-cache musl-dev
+RUN apk add --no-cache musl-dev openssl-dev pkgconf
 WORKDIR /app
 COPY Cargo.toml ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs
