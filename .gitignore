@@ -1,47 +1,31 @@
-# Binaries
-bin/
+# Rust build artifacts
+target/
+*.pdb
+
+# Runtime data
+data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
 
 # Secrets & env
 .env
-dovecot/passwd
 
 # SSL / TLS
-*.key
 *.pem
 *.crt
 *.csr
 
-# Mail data & queues
-data/
-.container_uids.mk
-
 # Logs
-logs/
 *.log
-tmp/
 *.pid
 *.sock
 
-# Rust build artifacts
-target/
-Cargo.lock
-*.pdb
-
-# Laravel / PHP
-admin/vendor/
-admin/node_modules/
-admin/.env
-admin/storage/*.key
-admin/storage/framework/
-admin/storage/logs/
-admin/bootstrap/cache/*
-admin/public/storage
-admin/public/hot
-
 # Editor/OS junk
 .vscode/
-!.vscode/setings.json
 .idea/
 *.swp
 .DS_Store
 Thumbs.db
+tmp/
