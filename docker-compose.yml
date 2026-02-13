@@ -289,6 +289,8 @@ services:
     hostname: proxy.${MAIL_DOMAIN}
     restart: unless-stopped
     env_file: .env
+    volumes:
+      - ./nginx-proxy/default.conf:/etc/nginx/templates/default.conf.template:ro
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
