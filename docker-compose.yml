@@ -274,7 +274,9 @@ services:
       - APP_NAME="Mail Server Admin"
       - APP_ENV=production
       - APP_DEBUG=false
-      - APP_URL=https://${MAIL_HOST}/admin
+      # Let Laravel derive URL and port from proxy headers / Host
+      # Override APP_URL in .env if you need a fixed value
+      - APP_URL=
       - APP_KEY=${APP_KEY}
       - QUEUE_CONNECTION=database
     volumes:

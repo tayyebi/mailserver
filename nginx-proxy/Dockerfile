@@ -1,7 +1,7 @@
 FROM nginx:alpine
 
-# Install openssl for certificate generation
-RUN apk add --no-cache openssl
+# Install openssl for certificate generation and apache2-utils for htpasswd
+RUN apk add --no-cache openssl apache2-utils
 
 # Copy nginx configuration
 COPY nginx.conf /etc/nginx/nginx.conf
@@ -16,6 +16,10 @@ RUN openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -out /etc/nginx/ssl/nginx-selfsigned.crt \
     -subj "/C=US/ST=State/L=City/O=Organization/CN=mailserver"
 
+# Copy entrypoint script for basic auth setup
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 EXPOSE 80 443
 
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["/entrypoint.sh"]
