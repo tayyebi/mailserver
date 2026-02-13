@@ -18,11 +18,6 @@ mkdir -p /var/www/html/storage/framework/sessions
 mkdir -p /var/www/html/storage/framework/views
 mkdir -p /var/www/html/bootstrap/cache
 
-# Set proper permissions
-chown -R www-data:www-data /var/www/html/database 2>/dev/null || true
-chown -R www-data:www-data /var/www/html/storage 2>/dev/null || true
-chown -R www-data:www-data /var/www/html/bootstrap/cache 2>/dev/null || true
-
 # Create .env if it doesn't exist
 ENV_CREATED=false
 if [ ! -f /var/www/html/.env ]; then
@@ -46,7 +41,7 @@ DB_CONNECTION=${DB_CONNECTION:-sqlite}
 DB_DATABASE=/var/www/html/database/database.sqlite
 
 BROADCAST_DRIVER=log
-CACHE_DRIVER=file
+CACHE_STORE=file
 FILESYSTEM_DISK=local
 QUEUE_CONNECTION=${QUEUE_CONNECTION:-database}
 SESSION_DRIVER=file
@@ -69,6 +64,11 @@ php artisan config:clear || true
 php artisan cache:clear || true
 php artisan config:cache || true
 php artisan route:cache || true
+
+# Set proper permissions AFTER artisan commands (which create files as root)
+chown -R www-data:www-data /var/www/html/database 2>/dev/null || true
+chown -R www-data:www-data /var/www/html/storage 2>/dev/null || true
+chown -R www-data:www-data /var/www/html/bootstrap/cache 2>/dev/null || true
 
 echo "[admin] Initialization complete. Starting services..."
 
