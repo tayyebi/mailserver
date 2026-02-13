@@ -9,7 +9,6 @@ ENV TZ=${TZ}
 
 RUN apk add --no-cache \
         dovecot \
-        dovecot-imapd \
         dovecot-lmtpd \
         dovecot-pop3d \
         tzdata \
