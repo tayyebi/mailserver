@@ -1,5 +1,5 @@
 FROM rust:alpine AS builder
-RUN apk add --no-cache musl-dev pkgconf
+RUN apk add --update musl-dev pkgconf
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release 2>/dev/null; rm -rf src
@@ -12,7 +12,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 FROM alpine:3.21
 RUN --mount=type=cache,target=/var/cache/apk \
-    apk add --no-cache \
+    apk add --update \
     postfix \
     dovecot \
     dovecot-lmtpd \
