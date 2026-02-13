@@ -1,46 +1,23 @@
-# Multi-stage build for Rust
-FROM rust:1.82-bookworm as builder
-
+# Build stage
+FROM rust:1-alpine3.21 AS builder
+RUN apk add --no-cache musl-dev
 WORKDIR /app
-
-# Copy Cargo files
 COPY Cargo.toml ./
-
-# Create a dummy main.rs to build dependencies
 RUN mkdir src && echo "fn main() {}" > src/main.rs
-
-# Build dependencies
 RUN cargo build --release && rm -rf src
-
-# Copy source code
 COPY src ./src
-
-# Build the application
-RUN cargo build --release && \
-    cp /app/target/release/pixelmilter /tmp/pixelmilter
+RUN cargo build --release && cp target/release/pixelmilter /tmp/pixelmilter
 
 # Runtime stage
-FROM debian:bookworm-slim
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates \
-      tzdata \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create pixel user
-RUN useradd -r -s /usr/sbin/nologin pixel \
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates tzdata
+RUN adduser -D -s /sbin/nologin pixel \
     && mkdir -p /opt/pixelmilter /data/pixel \
     && chown -R pixel:pixel /opt/pixelmilter /data/pixel
-
 WORKDIR /opt/pixelmilter
-
-# Copy the binary from builder stage
 COPY --from=builder /tmp/pixelmilter /usr/local/bin/pixelmilter
 RUN chmod +x /usr/local/bin/pixelmilter
 
-# Set default environment variables
 ENV PIXEL_BASE_URL="https://localhost:8443/pixel?id="
 ENV TRACKING_REQUIRES_OPT_IN="false"
 ENV OPT_IN_HEADER="X-Track-Open"
