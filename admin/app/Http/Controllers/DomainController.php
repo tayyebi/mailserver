@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Alias;
 use App\Models\Domain;
 use App\Services\DkimService;
 use Illuminate\Http\Request;
@@ -38,6 +39,8 @@ class DomainController extends Controller
             'dkim_selector' => 'nullable|string|max:255',
             'dkim_private_key' => 'nullable|string',
             'dkim_public_key' => 'nullable|string',
+            'catch_all_enabled' => 'sometimes|boolean',
+            'catch_all_destination' => 'nullable|string',
         ]);
 
         $validated['active'] = $request->has('active');
@@ -51,9 +54,11 @@ class DomainController extends Controller
                 $validated['dkim_selector'] = $selector;
                 $validated['dkim_private_key'] = $dkimResult['private_key'];
                 $validated['dkim_public_key'] = $dkimResult['public_key'];
-                
+
                 $domain = Domain::create($validated);
-                
+
+                $this->syncCatchAllAlias($request, $domain);
+
                 return redirect()->route('domains.show-dkim', $domain)
                     ->with('success', 'Domain created successfully with DKIM keys');
             } else {
@@ -61,9 +66,11 @@ class DomainController extends Controller
                     ->with('error', 'Failed to generate DKIM keys: ' . $dkimResult['error']);
             }
         }
-        
-        Domain::create($validated);
-        
+
+        $domain = Domain::create($validated);
+
+        $this->syncCatchAllAlias($request, $domain);
+
         return redirect()->route('domains.index')->with('success', 'Domain created successfully');
     }
 
@@ -75,7 +82,13 @@ class DomainController extends Controller
 
     public function edit(Domain $domain): View
     {
-        return view('domains.edit', compact('domain'));
+        $domain->load('emailAccounts');
+
+        $catchAllAlias = Alias::where('domain_id', $domain->id)
+            ->where('source', '@' . $domain->domain)
+            ->first();
+
+        return view('domains.edit', compact('domain', 'catchAllAlias'));
     }
 
     public function update(Request $request, Domain $domain): RedirectResponse
@@ -86,18 +99,64 @@ class DomainController extends Controller
             'dkim_selector' => 'nullable|string|max:255',
             'dkim_private_key' => 'nullable|string',
             'dkim_public_key' => 'nullable|string',
+            'catch_all_enabled' => 'sometimes|boolean',
+            'catch_all_destination' => 'nullable|string',
         ]);
 
         $validated['active'] = $request->has('active');
-        
+
         // If DKIM private key is empty, keep the existing one
         if (empty($validated['dkim_private_key'])) {
             unset($validated['dkim_private_key']);
         }
-        
+
+        $oldDomain = $domain->domain;
+
         $domain->update($validated);
-        
+
+        $this->syncCatchAllAlias($request, $domain, $oldDomain);
+
         return redirect()->route('domains.index')->with('success', 'Domain updated successfully');
+    }
+
+    /**
+     * Create, update or delete a domain-level catch-all alias (@domain.tld).
+     */
+    protected function syncCatchAllAlias(Request $request, Domain $domain, ?string $oldDomain = null): void
+    {
+        $catchAllEnabled = $request->boolean('catch_all_enabled');
+        $destination = $request->input('catch_all_destination');
+
+        $previousDomain = $oldDomain ?: $domain->domain;
+
+        if (!$catchAllEnabled || empty($destination)) {
+            Alias::where('domain_id', $domain->id)
+                ->whereIn('source', ['@' . $previousDomain, '@' . $domain->domain])
+                ->delete();
+
+            return;
+        }
+
+        $alias = Alias::where('domain_id', $domain->id)
+            ->whereIn('source', ['@' . $previousDomain, '@' . $domain->domain])
+            ->first();
+
+        $source = '@' . $domain->domain;
+
+        if ($alias) {
+            $alias->update([
+                'source' => $source,
+                'destination' => $destination,
+                'active' => true,
+            ]);
+        } else {
+            Alias::create([
+                'domain_id' => $domain->id,
+                'source' => $source,
+                'destination' => $destination,
+                'active' => true,
+            ]);
+        }
     }
 
     public function destroy(Domain $domain): RedirectResponse

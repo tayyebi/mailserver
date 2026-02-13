@@ -29,6 +29,26 @@
             </label>
         </div>
 
+        <h3 style="margin-top: 2rem;">Catch-all / Wildcard Email</h3>
+        <p style="color: #666; margin-bottom: 1rem;">
+            Optionally define a catch-all address for this domain. All mail to unknown
+            addresses at this domain (for example, anything@{{ old('domain', 'example.com') }})
+            will be forwarded to the destination below.
+        </p>
+
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="catch_all_enabled" value="1" {{ old('catch_all_enabled') ? 'checked' : '' }}>
+                Enable catch-all alias (@domain)
+            </label>
+        </div>
+
+        <div class="form-group">
+            <label for="catch_all_destination">Catch-all destination</label>
+            <input type="text" id="catch_all_destination" name="catch_all_destination" placeholder="user@example.com" value="{{ old('catch_all_destination') }}">
+            <small style="color: #666;">Can be any valid email address (local mailbox or external).</small>
+        </div>
+
         <h3 style="margin-top: 2rem;">DKIM Configuration (Optional)</h3>
         <p style="color: #666; margin-bottom: 1rem;">Configure DKIM signing for this domain.</p>
 

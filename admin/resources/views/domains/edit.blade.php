@@ -30,6 +30,40 @@
             </label>
         </div>
 
+        <h3 style="margin-top: 2rem;">Catch-all / Wildcard Email</h3>
+        <p style="color: #666; margin-bottom: 1rem;">
+            Configure a catch-all address for this domain. All mail to unknown
+            addresses at {{ $domain->domain }} will be forwarded to the selected destination.
+        </p>
+
+        @php
+            $hasCatchAll = isset($catchAllAlias) && $catchAllAlias;
+            $currentDestination = old('catch_all_destination', $hasCatchAll ? $catchAllAlias->destination : '');
+        @endphp
+
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="catch_all_enabled" value="1" {{ old('catch_all_enabled', $hasCatchAll) ? 'checked' : '' }}>
+                Enable catch-all alias (@{{ $domain->domain }})
+            </label>
+        </div>
+
+        <div class="form-group">
+            <label for="catch_all_destination">Catch-all destination</label>
+            <input type="text" id="catch_all_destination" name="catch_all_destination" placeholder="user@{{ $domain->domain }}" value="{{ $currentDestination }}">
+            <small style="color: #666;">Can be any valid email address. Active mailboxes on this domain:</small>
+            <br>
+            @if($domain->emailAccounts->isEmpty())
+                <small style="color: #999;">No active mailboxes yet.</small>
+            @else
+                <small style="color: #666;">
+                    @foreach($domain->emailAccounts->where('active', true) as $account)
+                        {{ $account->email }}@if(!$loop->last), @endif
+                    @endforeach
+                </small>
+            @endif
+        </div>
+
         <h3 style="margin-top: 2rem;">DKIM Configuration (Optional)</h3>
         <p style="color: #666; margin-bottom: 1rem;">Configure DKIM signing for this domain. Leave empty to skip DKIM setup.</p>
 

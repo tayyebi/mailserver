@@ -65,6 +65,14 @@
             </label>
         </div>
 
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="set_as_catch_all" value="1" {{ old('set_as_catch_all') ? 'checked' : '' }}>
+                Set this account as domain catch-all
+            </label>
+            <small style="color: #666;">If enabled, all mail to unknown addresses at the selected domain will be forwarded to this mailbox via a @domain alias.</small>
+        </div>
+
         <div class="actions">
             <button type="submit" class="btn btn-success">Create Account</button>
             <a href="{{ route('email-accounts.index') }}" class="btn">Cancel</a>

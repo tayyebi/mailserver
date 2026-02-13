@@ -32,6 +32,11 @@
                         <span class="badge {{ $alias->active ? 'badge-success' : 'badge-danger' }}">
                             {{ $alias->active ? 'Active' : 'Inactive' }}
                         </span>
+                        @if(substr($alias->source, 0, 1) === '@')
+                            <span class="badge badge-info" title="Domain-wide catch-all alias">
+                                Catch-all
+                            </span>
+                        @endif
                     </td>
                     <td class="actions">
                         <a href="{{ route('aliases.edit', $alias) }}" class="btn btn-sm">Edit</a>
