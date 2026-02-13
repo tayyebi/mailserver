@@ -2,6 +2,7 @@ FROM php:8.3-fpm-alpine
 
 # Install system dependencies
 RUN apk add --no-cache \
+    bash \
     git \
     curl \
     libpng-dev \
@@ -14,6 +15,7 @@ RUN apk add --no-cache \
     sqlite \
     sqlite-dev \
     openssl \
+    shadow \
     docker-cli
 
 # Install PHP extensions
@@ -33,6 +35,12 @@ RUN composer install --no-dev --optimize-autoloader
 
 # Set permissions
 RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
+
+# Copy runtime config files into image
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+COPY docker/nginx.conf /etc/nginx/sites-available/default
+COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 EXPOSE 80
 

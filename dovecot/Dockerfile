@@ -21,3 +21,5 @@ RUN mkdir -p /etc/dovecot /var/lib/dovecot /mail \
 
 # Ensure passwd file exists if not mounted
 RUN touch /etc/dovecot/passwd && chown dovecot:dovecot /etc/dovecot/passwd && chmod 640 /etc/dovecot/passwd
+
+COPY dovecot.conf /etc/dovecot/dovecot.conf

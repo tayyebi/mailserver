@@ -14,13 +14,16 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 # Runtime stage
 FROM alpine:3.21
-RUN apk add --no-cache ca-certificates openssl curl tzdata
+RUN apk add --no-cache bash ca-certificates openssl curl tzdata
 RUN adduser -D -s /sbin/nologin pixelserver \
     && mkdir -p /opt/pixelserver \
     && chown -R pixelserver:pixelserver /opt/pixelserver
 WORKDIR /opt/pixelserver
 COPY --from=builder /tmp/pixelserver /usr/local/bin/pixelserver
 RUN chmod +x /usr/local/bin/pixelserver
+
+COPY pixelserver-entrypoint.sh /usr/local/bin/pixelserver-entrypoint.sh
+RUN chmod +x /usr/local/bin/pixelserver-entrypoint.sh
 
 ENV DATA_DIR="/data/pixel"
 ENV PIXEL_TLS_CERT="/etc/ssl/certs/server.pem"
