@@ -36,6 +36,7 @@
                         </span>
                     </td>
                     <td class="actions">
+                        <a href="{{ route('email-accounts.setup', $account) }}" class="btn btn-sm btn-success">Setup</a>
                         <a href="{{ route('email-accounts.edit', $account) }}" class="btn btn-sm">Edit</a>
                         <form action="{{ route('email-accounts.destroy', $account) }}" method="POST" style="display: inline;">
                             @csrf

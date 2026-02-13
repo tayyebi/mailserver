@@ -139,4 +139,18 @@ class EmailAccountController extends Controller
         $emailAccount->delete();
         return redirect()->route('email-accounts.index')->with('success', 'Email account deleted successfully');
     }
+
+    public function setup(EmailAccount $emailAccount): View
+    {
+        $emailAccount->load('domain');
+
+        $connection = [
+            'host'  => config('mailserver.host'),
+            'ports' => config('mailserver.ports'),
+            'email' => $emailAccount->email,
+            'name'  => $emailAccount->name,
+        ];
+
+        return view('email-accounts.setup', compact('emailAccount', 'connection'));
+    }
 }

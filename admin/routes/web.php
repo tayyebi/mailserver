@@ -16,6 +16,7 @@ Route::get('domains/{domain}/dkim', [DomainController::class, 'showDkim'])->name
 Route::post('domains/{domain}/dkim', [DomainController::class, 'generateDkim'])->name('domains.generate-dkim');
 
 Route::resource('email-accounts', EmailAccountController::class)->except(['show']);
+Route::get('email-accounts/{email_account}/setup', [EmailAccountController::class, 'setup'])->name('email-accounts.setup');
 Route::resource('aliases', AliasController::class)->except(['show']);
 
 // Container management routes
