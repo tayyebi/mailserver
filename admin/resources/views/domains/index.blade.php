@@ -18,6 +18,7 @@
                     <th>Domain</th>
                     <th>Description</th>
                     <th>Status</th>
+                    <th>DKIM</th>
                     <th>Accounts</th>
                     <th>Aliases</th>
                     <th>Actions</th>
@@ -32,6 +33,13 @@
                         <span class="badge {{ $domain->active ? 'badge-success' : 'badge-danger' }}">
                             {{ $domain->active ? 'Active' : 'Inactive' }}
                         </span>
+                    </td>
+                    <td>
+                        @if($domain->dkim_public_key)
+                            <a href="{{ route('domains.show-dkim', $domain) }}" style="color: #10b981;">✓ Configured</a>
+                        @else
+                            <a href="{{ route('domains.show-dkim', $domain) }}" style="color: #f59e0b;">⚠ Not Set</a>
+                        @endif
                     </td>
                     <td>{{ $domain->emailAccounts->count() }}</td>
                     <td>{{ $domain->aliases->count() }}</td>
