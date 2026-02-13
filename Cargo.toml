@@ -26,3 +26,5 @@ lettre = { version = "0.11", default-features = false, features = ["builder", "s
 mailparse = "0.15"
 http = "1"
 tower = "0.4"
+log = "0.4"
+env_logger = "0.11"

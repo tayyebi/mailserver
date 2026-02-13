@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use log::{info, warn, error, debug};
 use rusqlite::{params, Connection};
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
@@ -86,10 +87,13 @@ pub struct Stats {
 
 impl Database {
     pub fn open(path: &str) -> Self {
+        info!("[db] opening database at path={}", path);
         let conn = Connection::open(path).expect("Failed to open database");
+        debug!("[db] setting pragmas: journal_mode=WAL, foreign_keys=ON");
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
             .expect("Failed to set pragmas");
 
+        debug!("[db] creating tables if not exists");
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS admins (
                 id INTEGER PRIMARY KEY,
@@ -156,6 +160,7 @@ impl Database {
         )
         .expect("Failed to create tables");
 
+        info!("[db] database opened and schema initialized successfully");
         Database {
             conn: Arc::new(Mutex::new(conn)),
         }
@@ -164,8 +169,9 @@ impl Database {
     // ── Admin methods ──
 
     pub fn get_admin_by_username(&self, username: &str) -> Option<Admin> {
+        debug!("[db] looking up admin username={}", username);
         let conn = self.conn.lock().unwrap();
-        conn.query_row(
+        let result = conn.query_row(
             "SELECT id, username, password_hash, totp_secret, totp_enabled FROM admins WHERE username = ?1",
             params![username],
             |row| {
@@ -178,10 +184,17 @@ impl Database {
                 })
             },
         )
-        .ok()
+        .ok();
+        if result.is_some() {
+            debug!("[db] admin found: username={}", username);
+        } else {
+            warn!("[db] admin not found: username={}", username);
+        }
+        result
     }
 
     pub fn update_admin_password(&self, id: i64, hash: &str) {
+        info!("[db] updating admin password id={}", id);
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "UPDATE admins SET password_hash = ?1, updated_at = ?2 WHERE id = ?3",
@@ -191,6 +204,7 @@ impl Database {
     }
 
     pub fn update_admin_totp(&self, id: i64, secret: Option<&str>, enabled: bool) {
+        info!("[db] updating admin TOTP id={}, enabled={}", id, enabled);
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "UPDATE admins SET totp_secret = ?1, totp_enabled = ?2, updated_at = ?3 WHERE id = ?4",
@@ -200,6 +214,7 @@ impl Database {
     }
 
     pub fn seed_admin(&self, username: &str, password_hash: &str) {
+        info!("[db] seeding admin user: {}", username);
         let conn = self.conn.lock().unwrap();
         let ts = now();
         conn.execute(
@@ -212,6 +227,7 @@ impl Database {
     // ── Domain methods ──
 
     pub fn list_domains(&self) -> Vec<Domain> {
+        debug!("[db] listing all domains");
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare("SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key FROM domains ORDER BY domain")
@@ -232,6 +248,7 @@ impl Database {
     }
 
     pub fn get_domain(&self, id: i64) -> Option<Domain> {
+        debug!("[db] getting domain id={}", id);
         let conn = self.conn.lock().unwrap();
         conn.query_row(
             "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key FROM domains WHERE id = ?1",
@@ -251,17 +268,24 @@ impl Database {
     }
 
     pub fn create_domain(&self, domain: &str) -> Result<i64, String> {
+        info!("[db] creating domain: {}", domain);
         let conn = self.conn.lock().unwrap();
         let ts = now();
         conn.execute(
             "INSERT INTO domains (domain, created_at, updated_at) VALUES (?1, ?2, ?3)",
             params![domain, ts, ts],
         )
-        .map_err(|e| e.to_string())?;
-        Ok(conn.last_insert_rowid())
+        .map_err(|e| {
+            error!("[db] failed to create domain {}: {}", domain, e);
+            e.to_string()
+        })?;
+        let id = conn.last_insert_rowid();
+        info!("[db] domain created: {} (id={})", domain, id);
+        Ok(id)
     }
 
     pub fn update_domain(&self, id: i64, domain: &str, active: bool) {
+        info!("[db] updating domain id={}, domain={}, active={}", id, domain, active);
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "UPDATE domains SET domain = ?1, active = ?2, updated_at = ?3 WHERE id = ?4",
@@ -271,12 +295,14 @@ impl Database {
     }
 
     pub fn delete_domain(&self, id: i64) {
+        warn!("[db] deleting domain id={}", id);
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM domains WHERE id = ?1", params![id])
             .ok();
     }
 
     pub fn update_domain_dkim(&self, id: i64, selector: &str, private_key: &str, public_key: &str) {
+        info!("[db] updating DKIM for domain id={}, selector={}", id, selector);
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "UPDATE domains SET dkim_selector = ?1, dkim_private_key = ?2, dkim_public_key = ?3, updated_at = ?4 WHERE id = ?5",
@@ -288,6 +314,7 @@ impl Database {
     // ── Account methods ──
 
     pub fn list_accounts(&self) -> Vec<Account> {
+        debug!("[db] listing all accounts");
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare("SELECT id, domain_id, username, password_hash, name, active, quota FROM accounts ORDER BY username")
@@ -310,6 +337,7 @@ impl Database {
     }
 
     pub fn get_account(&self, id: i64) -> Option<Account> {
+        debug!("[db] getting account id={}", id);
         let conn = self.conn.lock().unwrap();
         conn.query_row(
             "SELECT id, domain_id, username, password_hash, name, active, quota FROM accounts WHERE id = ?1",
@@ -338,17 +366,24 @@ impl Database {
         name: &str,
         quota: i64,
     ) -> Result<i64, String> {
+        info!("[db] creating account username={}, domain_id={}, quota={}", username, domain_id, quota);
         let conn = self.conn.lock().unwrap();
         let ts = now();
         conn.execute(
             "INSERT INTO accounts (domain_id, username, password_hash, name, quota, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![domain_id, username, password_hash, name, quota, ts, ts],
         )
-        .map_err(|e| e.to_string())?;
-        Ok(conn.last_insert_rowid())
+        .map_err(|e| {
+            error!("[db] failed to create account {}: {}", username, e);
+            e.to_string()
+        })?;
+        let id = conn.last_insert_rowid();
+        info!("[db] account created: {} (id={})", username, id);
+        Ok(id)
     }
 
     pub fn update_account(&self, id: i64, name: &str, active: bool, quota: i64) {
+        info!("[db] updating account id={}, active={}, quota={}", id, active, quota);
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "UPDATE accounts SET name = ?1, active = ?2, quota = ?3, updated_at = ?4 WHERE id = ?5",
@@ -358,6 +393,7 @@ impl Database {
     }
 
     pub fn update_account_password(&self, id: i64, hash: &str) {
+        info!("[db] updating account password id={}", id);
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "UPDATE accounts SET password_hash = ?1, updated_at = ?2 WHERE id = ?3",
@@ -367,12 +403,14 @@ impl Database {
     }
 
     pub fn delete_account(&self, id: i64) {
+        warn!("[db] deleting account id={}", id);
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM accounts WHERE id = ?1", params![id])
             .ok();
     }
 
     pub fn list_all_accounts_with_domain(&self) -> Vec<Account> {
+        debug!("[db] listing all accounts with domain info");
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
@@ -400,6 +438,7 @@ impl Database {
     // ── Alias methods ──
 
     pub fn list_aliases(&self) -> Vec<Alias> {
+        debug!("[db] listing all aliases");
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare("SELECT id, domain_id, source, destination, active, tracking_enabled FROM aliases ORDER BY source")
@@ -421,6 +460,7 @@ impl Database {
     }
 
     pub fn get_alias(&self, id: i64) -> Option<Alias> {
+        debug!("[db] getting alias id={}", id);
         let conn = self.conn.lock().unwrap();
         conn.query_row(
             "SELECT id, domain_id, source, destination, active, tracking_enabled FROM aliases WHERE id = ?1",
@@ -447,17 +487,24 @@ impl Database {
         destination: &str,
         tracking: bool,
     ) -> Result<i64, String> {
+        info!("[db] creating alias source={}, destination={}, tracking={}", source, destination, tracking);
         let conn = self.conn.lock().unwrap();
         let ts = now();
         conn.execute(
             "INSERT INTO aliases (domain_id, source, destination, tracking_enabled, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![domain_id, source, destination, tracking as i64, ts, ts],
         )
-        .map_err(|e| e.to_string())?;
-        Ok(conn.last_insert_rowid())
+        .map_err(|e| {
+            error!("[db] failed to create alias {} -> {}: {}", source, destination, e);
+            e.to_string()
+        })?;
+        let id = conn.last_insert_rowid();
+        info!("[db] alias created: {} -> {} (id={})", source, destination, id);
+        Ok(id)
     }
 
     pub fn update_alias(&self, id: i64, source: &str, destination: &str, active: bool, tracking: bool) {
+        info!("[db] updating alias id={}, source={}, destination={}, active={}, tracking={}", id, source, destination, active, tracking);
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "UPDATE aliases SET source = ?1, destination = ?2, active = ?3, tracking_enabled = ?4, updated_at = ?5 WHERE id = ?6",
@@ -467,12 +514,14 @@ impl Database {
     }
 
     pub fn delete_alias(&self, id: i64) {
+        warn!("[db] deleting alias id={}", id);
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM aliases WHERE id = ?1", params![id])
             .ok();
     }
 
     pub fn list_all_aliases_with_domain(&self) -> Vec<Alias> {
+        debug!("[db] listing all aliases with domain info");
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
@@ -497,14 +546,17 @@ impl Database {
     }
 
     pub fn is_tracking_enabled_for_sender(&self, sender: &str) -> bool {
+        debug!("[db] checking tracking status for sender={}", sender);
         let conn = self.conn.lock().unwrap();
-        conn.query_row(
+        let enabled = conn.query_row(
             "SELECT COUNT(*) FROM aliases WHERE source = ?1 AND active = 1 AND tracking_enabled = 1",
             params![sender],
             |row| row.get::<_, i64>(0),
         )
         .unwrap_or(0)
-            > 0
+            > 0;
+        debug!("[db] tracking enabled for sender={}: {}", sender, enabled);
+        enabled
     }
 
     // ── Tracking methods ──
@@ -517,6 +569,7 @@ impl Database {
         subject: &str,
         alias_id: Option<i64>,
     ) {
+        info!("[db] creating tracked message id={}, sender={}, recipient={}", message_id, sender, recipient);
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO tracked_messages (message_id, sender, recipient, subject, alias_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -526,6 +579,7 @@ impl Database {
     }
 
     pub fn record_pixel_open(&self, message_id: &str, client_ip: &str, user_agent: &str) {
+        info!("[db] recording pixel open message_id={}, client_ip={}", message_id, client_ip);
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO pixel_opens (message_id, client_ip, user_agent, opened_at) VALUES (?1, ?2, ?3, ?4)",
@@ -535,6 +589,7 @@ impl Database {
     }
 
     pub fn list_tracked_messages(&self, limit: i64) -> Vec<TrackedMessage> {
+        debug!("[db] listing tracked messages limit={}", limit);
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare("SELECT id, message_id, sender, recipient, subject, alias_id, created_at FROM tracked_messages ORDER BY created_at DESC LIMIT ?1")
@@ -556,6 +611,7 @@ impl Database {
     }
 
     pub fn get_tracked_message(&self, message_id: &str) -> Option<TrackedMessage> {
+        debug!("[db] getting tracked message id={}", message_id);
         let conn = self.conn.lock().unwrap();
         conn.query_row(
             "SELECT id, message_id, sender, recipient, subject, alias_id, created_at FROM tracked_messages WHERE message_id = ?1",
@@ -576,6 +632,7 @@ impl Database {
     }
 
     pub fn get_opens_for_message(&self, message_id: &str) -> Vec<PixelOpen> {
+        debug!("[db] getting opens for message id={}", message_id);
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare("SELECT id, message_id, client_ip, user_agent, opened_at FROM pixel_opens WHERE message_id = ?1 ORDER BY opened_at DESC")
@@ -595,6 +652,7 @@ impl Database {
     }
 
     pub fn get_stats(&self) -> Stats {
+        debug!("[db] fetching aggregate stats");
         let conn = self.conn.lock().unwrap();
         let count = |sql: &str| -> i64 {
             conn.query_row(sql, [], |row| row.get(0)).unwrap_or(0)
