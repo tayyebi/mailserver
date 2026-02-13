@@ -596,18 +596,15 @@ impl Database {
 
     pub fn get_stats(&self) -> Stats {
         let conn = self.conn.lock().unwrap();
-        let count = |table: &str| -> i64 {
-            conn.query_row(&format!("SELECT COUNT(*) FROM {}", table), [], |row| {
-                row.get(0)
-            })
-            .unwrap_or(0)
+        let count = |sql: &str| -> i64 {
+            conn.query_row(sql, [], |row| row.get(0)).unwrap_or(0)
         };
         Stats {
-            domain_count: count("domains"),
-            account_count: count("accounts"),
-            alias_count: count("aliases"),
-            tracked_count: count("tracked_messages"),
-            open_count: count("pixel_opens"),
+            domain_count: count("SELECT COUNT(*) FROM domains"),
+            account_count: count("SELECT COUNT(*) FROM accounts"),
+            alias_count: count("SELECT COUNT(*) FROM aliases"),
+            tracked_count: count("SELECT COUNT(*) FROM tracked_messages"),
+            open_count: count("SELECT COUNT(*) FROM pixel_opens"),
         }
     }
 }

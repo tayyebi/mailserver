@@ -2,6 +2,12 @@ use crate::db::Database;
 use std::fs;
 use std::process::Command;
 
+fn safe_filename(name: &str) -> String {
+    name.chars()
+        .filter(|c| c.is_alphanumeric() || *c == '.' || *c == '-')
+        .collect()
+}
+
 pub fn generate_all_configs(db: &Database, hostname: &str) {
     generate_postfix_main_cf(hostname);
     generate_postfix_master_cf();
@@ -254,7 +260,7 @@ pub fn generate_opendkim_tables(db: &Database) {
         if let Some(ref private_key) = d.dkim_private_key {
             let selector = &d.dkim_selector;
             let domain = &d.domain;
-            let key_path = format!("/data/dkim/{}.private", domain);
+            let key_path = format!("/data/dkim/{}.private", safe_filename(domain));
 
             // Write the private key file
             fs::create_dir_all("/data/dkim").ok();
