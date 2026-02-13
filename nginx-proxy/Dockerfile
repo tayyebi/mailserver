@@ -5,7 +5,9 @@ RUN apk add --no-cache openssl apache2-utils
 
 # Copy nginx configuration
 COPY nginx.conf /etc/nginx/nginx.conf
-COPY default.conf /etc/nginx/conf.d/default.conf
+
+# Use envsubst templates so ports / host can come from .env
+COPY default.conf /etc/nginx/templates/default.conf.template
 
 # Create directory for SSL certificates
 RUN mkdir -p /etc/nginx/ssl

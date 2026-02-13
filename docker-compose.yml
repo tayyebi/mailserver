@@ -271,14 +271,15 @@ services:
     environment:
       - TZ=${TZ}
       - DB_CONNECTION=sqlite
-      - APP_NAME="Mail Server Admin"
-      - APP_ENV=production
-      - APP_DEBUG=false
+      - APP_NAME=${APP_NAME:-Administration}
+      - APP_ENV=${APP_ENV:-production}
+      - APP_DEBUG=${APP_DEBUG:-false}
       # Let Laravel derive URL and port from proxy headers / Host
       # Override APP_URL in .env if you need a fixed value
-      - APP_URL=
+      - APP_URL=${APP_URL:-}
       - APP_KEY=${APP_KEY}
-      - QUEUE_CONNECTION=database
+      - CACHE_STORE=${CACHE_STORE:-file}
+      - QUEUE_CONNECTION=${QUEUE_CONNECTION:-database}
     volumes:
       - ./data/admin:/var/www/html/database:rw
       - ./data/mail-config:/var/www/html/storage/app/mail-config:rw
