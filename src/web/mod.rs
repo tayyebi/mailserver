@@ -1,11 +1,17 @@
 mod auth;
+mod errors;
 mod forms;
 mod routes;
 
-use axum::{Router, middleware};
+use axum::error_handling::HandleErrorLayer;
+use axum::http::{header, StatusCode, Uri};
+use axum::response::Response;
+use axum::{middleware, Router};
+use log::{error, info};
+use tower::{BoxError, ServiceBuilder};
 use tower_http::services::ServeDir;
-use log::info;
-use axum::http::header;
+
+use crate::web::errors::status_response;
 
 // ── Shared State ──
 
@@ -16,6 +22,19 @@ pub struct AppState {
     pub admin_port: u16,
 }
 
+impl AppState {
+    pub async fn blocking_db<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&crate::db::Database) -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        let db = self.db.clone();
+        tokio::task::spawn_blocking(move || f(&db))
+            .await
+            .expect("Database blocking task panicked")
+    }
+}
+
 // ── Middleware ──
 
 async fn disable_cache_middleware(
@@ -23,12 +42,17 @@ async fn disable_cache_middleware(
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     let mut response = next.run(req).await;
-    
+
     let headers = response.headers_mut();
-    headers.insert(header::CACHE_CONTROL, "no-store, no-cache, must-revalidate, max-age=0".parse().unwrap());
+    headers.insert(
+        header::CACHE_CONTROL,
+        "no-store, no-cache, must-revalidate, max-age=0"
+            .parse()
+            .unwrap(),
+    );
     headers.insert(header::PRAGMA, "no-cache".parse().unwrap());
     headers.insert(header::EXPIRES, "0".parse().unwrap());
-    
+
     response
 }
 
@@ -50,11 +74,26 @@ pub async fn start_server(state: AppState) {
     let pixel_routes = routes::pixel::routes();
     let auth_routes = routes::auth_routes();
 
+    let static_service =
+        ServeDir::new(static_dir).handle_error(|error: std::io::Error| async move {
+            error!("[web] failed to serve static asset: {}", error);
+            let message = format!("Unable to load static asset: {}", error);
+            status_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Static asset failure",
+                &message,
+                "/",
+                "Dashboard",
+            )
+        });
+
     let app = Router::new()
         .merge(pixel_routes)
         .merge(auth_routes)
-        .nest_service("/static", ServeDir::new(static_dir))
+        .nest_service("/static", static_service)
+        .layer(ServiceBuilder::new().layer(HandleErrorLayer::new(handle_service_error)))
         .layer(middleware::from_fn(disable_cache_middleware))
+        .fallback(handle_not_found)
         .with_state(state);
 
     let addr = format!("0.0.0.0:{}", port);
@@ -63,6 +102,29 @@ pub async fn start_server(state: AppState) {
         .unwrap_or_else(|e| panic!("Failed to bind address {}: {}", addr, e));
     info!("[web] admin dashboard listening on {}", addr);
     axum::serve(listener, app).await.expect("Server error");
+}
+
+async fn handle_service_error(error: BoxError) -> Response {
+    error!("[web] service layer error: {}", error);
+    let message = format!("An unexpected error occurred: {}", error);
+    status_response(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "Internal server error",
+        &message,
+        "/",
+        "Dashboard",
+    )
+}
+
+async fn handle_not_found(uri: Uri) -> Response {
+    let message = format!("No page exists at {}", uri.path());
+    status_response(
+        StatusCode::NOT_FOUND,
+        "Page not found",
+        &message,
+        "/",
+        "Dashboard",
+    )
 }
 
 pub(crate) fn regen_configs(state: &AppState) {

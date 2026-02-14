@@ -1,10 +1,11 @@
 use askama::Template;
 use axum::{extract::State, response::Html};
-use log::{info, debug};
+use log::{debug, info};
 use std::collections::HashMap;
 
-use crate::web::AppState;
 use crate::web::auth::AuthAdmin;
+use crate::web::AppState;
+use tokio::join;
 
 fn is_catch_all(source: &str, domain: Option<&str>) -> bool {
     let normalized = source.trim().to_ascii_lowercase();
@@ -50,15 +51,19 @@ struct DashboardTemplate<'a> {
 
 pub async fn page(_auth: AuthAdmin, State(state): State<AppState>) -> Html<String> {
     info!("[web] GET / — dashboard requested");
-    let stats = state.db.get_stats();
+    let stats_fut = state.blocking_db(|db| db.get_stats());
+    let domains_fut = state.blocking_db(|db| db.list_domains());
+    let aliases_fut = state.blocking_db(|db| db.list_all_aliases_with_domain());
+    let (stats, domains, aliases) = join!(stats_fut, domains_fut, aliases_fut);
+
     debug!(
         "[web] dashboard stats: domains={}, accounts={}, aliases={}, tracked={}, opens={}",
-        stats.domain_count, stats.account_count, stats.alias_count,
-        stats.tracked_count, stats.open_count
+        stats.domain_count,
+        stats.account_count,
+        stats.alias_count,
+        stats.tracked_count,
+        stats.open_count
     );
-
-    let domains = state.db.list_domains();
-    let aliases = state.db.list_all_aliases_with_domain();
 
     // Build catch-all map
     let mut catch_all_map: HashMap<i64, (String, bool)> = HashMap::new();
@@ -69,34 +74,57 @@ pub async fn page(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Strin
     }
 
     // Build domain cards
-    let domain_cards: Vec<DomainCard> = domains.iter().map(|d| {
-        let active_label = if d.active { "Accepting mail" } else { "Suspended" }.to_string();
-        let dkim_label = if d.dkim_public_key.is_some() {
-            format!("Selector {} ready", d.dkim_selector)
-        } else {
-            "Missing DKIM key".to_string()
-        };
-        let catch_all_label = match catch_all_map.get(&d.id) {
-            Some((dest, true)) => format!("Catch-all → {}", dest),
-            Some((dest, false)) => format!("Catch-all disabled ({})", dest),
-            None => "No catch-all alias".to_string(),
-        };
-        let footer_label = match d.footer_html.as_deref() {
-            Some(html) if !html.trim().is_empty() => "Footer injected",
-            _ => "No footer",
-        }.to_string();
-        DomainCard { id: d.id, domain: d.domain.clone(), active_label, dkim_label, catch_all_label, footer_label }
-    }).collect();
+    let domain_cards: Vec<DomainCard> = domains
+        .iter()
+        .map(|d| {
+            let active_label = if d.active {
+                "Accepting mail"
+            } else {
+                "Suspended"
+            }
+            .to_string();
+            let dkim_label = if d.dkim_public_key.is_some() {
+                format!("Selector {} ready", d.dkim_selector)
+            } else {
+                "Missing DKIM key".to_string()
+            };
+            let catch_all_label = match catch_all_map.get(&d.id) {
+                Some((dest, true)) => format!("Catch-all → {}", dest),
+                Some((dest, false)) => format!("Catch-all disabled ({})", dest),
+                None => "No catch-all alias".to_string(),
+            };
+            let footer_label = match d.footer_html.as_deref() {
+                Some(html) if !html.trim().is_empty() => "Footer injected",
+                _ => "No footer",
+            }
+            .to_string();
+            DomainCard {
+                id: d.id,
+                domain: d.domain.clone(),
+                active_label,
+                dkim_label,
+                catch_all_label,
+                footer_label,
+            }
+        })
+        .collect();
 
     // Build catch-all rows
-    let catch_rows: Vec<CatchAllRow> = domains.iter().map(|d| {
-        let (status, destination) = match catch_all_map.get(&d.id) {
-            Some((dest, true)) => ("Protected".to_string(), dest.clone()),
-            Some((dest, false)) => ("Disabled".to_string(), dest.clone()),
-            None => ("Uncovered".to_string(), "—".to_string()),
-        };
-        CatchAllRow { domain: d.domain.clone(), status, destination }
-    }).collect();
+    let catch_rows: Vec<CatchAllRow> = domains
+        .iter()
+        .map(|d| {
+            let (status, destination) = match catch_all_map.get(&d.id) {
+                Some((dest, true)) => ("Protected".to_string(), dest.clone()),
+                Some((dest, false)) => ("Disabled".to_string(), dest.clone()),
+                None => ("Uncovered".to_string(), "—".to_string()),
+            };
+            CatchAllRow {
+                domain: d.domain.clone(),
+                status,
+                destination,
+            }
+        })
+        .collect();
 
     let tmpl = DashboardTemplate {
         nav_active: "Dashboard",

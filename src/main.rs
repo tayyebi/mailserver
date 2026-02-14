@@ -1,10 +1,10 @@
-mod db;
 mod auth;
 mod config;
+mod db;
 mod filter;
 mod web;
 
-use log::{info, warn, debug, error};
+use log::{debug, error, info, warn};
 use std::env;
 
 #[tokio::main]
@@ -31,13 +31,15 @@ async fn main() {
                 warn!("[main] HOSTNAME not set, defaulting to localhost");
                 "localhost".to_string()
             });
-            let db_path =
-                env::var("DB_PATH").unwrap_or_else(|_| {
-                    debug!("[main] DB_PATH not set, defaulting to /data/db/mailserver.sqlite");
-                    "/data/db/mailserver.sqlite".to_string()
-                });
+            let db_path = env::var("DB_PATH").unwrap_or_else(|_| {
+                debug!("[main] DB_PATH not set, defaulting to /data/db/mailserver.sqlite");
+                "/data/db/mailserver.sqlite".to_string()
+            });
 
-            info!("[main] serve: port={}, hostname={}, db_path={}", port, hostname, db_path);
+            info!(
+                "[main] serve: port={}, hostname={}, db_path={}",
+                port, hostname, db_path
+            );
 
             let database = db::Database::open(&db_path);
 
@@ -55,18 +57,19 @@ async fn main() {
             web::start_server(state).await;
         }
         "filter" => {
-            let db_path =
-                env::var("DB_PATH").unwrap_or_else(|_| {
-                    debug!("[filter] DB_PATH not set, defaulting to /data/db/mailserver.sqlite");
-                    "/data/db/mailserver.sqlite".to_string()
-                });
+            let db_path = env::var("DB_PATH").unwrap_or_else(|_| {
+                debug!("[filter] DB_PATH not set, defaulting to /data/db/mailserver.sqlite");
+                "/data/db/mailserver.sqlite".to_string()
+            });
             // Prefer pixel_base_url stored in the database (if set), fall back to env var, then default
             let database = db::Database::open(&db_path);
             let pixel_base_url = database
                 .get_setting("pixel_base_url")
                 .or_else(|| env::var("PIXEL_BASE_URL").ok())
                 .unwrap_or_else(|| {
-                    warn!("[filter] PIXEL_BASE_URL not set, defaulting to http://localhost/pixel?id=");
+                    warn!(
+                        "[filter] PIXEL_BASE_URL not set, defaulting to http://localhost/pixel?id="
+                    );
                     "http://localhost/pixel?id=".to_string()
                 });
 
@@ -88,16 +91,19 @@ async fn main() {
                 i += 1;
             }
 
-            info!("[filter] running content filter sender={}, recipients={}", sender, recipients.join(", "));
+            info!(
+                "[filter] running content filter sender={}, recipients={}",
+                sender,
+                recipients.join(", ")
+            );
             filter::run_filter(&db_path, &sender, &recipients, &pixel_base_url);
             info!("[filter] content filter completed");
         }
         "seed" => {
-            let db_path =
-                env::var("DB_PATH").unwrap_or_else(|_| {
-                    debug!("[seed] DB_PATH not set, defaulting to /data/db/mailserver.sqlite");
-                    "/data/db/mailserver.sqlite".to_string()
-                });
+            let db_path = env::var("DB_PATH").unwrap_or_else(|_| {
+                debug!("[seed] DB_PATH not set, defaulting to /data/db/mailserver.sqlite");
+                "/data/db/mailserver.sqlite".to_string()
+            });
             let username = env::var("SEED_USER").unwrap_or_else(|_| {
                 debug!("[seed] SEED_USER not set, defaulting to admin");
                 "admin".to_string()
@@ -114,11 +120,10 @@ async fn main() {
             info!("[seed] admin user seeded successfully: {}", username);
         }
         "genconfig" => {
-            let db_path =
-                env::var("DB_PATH").unwrap_or_else(|_| {
-                    debug!("[genconfig] DB_PATH not set, defaulting to /data/db/mailserver.sqlite");
-                    "/data/db/mailserver.sqlite".to_string()
-                });
+            let db_path = env::var("DB_PATH").unwrap_or_else(|_| {
+                debug!("[genconfig] DB_PATH not set, defaulting to /data/db/mailserver.sqlite");
+                "/data/db/mailserver.sqlite".to_string()
+            });
             let hostname = env::var("HOSTNAME").unwrap_or_else(|_| {
                 warn!("[genconfig] HOSTNAME not set, defaulting to localhost");
                 "localhost".to_string()
@@ -144,7 +149,9 @@ async fn main() {
             println!("Environment variables:");
             println!("  ADMIN_PORT       Dashboard port (default: 8080)");
             println!("  HOSTNAME         Mail server hostname (default: localhost)");
-            println!("  DB_PATH          SQLite database path (default: /data/db/mailserver.sqlite)");
+            println!(
+                "  DB_PATH          SQLite database path (default: /data/db/mailserver.sqlite)"
+            );
             println!("  PIXEL_BASE_URL   Base URL for tracking pixels");
             println!("  SEED_USER        Default admin username (default: admin)");
             println!("  SEED_PASS        Default admin password (default: admin)");

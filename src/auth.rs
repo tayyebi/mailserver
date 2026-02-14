@@ -1,7 +1,7 @@
 use bcrypt::{hash, verify, DEFAULT_COST};
 use data_encoding::BASE32;
 use hmac::{Hmac, Mac};
-use log::{info, warn, debug, error};
+use log::{debug, error, info, warn};
 use rand::Rng;
 use sha1::Sha1;
 use std::time::{SystemTime, UNIX_EPOCH};

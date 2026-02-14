@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use log::{info, warn, error, debug};
+use log::{debug, error, info, warn};
 use rusqlite::{params, Connection};
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
@@ -85,7 +85,7 @@ pub struct EmailLog {
     pub sender: String,
     pub recipient: String,
     pub subject: String,
-    pub direction: String,  // "incoming" or "outgoing"
+    pub direction: String, // "incoming" or "outgoing"
     pub raw_message: String,
     pub logged_at: String,
 }
@@ -93,10 +93,10 @@ pub struct EmailLog {
 #[derive(Clone, Serialize)]
 pub struct ConnectionLog {
     pub id: i64,
-    pub log_type: String,  // "login", "imap", "pop3", "smtp", etc.
+    pub log_type: String, // "login", "imap", "pop3", "smtp", etc.
     pub username: String,
     pub client_ip: String,
-    pub status: String,    // "success", "failure"
+    pub status: String, // "success", "failure"
     pub details: Option<String>,
     pub logged_at: String,
 }
@@ -215,12 +215,19 @@ impl Database {
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT
-            );"        )
+            );",
+        )
         .expect("Failed to create tables");
 
         // Backfill columns for pre-existing databases (ignore errors if they already exist)
-        let _ = conn.execute("ALTER TABLE domains ADD COLUMN footer_html TEXT DEFAULT ''", params![]);
-        let _ = conn.execute("ALTER TABLE aliases ADD COLUMN sort_order INTEGER DEFAULT 0", params![]);
+        let _ = conn.execute(
+            "ALTER TABLE domains ADD COLUMN footer_html TEXT DEFAULT ''",
+            params![],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE aliases ADD COLUMN sort_order INTEGER DEFAULT 0",
+            params![],
+        );
 
         info!("[db] database opened and schema initialized successfully");
         Database {
@@ -374,7 +381,10 @@ impl Database {
     }
 
     pub fn update_domain_dkim(&self, id: i64, selector: &str, private_key: &str, public_key: &str) {
-        info!("[db] updating DKIM for domain id={}, selector={}", id, selector);
+        info!(
+            "[db] updating DKIM for domain id={}, selector={}",
+            id, selector
+        );
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "UPDATE domains SET dkim_selector = ?1, dkim_private_key = ?2, dkim_public_key = ?3, updated_at = ?4 WHERE id = ?5",
@@ -452,7 +462,10 @@ impl Database {
         name: &str,
         quota: i64,
     ) -> Result<i64, String> {
-        info!("[db] creating account username={}, domain_id={}, quota={}", username, domain_id, quota);
+        info!(
+            "[db] creating account username={}, domain_id={}, quota={}",
+            username, domain_id, quota
+        );
         let conn = self.conn.lock().unwrap();
         let ts = now();
         conn.execute(
@@ -469,7 +482,10 @@ impl Database {
     }
 
     pub fn update_account(&self, id: i64, name: &str, active: bool, quota: i64) {
-        info!("[db] updating account id={}, active={}, quota={}", id, active, quota);
+        info!(
+            "[db] updating account id={}, active={}, quota={}",
+            id, active, quota
+        );
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "UPDATE accounts SET name = ?1, active = ?2, quota = ?3, updated_at = ?4 WHERE id = ?5",
@@ -576,7 +592,10 @@ impl Database {
         tracking: bool,
         sort_order: i64,
     ) -> Result<i64, String> {
-        info!("[db] creating alias source={}, destination={}, tracking={}, sort_order={}", source, destination, tracking, sort_order);
+        info!(
+            "[db] creating alias source={}, destination={}, tracking={}, sort_order={}",
+            source, destination, tracking, sort_order
+        );
         let conn = self.conn.lock().unwrap();
         let ts = now();
         conn.execute(
@@ -588,11 +607,22 @@ impl Database {
             e.to_string()
         })?;
         let id = conn.last_insert_rowid();
-        info!("[db] alias created: {} -> {} (id={})", source, destination, id);
+        info!(
+            "[db] alias created: {} -> {} (id={})",
+            source, destination, id
+        );
         Ok(id)
     }
 
-    pub fn update_alias(&self, id: i64, source: &str, destination: &str, active: bool, tracking: bool, sort_order: i64) {
+    pub fn update_alias(
+        &self,
+        id: i64,
+        source: &str,
+        destination: &str,
+        active: bool,
+        tracking: bool,
+        sort_order: i64,
+    ) {
         info!("[db] updating alias id={}, source={}, destination={}, active={}, tracking={}, sort_order={}", id, source, destination, active, tracking, sort_order);
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -654,14 +684,16 @@ impl Database {
     pub fn get_sender_login_map(&self) -> Vec<(String, String)> {
         debug!("[db] building sender login map");
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT al.source, (ac.username || '@' || d.domain) AS account_email \
+        let mut stmt = conn
+            .prepare(
+                "SELECT al.source, (ac.username || '@' || d.domain) AS account_email \
              FROM aliases al \
              JOIN domains d ON al.domain_id = d.id \
              JOIN accounts ac ON ac.domain_id = al.domain_id \
              WHERE al.active = 1 AND ac.active = 1 \
-             ORDER BY al.source, account_email"
-        ).unwrap();
+             ORDER BY al.source, account_email",
+            )
+            .unwrap();
         stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })
@@ -680,7 +712,10 @@ impl Database {
         subject: &str,
         alias_id: Option<i64>,
     ) {
-        info!("[db] creating tracked message id={}, sender={}, recipient={}", message_id, sender, recipient);
+        info!(
+            "[db] creating tracked message id={}, sender={}, recipient={}",
+            message_id, sender, recipient
+        );
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO tracked_messages (message_id, sender, recipient, subject, alias_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -690,7 +725,10 @@ impl Database {
     }
 
     pub fn record_pixel_open(&self, message_id: &str, client_ip: &str, user_agent: &str) {
-        info!("[db] recording pixel open message_id={}, client_ip={}", message_id, client_ip);
+        info!(
+            "[db] recording pixel open message_id={}, client_ip={}",
+            message_id, client_ip
+        );
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO pixel_opens (message_id, client_ip, user_agent, opened_at) VALUES (?1, ?2, ?3, ?4)",
@@ -764,7 +802,15 @@ impl Database {
 
     // ── Email logging ──
 
-    pub fn log_email(&self, message_id: &str, sender: &str, recipient: &str, subject: &str, direction: &str, raw_message: &str) {
+    pub fn log_email(
+        &self,
+        message_id: &str,
+        sender: &str,
+        recipient: &str,
+        subject: &str,
+        direction: &str,
+        raw_message: &str,
+    ) {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT OR IGNORE INTO email_logs (message_id, sender, recipient, subject, direction, raw_message, logged_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -820,12 +866,20 @@ impl Database {
 
     pub fn count_email_logs(&self) -> i64 {
         let conn = self.conn.lock().unwrap();
-        conn.query_row("SELECT COUNT(*) FROM email_logs", [], |row| row.get(0)).unwrap_or(0)
+        conn.query_row("SELECT COUNT(*) FROM email_logs", [], |row| row.get(0))
+            .unwrap_or(0)
     }
 
     // ── Connection logging ──
 
-    pub fn log_connection(&self, log_type: &str, username: &str, client_ip: &str, status: &str, details: Option<&str>) {
+    pub fn log_connection(
+        &self,
+        log_type: &str,
+        username: &str,
+        client_ip: &str,
+        status: &str,
+        details: Option<&str>,
+    ) {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO connection_logs (log_type, username, client_ip, status, details, logged_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -835,7 +889,10 @@ impl Database {
     }
 
     pub fn list_connection_logs(&self, limit: i64, offset: i64) -> Vec<ConnectionLog> {
-        debug!("[db] listing connection logs limit={}, offset={}", limit, offset);
+        debug!(
+            "[db] listing connection logs limit={}, offset={}",
+            limit, offset
+        );
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare("SELECT id, log_type, username, client_ip, status, details, logged_at FROM connection_logs ORDER BY logged_at DESC LIMIT ?1 OFFSET ?2")
@@ -858,7 +915,8 @@ impl Database {
 
     pub fn count_connection_logs(&self) -> i64 {
         let conn = self.conn.lock().unwrap();
-        conn.query_row("SELECT COUNT(*) FROM connection_logs", [], |row| row.get(0)).unwrap_or(0)
+        conn.query_row("SELECT COUNT(*) FROM connection_logs", [], |row| row.get(0))
+            .unwrap_or(0)
     }
 
     // ── Generic settings storage (key/value) ──
@@ -887,9 +945,7 @@ impl Database {
     pub fn get_stats(&self) -> Stats {
         debug!("[db] fetching aggregate stats");
         let conn = self.conn.lock().unwrap();
-        let count = |sql: &str| -> i64 {
-            conn.query_row(sql, [], |row| row.get(0)).unwrap_or(0)
-        };
+        let count = |sql: &str| -> i64 { conn.query_row(sql, [], |row| row.get(0)).unwrap_or(0) };
         Stats {
             domain_count: count("SELECT COUNT(*) FROM domains"),
             account_count: count("SELECT COUNT(*) FROM accounts"),

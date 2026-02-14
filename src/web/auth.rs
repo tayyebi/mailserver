@@ -3,9 +3,10 @@ use axum::{
     http::{header, request::Parts, StatusCode},
     response::{IntoResponse, Response},
 };
-use log::{info, warn, error, debug};
+use log::{debug, error, info, warn};
 
 use super::AppState;
+use crate::web::errors::render_error_page;
 
 pub struct AuthAdmin {
     pub admin: crate::db::Admin,
@@ -13,10 +14,17 @@ pub struct AuthAdmin {
 
 fn unauthorized() -> Response {
     warn!("[web] unauthorized access attempt");
+    let body = render_error_page(
+        StatusCode::UNAUTHORIZED,
+        "Unauthorized",
+        "Valid admin credentials are required to reach this section.",
+        "/",
+        "Dashboard",
+    );
     (
         StatusCode::UNAUTHORIZED,
         [(header::WWW_AUTHENTICATE, "Basic realm=\"Mailserver Admin\"")],
-        "Unauthorized",
+        body,
     )
         .into_response()
 }
@@ -53,7 +61,10 @@ where
             &auth_header[6..],
         )
         .map_err(|_| {
-            warn!("[web] failed to decode base64 credentials for {}", parts.uri);
+            warn!(
+                "[web] failed to decode base64 credentials for {}",
+                parts.uri
+            );
             unauthorized()
         })?;
         let credentials = String::from_utf8(decoded).map_err(|_| {
@@ -71,31 +82,52 @@ where
             .db
             .get_admin_by_username(username)
             .ok_or_else(|| {
-                warn!("[web] authentication failed — unknown username={}", username);
+                warn!(
+                    "[web] authentication failed — unknown username={}",
+                    username
+                );
                 unauthorized()
             })?;
 
         if admin.totp_enabled {
-            debug!("[web] TOTP enabled for username={}, verifying password+TOTP", username);
+            debug!(
+                "[web] TOTP enabled for username={}, verifying password+TOTP",
+                username
+            );
             if password.len() < 6 {
-                warn!("[web] authentication failed — password too short for TOTP for username={}", username);
+                warn!(
+                    "[web] authentication failed — password too short for TOTP for username={}",
+                    username
+                );
                 return Err(unauthorized());
             }
             let (base_password, totp_code) = password.split_at(password.len() - 6);
             if !crate::auth::verify_password(base_password, &admin.password_hash) {
-                warn!("[web] authentication failed — wrong password for username={}", username);
+                warn!(
+                    "[web] authentication failed — wrong password for username={}",
+                    username
+                );
                 return Err(unauthorized());
             }
             let secret = admin.totp_secret.as_deref().ok_or_else(|| {
-                error!("[web] TOTP enabled but no secret stored for username={}", username);
+                error!(
+                    "[web] TOTP enabled but no secret stored for username={}",
+                    username
+                );
                 unauthorized()
             })?;
             if !crate::auth::verify_totp(secret, totp_code) {
-                warn!("[web] authentication failed — invalid TOTP code for username={}", username);
+                warn!(
+                    "[web] authentication failed — invalid TOTP code for username={}",
+                    username
+                );
                 return Err(unauthorized());
             }
         } else if !crate::auth::verify_password(password, &admin.password_hash) {
-            warn!("[web] authentication failed — wrong password for username={}", username);
+            warn!(
+                "[web] authentication failed — wrong password for username={}",
+                username
+            );
             return Err(unauthorized());
         }
 

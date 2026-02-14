@@ -1,10 +1,14 @@
-use log::{info, debug};
+use log::{debug, info};
 use std::io::{self, Read};
 
 use crate::db::Database;
 
 pub fn run_filter(db_path: &str, sender: &str, recipients: &[String], pixel_base_url: &str) {
-    info!("[filter] starting content filter sender={}, recipients={}", sender, recipients.join(", "));
+    info!(
+        "[filter] starting content filter sender={}, recipients={}",
+        sender,
+        recipients.join(", ")
+    );
 
     // 1. Read entire email from stdin
     debug!("[filter] reading email from stdin");
@@ -12,14 +16,20 @@ pub fn run_filter(db_path: &str, sender: &str, recipients: &[String], pixel_base
     io::stdin()
         .read_to_string(&mut email_data)
         .expect("Failed to read email from stdin");
-    info!("[filter] read email from stdin ({} bytes)", email_data.len());
+    info!(
+        "[filter] read email from stdin ({} bytes)",
+        email_data.len()
+    );
 
     // 2. Open database and check if tracking is enabled for sender
     debug!("[filter] opening database at {}", db_path);
     let db = Database::open(db_path);
     let tracking = db.is_tracking_enabled_for_sender(sender);
     let footer_html = db.get_footer_for_sender(sender);
-    info!("[filter] tracking enabled for sender={}: {}", sender, tracking);
+    info!(
+        "[filter] tracking enabled for sender={}: {}",
+        sender, tracking
+    );
 
     // 3. If tracking enabled, inject pixel
     let mut modified = email_data.clone();
@@ -36,26 +46,44 @@ pub fn run_filter(db_path: &str, sender: &str, recipients: &[String], pixel_base
             r#"<img src="{}" width="1" height="1" style="display:none" alt="" />"#,
             pixel_url
         );
-        debug!("[filter] generated tracking pixel message_id={}", message_id);
+        debug!(
+            "[filter] generated tracking pixel message_id={}",
+            message_id
+        );
 
         // Try to inject before </body>
         if let Some(pos) = modified.to_lowercase().rfind("</body>") {
             modified.insert_str(pos, &pixel_tag);
-            info!("[filter] injected tracking pixel before </body> for message_id={}", message_id);
+            info!(
+                "[filter] injected tracking pixel before </body> for message_id={}",
+                message_id
+            );
         } else if modified.contains("<html") || modified.contains("<HTML") {
             // Append to end if HTML but no </body>
             modified.push_str(&pixel_tag);
-            info!("[filter] appended tracking pixel to HTML email for message_id={}", message_id);
+            info!(
+                "[filter] appended tracking pixel to HTML email for message_id={}",
+                message_id
+            );
         } else {
-            debug!("[filter] email is not HTML — skipping pixel injection for message_id={}", message_id);
+            debug!(
+                "[filter] email is not HTML — skipping pixel injection for message_id={}",
+                message_id
+            );
         }
 
         // Record tracked message
         let subject = extract_header(&email_data, "Subject").unwrap_or_default();
         let recipient = recipients.first().map(|s| s.as_str()).unwrap_or("");
-        debug!("[filter] recording tracked message: message_id={}, subject={}", message_id, subject);
+        debug!(
+            "[filter] recording tracked message: message_id={}, subject={}",
+            message_id, subject
+        );
         db.create_tracked_message(&message_id, sender, recipient, &subject, None);
-        info!("[filter] tracked message recorded: message_id={}", message_id);
+        info!(
+            "[filter] tracked message recorded: message_id={}",
+            message_id
+        );
     } else {
         debug!("[filter] no tracking — passing email through unmodified");
     }

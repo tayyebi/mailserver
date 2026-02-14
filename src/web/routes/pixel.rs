@@ -5,10 +5,10 @@ use axum::{
     routing::get,
     Router,
 };
-use log::{info, debug};
+use log::{debug, info};
 
-use crate::web::AppState;
 use crate::web::forms::PixelQuery;
+use crate::web::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new().route("/pixel", get(pixel_handler))
@@ -19,7 +19,14 @@ async fn pixel_handler(
     Query(params): Query<PixelQuery>,
     req: axum::http::Request<axum::body::Body>,
 ) -> Response {
-    debug!("[web] GET /pixel — pixel request id={}", if params.id.is_empty() { "(empty)" } else { &params.id });
+    debug!(
+        "[web] GET /pixel — pixel request id={}",
+        if params.id.is_empty() {
+            "(empty)"
+        } else {
+            &params.id
+        }
+    );
     if !params.id.is_empty() {
         let client_ip = req
             .headers()
@@ -41,22 +48,25 @@ async fn pixel_handler(
             .unwrap_or("")
             .to_string();
 
-        state.db.record_pixel_open(&params.id, &client_ip, &user_agent);
-        info!("[web] pixel open recorded: message_id={}, client_ip={}, user_agent={}", params.id, client_ip, user_agent);
+        let message_id = params.id.clone();
+        state
+            .blocking_db(move |db| db.record_pixel_open(&message_id, &client_ip, &user_agent))
+            .await;
+        info!(
+            "[web] pixel open recorded: message_id={}, client_ip={}, user_agent={}",
+            message_id, client_ip, user_agent
+        );
     }
 
     let gif: &[u8] = &[
-        0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00, 0xff,
-        0xff, 0xff, 0x00, 0x00, 0x00, 0x21, 0xf9, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2c,
-        0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44, 0x01, 0x00,
-        0x3b,
+        0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00, 0xff, 0xff,
+        0xff, 0x00, 0x00, 0x00, 0x21, 0xf9, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2c, 0x00, 0x00,
+        0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44, 0x01, 0x00, 0x3b,
     ];
 
     (
         StatusCode::OK,
-        [
-            (header::CONTENT_TYPE, "image/gif"),
-        ],
+        [(header::CONTENT_TYPE, "image/gif")],
         gif.to_vec(),
     )
         .into_response()

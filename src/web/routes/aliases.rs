@@ -1,16 +1,16 @@
 use askama::Template;
 use axum::{
     extract::{Path, State},
-    response::{Html, Redirect, Response, IntoResponse},
+    response::{Html, IntoResponse, Redirect, Response},
     Form,
 };
-use log::{info, warn, error, debug};
+use log::{debug, error, info, warn};
 use std::collections::HashMap;
 
-use crate::web::AppState;
 use crate::web::auth::AuthAdmin;
-use crate::web::forms::{AliasForm, AliasEditForm};
+use crate::web::forms::{AliasEditForm, AliasForm};
 use crate::web::regen_configs;
+use crate::web::AppState;
 
 fn is_catch_all(source: &str, domain: Option<&str>) -> bool {
     let normalized = source.trim().to_ascii_lowercase();
@@ -100,28 +100,50 @@ pub async fn list(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Strin
         0.0
     };
     let coverage_copy = if domain_total > 0.0 {
-        format!("{} of {} domains have an active catch-all", catch_ready.len(), domains.len())
+        format!(
+            "{} of {} domains have an active catch-all",
+            catch_ready.len(),
+            domains.len()
+        )
     } else {
         "Add a domain to calculate catch-all coverage".to_string()
     };
 
-    let alias_rows: Vec<AliasRow> = aliases.iter().map(|a| {
-        let is_catch = is_catch_all(&a.source, a.domain_name.as_deref());
-        AliasRow {
-            id: a.id,
-            sort_order: a.sort_order,
-            domain_name: a.domain_name.as_deref().unwrap_or("-").to_string(),
-            source: a.source.clone(),
-            destination: a.destination.clone(),
-            type_label: if is_catch { "Catch-all".to_string() } else { "Targeted".to_string() },
-            tracking_label: if a.tracking_enabled { "On".to_string() } else { "Off".to_string() },
-            active_label: if a.active { "Active".to_string() } else { "Disabled".to_string() },
-        }
-    }).collect();
+    let alias_rows: Vec<AliasRow> = aliases
+        .iter()
+        .map(|a| {
+            let is_catch = is_catch_all(&a.source, a.domain_name.as_deref());
+            AliasRow {
+                id: a.id,
+                sort_order: a.sort_order,
+                domain_name: a.domain_name.as_deref().unwrap_or("-").to_string(),
+                source: a.source.clone(),
+                destination: a.destination.clone(),
+                type_label: if is_catch {
+                    "Catch-all".to_string()
+                } else {
+                    "Targeted".to_string()
+                },
+                tracking_label: if a.tracking_enabled {
+                    "On".to_string()
+                } else {
+                    "Off".to_string()
+                },
+                active_label: if a.active {
+                    "Active".to_string()
+                } else {
+                    "Disabled".to_string()
+                },
+            }
+        })
+        .collect();
 
     let tmpl = ListTemplate {
-        nav_active: "Aliases", flash: None,
-        alias_rows, coverage_copy, coverage_pct,
+        nav_active: "Aliases",
+        flash: None,
+        alias_rows,
+        coverage_copy,
+        coverage_pct,
     };
     Html(tmpl.render().unwrap())
 }
@@ -129,7 +151,11 @@ pub async fn list(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Strin
 pub async fn new_form(_auth: AuthAdmin, State(state): State<AppState>) -> Html<String> {
     debug!("[web] GET /aliases/new — new alias form");
     let domains = state.db.list_domains();
-    let tmpl = NewTemplate { nav_active: "Aliases", flash: None, domains };
+    let tmpl = NewTemplate {
+        nav_active: "Aliases",
+        flash: None,
+        domains,
+    };
     Html(tmpl.render().unwrap())
 }
 
@@ -142,18 +168,33 @@ pub async fn create(
     let sort_order = form.sort_order.unwrap_or(0);
     info!("[web] POST /aliases — creating alias source={}, destination={}, tracking={}, sort_order={}",
         form.source, form.destination, tracking, sort_order);
-    match state.db.create_alias(form.domain_id, &form.source, &form.destination, tracking, sort_order) {
+    match state.db.create_alias(
+        form.domain_id,
+        &form.source,
+        &form.destination,
+        tracking,
+        sort_order,
+    ) {
         Ok(id) => {
-            info!("[web] alias created successfully: {} -> {} (id={})", form.source, form.destination, id);
+            info!(
+                "[web] alias created successfully: {} -> {} (id={})",
+                form.source, form.destination, id
+            );
             regen_configs(&state);
             Redirect::to("/aliases").into_response()
         }
         Err(e) => {
-            error!("[web] failed to create alias {} -> {}: {}", form.source, form.destination, e);
+            error!(
+                "[web] failed to create alias {} -> {}: {}",
+                form.source, form.destination, e
+            );
             let tmpl = ErrorTemplate {
-                nav_active: "Aliases", flash: None,
-                title: "Error", message: &e,
-                back_url: "/aliases/new", back_label: "Back",
+                nav_active: "Aliases",
+                flash: None,
+                title: "Error",
+                message: &e,
+                back_url: "/aliases/new",
+                back_label: "Back",
             };
             Html(tmpl.render().unwrap()).into_response()
         }
@@ -173,7 +214,11 @@ pub async fn edit_form(
             return Redirect::to("/aliases").into_response();
         }
     };
-    let tmpl = EditTemplate { nav_active: "Aliases", flash: None, alias };
+    let tmpl = EditTemplate {
+        nav_active: "Aliases",
+        flash: None,
+        alias,
+    };
     Html(tmpl.render().unwrap()).into_response()
 }
 
@@ -188,7 +233,14 @@ pub async fn update(
     let sort_order = form.sort_order.unwrap_or(0);
     info!("[web] POST /aliases/{} — updating alias source={}, destination={}, active={}, tracking={}, sort_order={}",
         id, form.source, form.destination, active, tracking, sort_order);
-    state.db.update_alias(id, &form.source, &form.destination, active, tracking, sort_order);
+    state.db.update_alias(
+        id,
+        &form.source,
+        &form.destination,
+        active,
+        tracking,
+        sort_order,
+    );
     regen_configs(&state);
     Redirect::to("/aliases").into_response()
 }

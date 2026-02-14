@@ -1,8 +1,8 @@
 use crate::db::Database;
-use log::{info, warn, error, debug};
+use log::{debug, error, info, warn};
 use std::fs;
-use std::process::Command;
 use std::path::Path;
+use std::process::Command;
 
 // ── Template Loading ──
 
@@ -12,14 +12,14 @@ fn load_template(filename: &str) -> std::io::Result<String> {
         format!("templates/config/{}", filename),
         format!("/app/templates/config/{}", filename),
     ];
-    
+
     for path in paths {
         if Path::new(&path).exists() {
             debug!("[config] loading template from {}", path);
             return fs::read_to_string(path);
         }
     }
-    
+
     Err(std::io::Error::new(
         std::io::ErrorKind::NotFound,
         format!("Template {} not found in any template directory", filename),
@@ -225,7 +225,10 @@ fn safe_filename(name: &str) -> String {
 }
 
 pub fn generate_all_configs(db: &Database, hostname: &str) {
-    info!("[config] generating all configuration files for hostname={}", hostname);
+    info!(
+        "[config] generating all configuration files for hostname={}",
+        hostname
+    );
     generate_postfix_main_cf(hostname);
     generate_postfix_master_cf();
     generate_virtual_domains(db);
@@ -242,14 +245,16 @@ pub fn generate_all_configs(db: &Database, hostname: &str) {
 }
 
 pub fn generate_postfix_main_cf(hostname: &str) {
-    info!("[config] generating /etc/postfix/main.cf for hostname={}", hostname);
+    info!(
+        "[config] generating /etc/postfix/main.cf for hostname={}",
+        hostname
+    );
     let mydomain = hostname.splitn(2, '.').nth(1).unwrap_or(hostname);
 
-    let template = load_template("postfix-main.cf.txt")
-        .unwrap_or_else(|_| {
-            warn!("[config] postfix-main.cf.txt template not found, using fallback");
-            DEFAULT_POSTFIX_MAIN_CF.to_string()
-        });
+    let template = load_template("postfix-main.cf.txt").unwrap_or_else(|_| {
+        warn!("[config] postfix-main.cf.txt template not found, using fallback");
+        DEFAULT_POSTFIX_MAIN_CF.to_string()
+    });
 
     let config = template
         .replace("{{ hostname }}", hostname)
@@ -263,11 +268,10 @@ pub fn generate_postfix_main_cf(hostname: &str) {
 
 pub fn generate_postfix_master_cf() {
     info!("[config] generating /etc/postfix/master.cf");
-    let config = load_template("postfix-master.cf.txt")
-        .unwrap_or_else(|_| {
-            warn!("[config] postfix-master.cf.txt template not found, using fallback");
-            DEFAULT_POSTFIX_MASTER_CF.to_string()
-        });
+    let config = load_template("postfix-master.cf.txt").unwrap_or_else(|_| {
+        warn!("[config] postfix-master.cf.txt template not found, using fallback");
+        DEFAULT_POSTFIX_MASTER_CF.to_string()
+    });
 
     match fs::write("/etc/postfix/master.cf", config) {
         Ok(_) => debug!("[config] wrote /etc/postfix/master.cf"),
@@ -285,8 +289,14 @@ pub fn generate_virtual_domains(db: &Database) {
         }
     }
     match fs::write("/etc/postfix/virtual_domains", lines) {
-        Ok(_) => debug!("[config] wrote /etc/postfix/virtual_domains ({} domains)", domains.len()),
-        Err(e) => error!("[config] failed to write /etc/postfix/virtual_domains: {}", e),
+        Ok(_) => debug!(
+            "[config] wrote /etc/postfix/virtual_domains ({} domains)",
+            domains.len()
+        ),
+        Err(e) => error!(
+            "[config] failed to write /etc/postfix/virtual_domains: {}",
+            e
+        ),
     }
 }
 
@@ -306,7 +316,10 @@ pub fn generate_virtual_mailboxes(db: &Database) {
         }
     }
     match fs::write("/etc/postfix/vmailbox", lines) {
-        Ok(_) => debug!("[config] wrote /etc/postfix/vmailbox ({} accounts)", accounts.len()),
+        Ok(_) => debug!(
+            "[config] wrote /etc/postfix/vmailbox ({} accounts)",
+            accounts.len()
+        ),
         Err(e) => error!("[config] failed to write /etc/postfix/vmailbox: {}", e),
     }
 }
@@ -321,8 +334,14 @@ pub fn generate_virtual_aliases(db: &Database) {
         }
     }
     match fs::write("/etc/postfix/virtual_aliases", lines) {
-        Ok(_) => debug!("[config] wrote /etc/postfix/virtual_aliases ({} aliases)", aliases.len()),
-        Err(e) => error!("[config] failed to write /etc/postfix/virtual_aliases: {}", e),
+        Ok(_) => debug!(
+            "[config] wrote /etc/postfix/virtual_aliases ({} aliases)",
+            aliases.len()
+        ),
+        Err(e) => error!(
+            "[config] failed to write /etc/postfix/virtual_aliases: {}",
+            e
+        ),
     }
 }
 
@@ -355,21 +374,37 @@ pub fn generate_sender_login_maps(db: &Database) {
         let mut unique: Vec<&String> = logins.iter().collect();
         unique.sort();
         unique.dedup();
-        lines.push_str(&format!("{} {}\n", sender, unique.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(",")));
+        lines.push_str(&format!(
+            "{} {}\n",
+            sender,
+            unique
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(",")
+        ));
     }
     match fs::write("/etc/postfix/sender_login_maps", lines) {
-        Ok(_) => debug!("[config] wrote /etc/postfix/sender_login_maps ({} entries)", map.len()),
-        Err(e) => error!("[config] failed to write /etc/postfix/sender_login_maps: {}", e),
+        Ok(_) => debug!(
+            "[config] wrote /etc/postfix/sender_login_maps ({} entries)",
+            map.len()
+        ),
+        Err(e) => error!(
+            "[config] failed to write /etc/postfix/sender_login_maps: {}",
+            e
+        ),
     }
 }
 
 pub fn generate_dovecot_conf(hostname: &str) {
-    info!("[config] generating /etc/dovecot/dovecot.conf for hostname={}", hostname);
-    let template = load_template("dovecot.conf.txt")
-        .unwrap_or_else(|_| {
-            warn!("[config] dovecot.conf.txt template not found, using fallback");
-            DEFAULT_DOVECOT_CONF.to_string()
-        });
+    info!(
+        "[config] generating /etc/dovecot/dovecot.conf for hostname={}",
+        hostname
+    );
+    let template = load_template("dovecot.conf.txt").unwrap_or_else(|_| {
+        warn!("[config] dovecot.conf.txt template not found, using fallback");
+        DEFAULT_DOVECOT_CONF.to_string()
+    });
 
     let config = template.replace("{{ hostname }}", hostname);
 
@@ -395,22 +430,27 @@ pub fn generate_dovecot_passwd(db: &Database) {
         }
     }
     match fs::write("/etc/dovecot/passwd", lines) {
-        Ok(_) => debug!("[config] wrote /etc/dovecot/passwd ({} accounts)", accounts.len()),
+        Ok(_) => debug!(
+            "[config] wrote /etc/dovecot/passwd ({} accounts)",
+            accounts.len()
+        ),
         Err(e) => error!("[config] failed to write /etc/dovecot/passwd: {}", e),
     }
 }
 
 pub fn generate_opendkim_conf() {
     info!("[config] generating /etc/opendkim/opendkim.conf");
-    let config = load_template("opendkim.conf.txt")
-        .unwrap_or_else(|_| {
-            warn!("[config] opendkim.conf.txt template not found, using fallback");
-            DEFAULT_OPENDKIM_CONF.to_string()
-        });
+    let config = load_template("opendkim.conf.txt").unwrap_or_else(|_| {
+        warn!("[config] opendkim.conf.txt template not found, using fallback");
+        DEFAULT_OPENDKIM_CONF.to_string()
+    });
 
     match fs::write("/etc/opendkim/opendkim.conf", config) {
         Ok(_) => debug!("[config] wrote /etc/opendkim/opendkim.conf"),
-        Err(e) => error!("[config] failed to write /etc/opendkim/opendkim.conf: {}", e),
+        Err(e) => error!(
+            "[config] failed to write /etc/opendkim/opendkim.conf: {}",
+            e
+        ),
     }
 }
 
@@ -438,8 +478,14 @@ pub fn generate_opendkim_tables(db: &Database) {
                 error!("[config] failed to create /data/dkim directory: {}", e);
             }
             match fs::write(&key_path, private_key) {
-                Ok(_) => debug!("[config] wrote DKIM private key for domain={} to {}", domain, key_path),
-                Err(e) => error!("[config] failed to write DKIM private key for domain={}: {}", domain, e),
+                Ok(_) => debug!(
+                    "[config] wrote DKIM private key for domain={} to {}",
+                    domain, key_path
+                ),
+                Err(e) => error!(
+                    "[config] failed to write DKIM private key for domain={}: {}",
+                    domain, e
+                ),
             }
 
             key_table.push_str(&format!(
@@ -457,7 +503,10 @@ pub fn generate_opendkim_tables(db: &Database) {
         }
     }
 
-    info!("[config] writing OpenDKIM tables ({} DKIM-enabled domains)", dkim_count);
+    info!(
+        "[config] writing OpenDKIM tables ({} DKIM-enabled domains)",
+        dkim_count
+    );
     match fs::write("/etc/opendkim/KeyTable", key_table) {
         Ok(_) => debug!("[config] wrote /etc/opendkim/KeyTable"),
         Err(e) => error!("[config] failed to write /etc/opendkim/KeyTable: {}", e),
@@ -485,8 +534,12 @@ pub fn postmap_files() {
                 debug!("[config] postmap succeeded for {}", path);
             }
             Ok(output) => {
-                warn!("[config] postmap for {} exited with status {}: {}", path, output.status,
-                    String::from_utf8_lossy(&output.stderr));
+                warn!(
+                    "[config] postmap for {} exited with status {}: {}",
+                    path,
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr)
+                );
             }
             Err(e) => {
                 warn!("[config] failed to run postmap for {}: {}", path, e);
@@ -500,15 +553,21 @@ pub fn reload_services() {
 
     match Command::new("postfix").arg("reload").output() {
         Ok(output) if output.status.success() => info!("[config] postfix reloaded successfully"),
-        Ok(output) => warn!("[config] postfix reload exited with status {}: {}",
-            output.status, String::from_utf8_lossy(&output.stderr)),
+        Ok(output) => warn!(
+            "[config] postfix reload exited with status {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        ),
         Err(e) => warn!("[config] failed to reload postfix: {}", e),
     }
 
     match Command::new("dovecot").arg("reload").output() {
         Ok(output) if output.status.success() => info!("[config] dovecot reloaded successfully"),
-        Ok(output) => warn!("[config] dovecot reload exited with status {}: {}",
-            output.status, String::from_utf8_lossy(&output.stderr)),
+        Ok(output) => warn!(
+            "[config] dovecot reload exited with status {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        ),
         Err(e) => warn!("[config] failed to reload dovecot: {}", e),
     }
 

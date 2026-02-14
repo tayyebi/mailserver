@@ -1,13 +1,13 @@
 use askama::Template;
 use axum::{
     extract::{Path, State},
-    response::{Html, Response, IntoResponse},
+    response::{Html, IntoResponse, Response},
 };
-use log::{info, warn, debug};
+use log::{debug, info, warn};
 
 use crate::db::PixelOpen;
-use crate::web::AppState;
 use crate::web::auth::AuthAdmin;
+use crate::web::AppState;
 
 // ── View models ──
 
@@ -79,7 +79,11 @@ pub async fn list(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Strin
         })
         .collect();
 
-    let tmpl = ListTemplate { nav_active: "Tracking", flash: None, messages };
+    let tmpl = ListTemplate {
+        nav_active: "Tracking",
+        flash: None,
+        messages,
+    };
     Html(tmpl.render().unwrap())
 }
 
@@ -94,9 +98,12 @@ pub async fn detail(
         None => {
             warn!("[web] tracked message not found: {}", msg_id);
             let tmpl = ErrorTemplate {
-                nav_active: "Tracking", flash: None,
-                title: "Not Found", message: "Message not found.",
-                back_url: "/tracking", back_label: "Back to Tracking",
+                nav_active: "Tracking",
+                flash: None,
+                title: "Not Found",
+                message: "Message not found.",
+                back_url: "/tracking",
+                back_label: "Back to Tracking",
             };
             return Html(tmpl.render().unwrap()).into_response();
         }
@@ -104,6 +111,11 @@ pub async fn detail(
     let opens = state.db.get_opens_for_message(&msg_id);
     debug!("[web] tracked message {} has {} opens", msg_id, opens.len());
 
-    let tmpl = DetailTemplate { nav_active: "Tracking", flash: None, message, opens };
+    let tmpl = DetailTemplate {
+        nav_active: "Tracking",
+        flash: None,
+        message,
+        opens,
+    };
     Html(tmpl.render().unwrap()).into_response()
 }

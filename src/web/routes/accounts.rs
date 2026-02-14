@@ -1,17 +1,17 @@
 use askama::Template;
 use axum::{
     extract::{Path, Query, State},
-    response::{Html, Redirect, Response, IntoResponse},
+    response::{Html, IntoResponse, Redirect, Response},
     Form,
 };
-use log::{info, warn, error, debug};
+use log::{debug, error, info, warn};
 use serde::Deserialize;
 
 use crate::db::{Account, Alias, Domain};
-use crate::web::AppState;
 use crate::web::auth::AuthAdmin;
-use crate::web::forms::{AccountForm, AccountEditForm};
+use crate::web::forms::{AccountEditForm, AccountForm};
 use crate::web::regen_configs;
+use crate::web::AppState;
 
 // ── Query parameters ──
 
@@ -74,11 +74,15 @@ struct ErrorTemplate<'a> {
 
 // ── Handlers ──
 
-pub async fn list(_auth: AuthAdmin, State(state): State<AppState>, Query(params): Query<PaginationQuery>) -> Html<String> {
+pub async fn list(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Query(params): Query<PaginationQuery>,
+) -> Html<String> {
     info!("[web] GET /accounts — listing accounts");
     let all_accounts = state.db.list_all_accounts_with_domain();
     debug!("[web] found {} accounts", all_accounts.len());
-    
+
     let total_count = all_accounts.len() as u32;
     let page_num = std::cmp::max(params.page.unwrap_or(1), 1) as u32;
     let per_page = 20u32;
@@ -86,34 +90,38 @@ pub async fn list(_auth: AuthAdmin, State(state): State<AppState>, Query(params)
     let page_num = std::cmp::min(page_num, std::cmp::max(total_pages, 1));
     let offset = ((page_num - 1) * per_page) as usize;
     let limit = per_page as usize;
-    
-    let account_rows: Vec<AccountListRow> = all_accounts.iter()
+
+    let account_rows: Vec<AccountListRow> = all_accounts
+        .iter()
         .skip(offset)
         .take(limit)
         .map(|a| {
-        let email = format!("{}@{}", a.username, a.domain_name.as_deref().unwrap_or("?"));
-        let quota_display = if a.quota > 0 {
-            let quota_gb = a.quota as f64 / 1_000_000_000.0;
-            format!("{:.2} GB", quota_gb)
-        } else {
-            "∞".to_string()
-        };
-        let mailbox_path = format!("/var/mail/vhosts/{}/{}", 
-            a.domain_name.as_deref().unwrap_or("?"), 
-            a.username);
-        AccountListRow {
-            id: a.id,
-            email,
-            name: a.name.clone(),
-            active: a.active,
-            quota_display,
-            mailbox_path,
-        }
-    }).collect();
-    
-    let tmpl = ListTemplate { 
-        nav_active: "Accounts", 
-        flash: None, 
+            let email = format!("{}@{}", a.username, a.domain_name.as_deref().unwrap_or("?"));
+            let quota_display = if a.quota > 0 {
+                let quota_gb = a.quota as f64 / 1_000_000_000.0;
+                format!("{:.2} GB", quota_gb)
+            } else {
+                "∞".to_string()
+            };
+            let mailbox_path = format!(
+                "/var/mail/vhosts/{}/{}",
+                a.domain_name.as_deref().unwrap_or("?"),
+                a.username
+            );
+            AccountListRow {
+                id: a.id,
+                email,
+                name: a.name.clone(),
+                active: a.active,
+                quota_display,
+                mailbox_path,
+            }
+        })
+        .collect();
+
+    let tmpl = ListTemplate {
+        nav_active: "Accounts",
+        flash: None,
         account_rows,
         current_page: page_num,
         total_pages,
@@ -125,7 +133,11 @@ pub async fn list(_auth: AuthAdmin, State(state): State<AppState>, Query(params)
 pub async fn new_form(_auth: AuthAdmin, State(state): State<AppState>) -> Html<String> {
     debug!("[web] GET /accounts/new — new account form");
     let domains = state.db.list_domains();
-    let tmpl = NewTemplate { nav_active: "Accounts", flash: None, domains };
+    let tmpl = NewTemplate {
+        nav_active: "Accounts",
+        flash: None,
+        domains,
+    };
     Html(tmpl.render().unwrap())
 }
 
@@ -134,21 +146,33 @@ pub async fn create(
     State(state): State<AppState>,
     Form(form): Form<AccountForm>,
 ) -> Response {
-    info!("[web] POST /accounts — creating account username={}, domain_id={}", form.username, form.domain_id);
+    info!(
+        "[web] POST /accounts — creating account username={}, domain_id={}",
+        form.username, form.domain_id
+    );
     let db_hash = crate::auth::hash_password(&form.password);
     let quota = form.quota.unwrap_or(0);
-    match state.db.create_account(form.domain_id, &form.username, &db_hash, &form.name, quota) {
+    match state
+        .db
+        .create_account(form.domain_id, &form.username, &db_hash, &form.name, quota)
+    {
         Ok(id) => {
-            info!("[web] account created successfully: {} (id={})", form.username, id);
+            info!(
+                "[web] account created successfully: {} (id={})",
+                form.username, id
+            );
             regen_configs(&state);
             Redirect::to("/accounts").into_response()
         }
         Err(e) => {
             error!("[web] failed to create account {}: {}", form.username, e);
             let tmpl = ErrorTemplate {
-                nav_active: "Accounts", flash: None,
-                title: "Error", message: &e,
-                back_url: "/accounts/new", back_label: "Back",
+                nav_active: "Accounts",
+                flash: None,
+                title: "Error",
+                message: &e,
+                back_url: "/accounts/new",
+                back_label: "Back",
             };
             Html(tmpl.render().unwrap()).into_response()
         }
@@ -176,7 +200,12 @@ pub async fn edit_form(
         .filter(|a| a.domain_id == account.domain_id && a.active)
         .collect();
 
-    let tmpl = EditTemplate { nav_active: "Accounts", flash: None, account, send_as_aliases };
+    let tmpl = EditTemplate {
+        nav_active: "Accounts",
+        flash: None,
+        account,
+        send_as_aliases,
+    };
     Html(tmpl.render().unwrap()).into_response()
 }
 
@@ -188,7 +217,10 @@ pub async fn update(
 ) -> Response {
     let active = form.active.is_some();
     let quota = form.quota.unwrap_or(0);
-    info!("[web] POST /accounts/{} — updating account active={}, quota={}", id, active, quota);
+    info!(
+        "[web] POST /accounts/{} — updating account active={}, quota={}",
+        id, active, quota
+    );
     state.db.update_account(id, &form.name, active, quota);
 
     // Only update password if field is not empty
