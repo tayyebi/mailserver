@@ -20,6 +20,16 @@ else
     echo "[entrypoint] INFO: TLS certificate already exists, skipping generation"
 fi
 
+# Generate DH parameters if they don't exist (for Dovecot TLS)
+if [ ! -f /usr/share/dovecot/dh.pem ]; then
+    echo "[entrypoint] INFO: generating Diffie-Hellman parameters (this may take a while)"
+    mkdir -p /usr/share/dovecot
+    openssl dhparam -out /usr/share/dovecot/dh.pem 2048
+    echo "[entrypoint] INFO: DH parameters generated successfully"
+else
+    echo "[entrypoint] INFO: DH parameters already exist, skipping generation"
+fi
+
 echo "[entrypoint] INFO: seeding database"
 /usr/local/bin/mailserver seed
 
