@@ -537,18 +537,18 @@ pub fn postmap_files() {
         let lmdb_path = format!("lmdb:{}", path);
         match Command::new("postmap").arg(&lmdb_path).output() {
             Ok(output) if output.status.success() => {
-                debug!("[config] postmap succeeded for {}", path);
+                debug!("[config] postmap succeeded for {}", lmdb_path);
             }
             Ok(output) => {
                 warn!(
                     "[config] postmap for {} exited with status {}: {}",
-                    path,
+                    lmdb_path,
                     output.status,
                     String::from_utf8_lossy(&output.stderr)
                 );
             }
             Err(e) => {
-                warn!("[config] failed to run postmap for {}: {}", path, e);
+                warn!("[config] failed to run postmap for {}: {}", lmdb_path, e);
             }
         }
     }
