@@ -79,7 +79,6 @@ pub async fn start_server(state: AppState) {
         .merge(pixel_routes)
         .merge(auth_routes)
         .nest_service("/static", static_service)
-        .layer(middleware::from_fn(disable_cache_middleware))
         .fallback(handle_not_found)
         .with_state(state);
 
