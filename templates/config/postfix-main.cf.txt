@@ -29,6 +29,34 @@ smtpd_tls_security_level = may
 smtpd_tls_auth_only = yes
 smtp_tls_security_level = may
 
+# TLS protocol and cipher configuration for broader client compatibility
+# Support TLS 1.2+ for embedded clients (ESP8266, ESP32, older devices)
+# TLS 1.0 and 1.1 are deprecated and have known vulnerabilities
+smtpd_tls_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1
+smtp_tls_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1
+smtpd_tls_mandatory_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1
+
+# Cipher configuration - include ciphers compatible with ESP8266/ESP32
+# Focus on AEAD ciphers (GCM mode) for better security
+# Includes both ECDHE (forward secrecy) and non-ECDHE ciphers
+# Non-ECDHE ciphers are needed for some ESP8266/ESP32 implementations
+smtpd_tls_ciphers = medium
+smtpd_tls_mandatory_ciphers = medium
+tls_medium_cipherlist = ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:AES128-GCM-SHA256:AES256-GCM-SHA384
+
+# TLS session cache to improve performance and reduce handshake overhead
+# Note: These LMDB databases will persist on disk and may grow over time
+# in high-traffic environments. Monitor disk usage in production.
+smtpd_tls_session_cache_database = lmdb:${data_directory}/smtpd_scache
+smtp_tls_session_cache_database = lmdb:${data_directory}/smtp_scache
+
+# Disable SSL compression (CRIME attack mitigation)
+tls_ssl_options = NO_COMPRESSION
+
+# Increase TLS handshake timeout for slower embedded clients
+smtpd_timeout = 120s
+smtpd_tls_handshake_timeout = 60s
+
 # Milters
 smtpd_milters = inet:localhost:8891
 non_smtpd_milters = inet:localhost:8891

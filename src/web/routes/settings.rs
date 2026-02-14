@@ -364,68 +364,27 @@ pub async fn regenerate_tls(
 ) -> Response {
     info!("[web] POST /settings/tls/regenerate — regenerating self-signed TLS certificate by username={}", auth.admin.username);
     let hostname = &state.hostname;
-    // Sanitize hostname for use in certificate subject — only allow safe characters
-    let safe_hostname: String = hostname.chars()
-        .filter(|c| c.is_alphanumeric() || *c == '.' || *c == '-')
-        .collect();
-    if safe_hostname.is_empty() {
-        error!("[web] hostname is empty or contains only invalid characters: {}", hostname);
-        let tmpl = ErrorTemplate {
-            nav_active: "Settings", flash: None,
-            status_code: 400,
-            status_text: "Bad Request",
-            title: "Error", message: "Invalid hostname for certificate generation.",
-            back_url: "/settings", back_label: "Back to Settings",
-        };
-        return Html(tmpl.render().unwrap()).into_response();
-    }
-    let result = std::process::Command::new("openssl")
-        .args([
-            "req", "-new", "-newkey", "rsa:2048", "-days", "3650",
-            "-nodes", "-x509",
-            "-subj", &format!("/CN={}", safe_hostname),
-            "-keyout", "/data/ssl/key.pem",
-            "-out", "/data/ssl/cert.pem",
-        ])
-        .output();
-    match result {
-        Ok(o) if o.status.success() => {
-            // Set secure permissions on the private key
-            match std::process::Command::new("chmod").args(["600", "/data/ssl/key.pem"]).output() {
-                Ok(o) if o.status.success() => debug!("[web] set key.pem permissions to 600"),
-                Ok(o) => warn!("[web] chmod 600 key.pem exited with status {}", o.status),
-                Err(e) => warn!("[web] failed to set key.pem permissions: {}", e),
-            }
-            info!("[web] TLS certificate regenerated successfully for hostname={}", safe_hostname);
+    
+    match crate::config::generate_all_certificates(hostname) {
+        Ok(_) => {
+            info!("[web] TLS certificates and DH parameters regenerated successfully for hostname={}", hostname);
             crate::config::reload_services();
             let tmpl = ErrorTemplate {
                 nav_active: "Settings", flash: None,
                 status_code: 200,
                 status_text: "OK",
-                title: "Success", message: "TLS certificate regenerated. Services have been reloaded.",
-                back_url: "/settings", back_label: "Back to Settings",
-            };
-            Html(tmpl.render().unwrap()).into_response()
-        }
-        Ok(o) => {
-            let stderr = String::from_utf8_lossy(&o.stderr);
-            error!("[web] openssl failed to regenerate TLS certificate: {}", stderr);
-            let tmpl = ErrorTemplate {
-                nav_active: "Settings", flash: None,
-                status_code: 500,
-                status_text: "Error",
-                title: "Error", message: "Failed to regenerate TLS certificate.",
+                title: "Success", message: "TLS certificates and DH parameters regenerated. Services have been reloaded.",
                 back_url: "/settings", back_label: "Back to Settings",
             };
             Html(tmpl.render().unwrap()).into_response()
         }
         Err(e) => {
-            error!("[web] failed to run openssl for TLS regeneration: {}", e);
+            error!("[web] failed to regenerate TLS certificates: {}", e);
             let tmpl = ErrorTemplate {
                 nav_active: "Settings", flash: None,
                 status_code: 500,
                 status_text: "Error",
-                title: "Error", message: "Failed to regenerate TLS certificate.",
+                title: "Error", message: &format!("Failed to regenerate TLS certificates: {}", e),
                 back_url: "/settings", back_label: "Back to Settings",
             };
             Html(tmpl.render().unwrap()).into_response()

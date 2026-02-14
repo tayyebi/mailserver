@@ -140,6 +140,24 @@ fn main() {
             config::generate_all_configs(&database, &hostname);
             info!("[genconfig] configuration files generated successfully");
         }
+        "gencerts" => {
+            let hostname = env::var("HOSTNAME").unwrap_or_else(|_| {
+                warn!("[gencerts] HOSTNAME not set, defaulting to localhost");
+                "localhost".to_string()
+            });
+
+            info!("[gencerts] generating certificates and DH parameters for hostname={}", hostname);
+            match config::generate_all_certificates(&hostname) {
+                Ok(_) => {
+                    info!("[gencerts] certificates and DH parameters generated successfully");
+                    config::reload_services();
+                }
+                Err(e) => {
+                    error!("[gencerts] failed to generate certificates: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
         other => {
             if other != "help" {
                 error!("[main] unknown command: {}", other);
@@ -151,6 +169,7 @@ fn main() {
             println!("  mailserver filter     Run as Postfix content filter");
             println!("  mailserver seed       Seed default admin user");
             println!("  mailserver genconfig  Generate mail service configs");
+            println!("  mailserver gencerts   Generate TLS certificates and DH parameters");
             println!();
             println!("Environment variables:");
             println!("  ADMIN_PORT       Dashboard port (default: 8080)");
