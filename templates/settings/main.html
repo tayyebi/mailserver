@@ -25,6 +25,26 @@
 <p><a href="/settings/2fa">Enable 2FA</a></p>
 {% endif %}
 
+<h2>TLS Certificate</h2>
+{% if cert_subject != "" %}
+<dl>
+<dt>Subject</dt><dd><code>{{ cert_subject }}</code></dd>
+<dt>Issuer</dt><dd><code>{{ cert_issuer }}</code></dd>
+<dt>Not Before</dt><dd>{{ cert_not_before }}</dd>
+<dt>Not After</dt><dd>{{ cert_not_after }}</dd>
+<dt>Serial</dt><dd><code>{{ cert_serial }}</code></dd>
+</dl>
+<p>
+  <a href="/settings/tls/cert.pem">Download Certificate</a>
+  <a href="/settings/tls/key.pem" onclick="return confirm('You are about to download the private key. This is a sensitive file. Continue?')">Download Private Key</a>
+</p>
+{% else %}
+<p><em>No TLS certificate found at /data/ssl/cert.pem</em></p>
+{% endif %}
+<form method="post" action="/settings/tls/regenerate" onsubmit="return confirm('This will replace the current TLS certificate with a new self-signed certificate. All connected clients may need to re-trust the certificate. Continue?')">
+<button type="submit">Regenerate Self-Signed Certificate</button>
+</form>
+
 <h2>Pixel Tracker</h2>
 <form method="post" action="/settings/pixel">
   <label>Pixel Host<br>
