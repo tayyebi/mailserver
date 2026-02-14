@@ -206,7 +206,7 @@ graph TB
 
 ```
 docker run -d --name mailserver \
-  -p 25:25 -p 587:587 -p 465:465 -p 143:143 -p 993:993 -p 110:110 -p 995:995 -p 443:8080 \
+  -p 25:25 -p 587:587 -p 465:465 -p 143:143 -p 993:993 -p 110:110 -p 995:995 -p 8080:8080 \
   -v maildata:/data \
   -e HOSTNAME=mail.example.com \
   ghcr.io/tayyebi/mailserver:main
@@ -219,7 +219,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Open `http://your-host:443` for the admin dashboard.
+Open `http://your-host:8080` for the admin dashboard.
 
 ## Default Admin
 

@@ -11,14 +11,14 @@ services:
       - "${IMAPS_PORT:-993}:993"
       - "${POP3_PORT:-110}:110"
       - "${POP3S_PORT:-995}:995"
-      - "${HTTP_PORT:-443}:${HTTP_PORT:-443}"
+      - "${HTTP_PORT:-8080}:${HTTP_PORT:-8080}"
     volumes:
       - maildata:/data
     environment:
       - HOSTNAME=${HOSTNAME:-mail.example.com}
-      - ADMIN_PORT=${HTTP_PORT:-443}
+      - ADMIN_PORT=${HTTP_PORT:-8080}
       - DB_PATH=/data/db/mailserver.sqlite
-      - PIXEL_BASE_URL=http://${HOSTNAME:-mail.example.com}:${HTTP_PORT:-443}/pixel?id=
+      - PIXEL_BASE_URL=http://${HOSTNAME:-mail.example.com}:${HTTP_PORT:-8080}/pixel?id=
       - SEED_USER=${SEED_USER:-admin}
       - SEED_PASS=${SEED_PASS:-admin}
       - TZ=${TZ:-UTC}
