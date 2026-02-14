@@ -5,6 +5,7 @@ pub mod aliases;
 pub mod tracking;
 pub mod settings;
 pub mod pixel;
+pub mod logs;
 
 use axum::{routing::{get, post}, Router};
 use super::AppState;
@@ -42,4 +43,8 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/settings/2fa/enable", post(settings::enable_2fa))
         .route("/settings/2fa/disable", post(settings::disable_2fa))
         .route("/settings/pixel", post(settings::update_pixel))
+
+        .route("/logs/email", get(logs::email_logs))
+        .route("/logs/email/:id/download", get(logs::email_download))
+        .route("/logs/connection", get(logs::connection_logs))
 }

@@ -1,0 +1,34 @@
+{% extends "layout.html" %}
+{% block title %}Email Logs{% endblock %}
+{% block content %}
+<h1>Email Logs</h1>
+<p>All incoming and outgoing emails processed by Postfix.</p>
+<table>
+<thead><tr><th>Message ID</th><th>Direction</th><th>From</th><th>To</th><th>Subject</th><th>Logged</th><th>Action</th></tr></thead>
+<tbody>
+{% for row in email_rows %}
+<tr>
+    <td><code style="font-size: 0.85em;">{{ row.message_id }}</code></td>
+    <td><mark>{{ row.direction }}</mark></td>
+    <td>{{ row.sender }}</td>
+    <td>{{ row.recipient }}</td>
+    <td>{{ row.subject }}</td>
+    <td><small>{{ row.logged_at }}</small></td>
+    <td><a href="/logs/email/{{ row.id }}/download"><small>Download .eml</small></a></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+
+<div style="margin-top: 2rem; display: flex; gap: 1rem; justify-content: center; align-items: center;">
+    {% if current_page > 1 %}
+        <a href="/logs/email?page=1"><small>First</small></a>
+        <a href="/logs/email?page={{ current_page - 1 }}"><small>Previous</small></a>
+    {% endif %}
+    <span><small>Page {{ current_page }} of {{ total_pages }} ({{ total_count }} total)</small></span>
+    {% if current_page < total_pages %}
+        <a href="/logs/email?page={{ current_page + 1 }}"><small>Next</small></a>
+        <a href="/logs/email?page={{ total_pages }}"><small>Last</small></a>
+    {% endif %}
+</div>
+{% endblock %}

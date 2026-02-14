@@ -1,0 +1,39 @@
+{% extends "layout.html" %}
+{% block title %}Connection Logs{% endblock %}
+{% block content %}
+<h1>Connection Logs</h1>
+<p>All login attempts, IMAP, POP3, and SMTP connections.</p>
+<table>
+<thead><tr><th>Type</th><th>Username</th><th>Client IP</th><th>Status</th><th>Details</th><th>Logged</th></tr></thead>
+<tbody>
+{% for row in connection_rows %}
+<tr>
+    <td><mark>{{ row.log_type }}</mark></td>
+    <td>{{ row.username }}</td>
+    <td><code>{{ row.client_ip }}</code></td>
+    <td>
+        {% if row.status == "success" %}
+            <mark style="background: var(--success); color: white;">{{ row.status }}</mark>
+        {% else %}
+            <mark style="background: var(--danger); color: white;">{{ row.status }}</mark>
+        {% endif %}
+    </td>
+    <td><small>{% if let Some(details) = row.details %}{{ details }}{% else %}—{% endif %}</small></td>
+    <td><small>{{ row.logged_at }}</small></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+
+<div style="margin-top: 2rem; display: flex; gap: 1rem; justify-content: center; align-items: center;">
+    {% if current_page > 1 %}
+        <a href="/logs/connection?page=1"><small>First</small></a>
+        <a href="/logs/connection?page={{ current_page - 1 }}"><small>Previous</small></a>
+    {% endif %}
+    <span><small>Page {{ current_page }} of {{ total_pages }} ({{ total_count }} total)</small></span>
+    {% if current_page < total_pages %}
+        <a href="/logs/connection?page={{ current_page + 1 }}"><small>Next</small></a>
+        <a href="/logs/connection?page={{ total_pages }}"><small>Last</small></a>
+    {% endif %}
+</div>
+{% endblock %}

@@ -79,6 +79,29 @@ pub struct PixelOpen {
 }
 
 #[derive(Clone, Serialize)]
+pub struct EmailLog {
+    pub id: i64,
+    pub message_id: String,
+    pub sender: String,
+    pub recipient: String,
+    pub subject: String,
+    pub direction: String,  // "incoming" or "outgoing"
+    pub raw_message: String,
+    pub logged_at: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct ConnectionLog {
+    pub id: i64,
+    pub log_type: String,  // "login", "imap", "pop3", "smtp", etc.
+    pub username: String,
+    pub client_ip: String,
+    pub status: String,    // "success", "failure"
+    pub details: Option<String>,
+    pub logged_at: String,
+}
+
+#[derive(Clone, Serialize)]
 pub struct Stats {
     pub domain_count: i64,
     pub account_count: i64,
@@ -160,6 +183,29 @@ impl Database {
                 client_ip TEXT,
                 user_agent TEXT,
                 opened_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS email_logs (
+                id INTEGER PRIMARY KEY,
+                message_id TEXT UNIQUE NOT NULL,
+                sender TEXT NOT NULL,
+                recipient TEXT NOT NULL,
+                subject TEXT,
+                direction TEXT DEFAULT 'incoming',
+                raw_message TEXT,
+                logged_at TEXT NOT NULL,
+                created_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS connection_logs (
+                id INTEGER PRIMARY KEY,
+                log_type TEXT NOT NULL,
+                username TEXT,
+                client_ip TEXT,
+                status TEXT DEFAULT 'success',
+                details TEXT,
+                logged_at TEXT NOT NULL,
+                created_at TEXT
             );
 
             CREATE TABLE IF NOT EXISTS settings (
@@ -714,6 +760,105 @@ impl Database {
         .unwrap()
         .filter_map(|r| r.ok())
         .collect()
+    }
+
+    // ── Email logging ──
+
+    pub fn log_email(&self, message_id: &str, sender: &str, recipient: &str, subject: &str, direction: &str, raw_message: &str) {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO email_logs (message_id, sender, recipient, subject, direction, raw_message, logged_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![message_id, sender, recipient, subject, direction, raw_message, now(), now()],
+        )
+        .ok();
+    }
+
+    pub fn list_email_logs(&self, limit: i64, offset: i64) -> Vec<EmailLog> {
+        debug!("[db] listing email logs limit={}, offset={}", limit, offset);
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT id, message_id, sender, recipient, subject, direction, raw_message, logged_at FROM email_logs ORDER BY logged_at DESC LIMIT ?1 OFFSET ?2")
+            .unwrap();
+        stmt.query_map(params![limit, offset], |row| {
+            Ok(EmailLog {
+                id: row.get(0)?,
+                message_id: row.get(1)?,
+                sender: row.get(2)?,
+                recipient: row.get(3)?,
+                subject: row.get(4)?,
+                direction: row.get(5)?,
+                raw_message: row.get(6)?,
+                logged_at: row.get(7)?,
+            })
+        })
+        .unwrap()
+        .filter_map(|r| r.ok())
+        .collect()
+    }
+
+    pub fn get_email_log(&self, id: i64) -> Option<EmailLog> {
+        debug!("[db] getting email log id={}", id);
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT id, message_id, sender, recipient, subject, direction, raw_message, logged_at FROM email_logs WHERE id = ?1",
+            params![id],
+            |row| {
+                Ok(EmailLog {
+                    id: row.get(0)?,
+                    message_id: row.get(1)?,
+                    sender: row.get(2)?,
+                    recipient: row.get(3)?,
+                    subject: row.get(4)?,
+                    direction: row.get(5)?,
+                    raw_message: row.get(6)?,
+                    logged_at: row.get(7)?,
+                })
+            },
+        )
+        .ok()
+    }
+
+    pub fn count_email_logs(&self) -> i64 {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row("SELECT COUNT(*) FROM email_logs", [], |row| row.get(0)).unwrap_or(0)
+    }
+
+    // ── Connection logging ──
+
+    pub fn log_connection(&self, log_type: &str, username: &str, client_ip: &str, status: &str, details: Option<&str>) {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO connection_logs (log_type, username, client_ip, status, details, logged_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![log_type, username, client_ip, status, details, now(), now()],
+        )
+        .ok();
+    }
+
+    pub fn list_connection_logs(&self, limit: i64, offset: i64) -> Vec<ConnectionLog> {
+        debug!("[db] listing connection logs limit={}, offset={}", limit, offset);
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT id, log_type, username, client_ip, status, details, logged_at FROM connection_logs ORDER BY logged_at DESC LIMIT ?1 OFFSET ?2")
+            .unwrap();
+        stmt.query_map(params![limit, offset], |row| {
+            Ok(ConnectionLog {
+                id: row.get(0)?,
+                log_type: row.get(1)?,
+                username: row.get(2)?,
+                client_ip: row.get(3)?,
+                status: row.get(4)?,
+                details: row.get(5)?,
+                logged_at: row.get(6)?,
+            })
+        })
+        .unwrap()
+        .filter_map(|r| r.ok())
+        .collect()
+    }
+
+    pub fn count_connection_logs(&self) -> i64 {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row("SELECT COUNT(*) FROM connection_logs", [], |row| row.get(0)).unwrap_or(0)
     }
 
     // ── Generic settings storage (key/value) ──

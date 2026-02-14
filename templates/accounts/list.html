@@ -3,22 +3,45 @@
 {% block content %}
 <h1>Accounts</h1>
 <p><a href="/accounts/new">Add Account</a></p>
+<details>
+    <summary>About accounts</summary>
+    <p>Accounts use full email addresses for login. For example, <code>john@example.com</code> is the login for the local part <code>john</code> on domain <code>example.com</code>.</p>
+</details>
 <table>
-<thead><tr><th>Username</th><th>Domain</th><th>Name</th><th>Active</th><th>Quota (MB)</th><th>Actions</th></tr></thead>
+<thead><tr><th>Email Address</th><th>Full Name</th><th>Status</th><th>Quota</th><th>Mailbox Directory</th><th>Actions</th></tr></thead>
 <tbody>
-{% for a in accounts %}
+{% for row in account_rows %}
 <tr>
-    <td>{{ a.username }}</td>
-    <td>{{ a.domain_name.as_deref().unwrap_or("-") }}</td>
-    <td>{{ a.name }}</td>
-    <td>{% if a.active %}Yes{% else %}No{% endif %}</td>
-    <td>{{ a.quota }}</td>
+    <td><strong>{{ row.email }}</strong></td>
+    <td>{{ row.name }}</td>
+    <td>{% if row.active %}<mark>Active</mark>{% else %}<mark style="background: var(--gray-300);">Inactive</mark>{% endif %}</td>
+    <td>{{ row.quota_display }}</td>
+    <td><code style="font-size: 0.85em; word-break: break-all;">{{ row.mailbox_path }}</code></td>
     <td>
-        <a href="/accounts/{{ a.id }}/edit">Edit</a>
-        <form method="post" action="/accounts/{{ a.id }}/delete" style="display:inline" onsubmit="return confirm('Delete this account?')"><button type="submit">Delete</button></form>
+        <a href="/accounts/{{ row.id }}/edit">Edit</a>
+        <form method="post" action="/accounts/{{ row.id }}/delete" style="display:inline" onsubmit="return confirm('Delete this account?')"><button type="submit">Delete</button></form>
     </td>
 </tr>
 {% endfor %}
 </tbody>
 </table>
+
+<div style="margin-top: 20px; text-align: center;">
+    {% if total_pages > 1 %}
+    <p>Page {{ current_page }} of {{ total_pages }} ({{ total_count }} total)</p>
+    <div style="margin: 10px 0;">
+        {% if current_page > 1 %}
+            <a href="/accounts?page=1">First</a>
+            <a href="/accounts?page={{ current_page - 1 }}">Previous</a>
+        {% endif %}
+        
+        {% if current_page < total_pages %}
+            <a href="/accounts?page={{ current_page + 1 }}">Next</a>
+            <a href="/accounts?page={{ total_pages }}">Last</a>
+        {% endif %}
+    </div>
+    {% else %}
+    <p>{{ total_count }} total accounts</p>
+    {% endif %}
+</div>
 {% endblock %}
