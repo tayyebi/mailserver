@@ -7,7 +7,7 @@ use axum::http::{header, StatusCode, Uri};
 use axum::response::Response;
 use axum::routing::get_service;
 use axum::{middleware, Router};
-use log::{error, info};
+use log::info;
 use tower_http::services::ServeDir;
 
 use crate::web::errors::status_response;

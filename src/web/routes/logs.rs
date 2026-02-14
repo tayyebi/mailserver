@@ -21,6 +21,7 @@ pub struct PaginationQuery {
 
 // ── View models ──
 
+#[allow(dead_code)] // fields may be used only in templates
 struct EmailLogRow {
     id: i64,
     message_id: String,
@@ -31,6 +32,7 @@ struct EmailLogRow {
     logged_at: String,
 }
 
+#[allow(dead_code)] // fields may be used only in templates
 struct ConnectionLogRow {
     id: i64,
     log_type: String,
