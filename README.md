@@ -273,3 +273,7 @@ All persistent data is stored in the `maildata` Docker volume:
 ## DNS
 
 Required DNS records for each domain are shown in the admin dashboard under Domains → DNS.
+
+## Documentation
+
+- **[POSTFIX_INTEGRATION.md](POSTFIX_INTEGRATION.md)** — Detailed documentation on how Postfix is integrated with the service, configuration file locations, dynamic configuration management, and service integration.
