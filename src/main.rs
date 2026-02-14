@@ -60,8 +60,12 @@ async fn main() {
                     debug!("[filter] DB_PATH not set, defaulting to /data/db/mailserver.sqlite");
                     "/data/db/mailserver.sqlite".to_string()
                 });
-            let pixel_base_url = env::var("PIXEL_BASE_URL")
-                .unwrap_or_else(|_| {
+            // Prefer pixel_base_url stored in the database (if set), fall back to env var, then default
+            let database = db::Database::open(&db_path);
+            let pixel_base_url = database
+                .get_setting("pixel_base_url")
+                .or_else(|| env::var("PIXEL_BASE_URL").ok())
+                .unwrap_or_else(|| {
                     warn!("[filter] PIXEL_BASE_URL not set, defaulting to http://localhost/pixel?id=");
                     "http://localhost/pixel?id=".to_string()
                 });

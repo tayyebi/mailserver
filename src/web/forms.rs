@@ -80,3 +80,10 @@ pub struct PixelQuery {
     #[serde(default)]
     pub id: String,
 }
+
+#[derive(Deserialize)]
+pub struct PixelSettingsForm {
+    pub pixel_host: String,
+    #[serde(default)]
+    pub pixel_port: Option<i64>,
+}

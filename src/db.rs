@@ -160,8 +160,16 @@ impl Database {
                 client_ip TEXT,
                 user_agent TEXT,
                 opened_at TEXT
-            );",
-        )
+            );
+
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );"        )
         .expect("Failed to create tables");
 
         // Backfill columns for pre-existing databases (ignore errors if they already exist)
@@ -706,6 +714,29 @@ impl Database {
         .unwrap()
         .filter_map(|r| r.ok())
         .collect()
+    }
+
+    // ── Generic settings storage (key/value) ──
+
+    pub fn set_setting(&self, key: &str, value: &str) {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+            params![key, value],
+        )
+        .expect("Failed to write setting");
+    }
+
+    pub fn get_setting(&self, key: &str) -> Option<String> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = match conn.prepare("SELECT value FROM settings WHERE key = ?1") {
+            Ok(s) => s,
+            Err(_) => return None,
+        };
+        match stmt.query_row(params![key], |row| row.get(0)) {
+            Ok(v) => Some(v),
+            Err(_) => None,
+        }
     }
 
     pub fn get_stats(&self) -> Stats {

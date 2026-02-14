@@ -19,6 +19,8 @@ struct SettingsTemplate<'a> {
     nav_active: &'a str,
     flash: Option<&'a str>,
     admin: Admin,
+    pixel_host: String,
+    pixel_port: String,
 }
 
 #[derive(Template)]
@@ -43,13 +45,84 @@ struct ErrorTemplate<'a> {
 
 // ── Handlers ──
 
-pub async fn page(auth: AuthAdmin, State(_state): State<AppState>) -> Html<String> {
+pub async fn page(auth: AuthAdmin, State(state): State<AppState>) -> Html<String> {
     log::debug!("[web] GET /settings — settings page for username={}", auth.admin.username);
+
+    // determine pixel host/port from DB (fallback to env or server state)
+    let default_host = state.hostname.clone();
+    let default_port = state.admin_port.to_string();
+    let mut pixel_host = default_host.clone();
+    let mut pixel_port: String = default_port.clone();
+
+    if let Some(base) = state.db.get_setting("pixel_base_url") {
+        // remove scheme and /pixel?id= suffix if present
+        let trimmed = base
+            .trim_end_matches("/pixel?id=")
+            .trim_end_matches("/pixel");
+        let no_scheme = trimmed
+            .strip_prefix("http://")
+            .or_else(|| trimmed.strip_prefix("https://"))
+            .unwrap_or(&trimmed);
+        let host_port = no_scheme.split('/').next().unwrap_or(no_scheme);
+        if let Some((h, p)) = host_port.split_once(':') {
+            pixel_host = h.to_string();
+            pixel_port = p.to_string();
+        } else {
+            pixel_host = host_port.to_string();
+            pixel_port = String::new();
+        }
+    } else if let Ok(env_val) = std::env::var("PIXEL_BASE_URL") {
+        let trimmed = env_val.trim_end_matches("/pixel?id=").trim_end_matches("/pixel");
+        let no_scheme = trimmed
+            .strip_prefix("http://")
+            .or_else(|| trimmed.strip_prefix("https://"))
+            .unwrap_or(&trimmed);
+        let host_port = no_scheme.split('/').next().unwrap_or(no_scheme);
+        if let Some((h, p)) = host_port.split_once(':') {
+            pixel_host = h.to_string();
+            pixel_port = p.to_string();
+        } else {
+            pixel_host = host_port.to_string();
+            pixel_port = String::new();
+        }
+    }
+
     let tmpl = SettingsTemplate {
         nav_active: "Settings", flash: None,
         admin: auth.admin,
+        pixel_host,
+        pixel_port,
     };
     Html(tmpl.render().unwrap())
+}
+
+pub async fn update_pixel(
+    auth: AuthAdmin,
+    State(state): State<AppState>,
+    Form(form): Form<crate::web::forms::PixelSettingsForm>,
+) -> Response {
+    info!("[web] POST /settings/pixel — update pixel host/port for username={}", auth.admin.username);
+    let host = form.pixel_host.trim();
+    if host.is_empty() {
+        let tmpl = ErrorTemplate {
+            nav_active: "Settings", flash: None,
+            title: "Error", message: "Host may not be empty.",
+            back_url: "/settings", back_label: "Back",
+        };
+        return Html(tmpl.render().unwrap()).into_response();
+    }
+    let base = match form.pixel_port {
+        Some(p) if p > 0 && p != 80 => format!("http://{}:{}/pixel?id=", host, p),
+        _ => format!("http://{}/pixel?id=", host),
+    };
+    state.db.set_setting("pixel_base_url", &base);
+    info!("[web] pixel_base_url updated to {} by user={}", base, auth.admin.username);
+    let tmpl = ErrorTemplate {
+        nav_active: "Settings", flash: None,
+        title: "Success", message: "Pixel tracker base URL updated.",
+        back_url: "/settings", back_label: "Back to Settings",
+    };
+    Html(tmpl.render().unwrap()).into_response()
 }
 
 pub async fn change_password(

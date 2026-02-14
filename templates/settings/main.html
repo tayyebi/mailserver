@@ -24,4 +24,21 @@
 {% else %}
 <p><a href="/settings/2fa">Enable 2FA</a></p>
 {% endif %}
+
+<h2>Pixel Tracker</h2>
+<form method="post" action="/settings/pixel">
+  <label>Pixel Host<br>
+    <input type="text" name="pixel_host" value="{{ pixel_host }}" required>
+  </label>
+  <label>Pixel Port (optional)<br>
+    {% if pixel_port != "" %}
+      <input type="number" name="pixel_port" value="{{ pixel_port }}">
+    {% else %}
+      <input type="number" name="pixel_port" value="">
+    {% endif %}
+  </label>
+  <p>Computed pixel URL: <code>https://{{ pixel_host }}{% if pixel_port != "" %}:{{ pixel_port }}{% endif %}/pixel?id=</code></p>
+  <button type="submit">Save Pixel Settings</button>
+</form>
+
 {% endblock %}
