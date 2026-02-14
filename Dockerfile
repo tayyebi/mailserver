@@ -24,6 +24,7 @@ RUN --mount=type=cache,target=/var/cache/apk \
     supervisor \
     openssl
 COPY --from=builder /output /usr/local/bin/mailserver
+COPY templates/config/ /app/templates/config/
 COPY static/ /app/static/
 COPY entrypoint.sh /entrypoint.sh
 COPY supervisord.conf /etc/supervisord.conf
