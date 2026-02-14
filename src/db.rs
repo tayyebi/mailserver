@@ -31,6 +31,7 @@ pub struct Domain {
     pub dkim_selector: String,
     pub dkim_private_key: Option<String>,
     pub dkim_public_key: Option<String>,
+    pub footer_html: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -106,12 +107,19 @@ impl Database {
             );
 
             CREATE TABLE IF NOT EXISTS domains (
+
+        // Backfill footer column for pre-existing databases (ignore error if it already exists)
+        let _ = conn.execute(
+            "ALTER TABLE domains ADD COLUMN footer_html TEXT DEFAULT ''",
+            params![],
+        );
                 id INTEGER PRIMARY KEY,
                 domain TEXT UNIQUE NOT NULL,
                 active INTEGER DEFAULT 1,
                 dkim_selector TEXT DEFAULT 'mail',
                 dkim_private_key TEXT,
                 dkim_public_key TEXT,
+                footer_html TEXT DEFAULT '',
                 created_at TEXT,
                 updated_at TEXT
             );
@@ -230,7 +238,9 @@ impl Database {
         debug!("[db] listing all domains");
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
-            .prepare("SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key FROM domains ORDER BY domain")
+            .prepare(
+                "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html FROM domains ORDER BY domain",
+            )
             .unwrap();
         stmt.query_map([], |row| {
             Ok(Domain {
@@ -240,6 +250,7 @@ impl Database {
                 dkim_selector: row.get(3)?,
                 dkim_private_key: row.get(4)?,
                 dkim_public_key: row.get(5)?,
+                footer_html: row.get(6)?,
             })
         })
         .unwrap()
@@ -251,7 +262,7 @@ impl Database {
         debug!("[db] getting domain id={}", id);
         let conn = self.conn.lock().unwrap();
         conn.query_row(
-            "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key FROM domains WHERE id = ?1",
+            "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html FROM domains WHERE id = ?1",
             params![id],
             |row| {
                 Ok(Domain {
@@ -261,19 +272,20 @@ impl Database {
                     dkim_selector: row.get(3)?,
                     dkim_private_key: row.get(4)?,
                     dkim_public_key: row.get(5)?,
+                    footer_html: row.get(6)?,
                 })
             },
         )
         .ok()
     }
 
-    pub fn create_domain(&self, domain: &str) -> Result<i64, String> {
+    pub fn create_domain(&self, domain: &str, footer_html: &str) -> Result<i64, String> {
         info!("[db] creating domain: {}", domain);
         let conn = self.conn.lock().unwrap();
         let ts = now();
         conn.execute(
-            "INSERT INTO domains (domain, created_at, updated_at) VALUES (?1, ?2, ?3)",
-            params![domain, ts, ts],
+            "INSERT INTO domains (domain, footer_html, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
+            params![domain, footer_html, ts, ts],
         )
         .map_err(|e| {
             error!("[db] failed to create domain {}: {}", domain, e);
@@ -284,12 +296,18 @@ impl Database {
         Ok(id)
     }
 
-    pub fn update_domain(&self, id: i64, domain: &str, active: bool) {
-        info!("[db] updating domain id={}, domain={}, active={}", id, domain, active);
+    pub fn update_domain(&self, id: i64, domain: &str, active: bool, footer_html: &str) {
+        info!(
+            "[db] updating domain id={}, domain={}, active={}, footer_present={}",
+            id,
+            domain,
+            active,
+            !footer_html.trim().is_empty()
+        );
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "UPDATE domains SET domain = ?1, active = ?2, updated_at = ?3 WHERE id = ?4",
-            params![domain, active as i64, now(), id],
+            "UPDATE domains SET domain = ?1, active = ?2, footer_html = ?3, updated_at = ?4 WHERE id = ?5",
+            params![domain, active as i64, footer_html, now(), id],
         )
         .ok();
     }
@@ -309,6 +327,20 @@ impl Database {
             params![selector, private_key, public_key, now(), id],
         )
         .ok();
+    }
+
+    pub fn get_footer_for_sender(&self, sender: &str) -> Option<String> {
+        let domain_part = sender.split('@').nth(1)?.trim().to_lowercase();
+        if domain_part.is_empty() {
+            return None;
+        }
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT footer_html FROM domains WHERE lower(domain) = ?1 AND footer_html IS NOT NULL AND footer_html != ''",
+            params![domain_part],
+            |row| row.get(0),
+        )
+        .ok()
     }
 
     // ── Account methods ──

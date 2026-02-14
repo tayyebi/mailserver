@@ -202,6 +202,8 @@ where
 #[derive(Deserialize)]
 struct DomainForm {
     domain: String,
+    #[serde(default)]
+    footer_html: String,
 }
 
 #[derive(Deserialize)]
@@ -209,6 +211,8 @@ struct DomainEditForm {
     domain: String,
     #[serde(default)]
     active: Option<String>,
+    #[serde(default)]
+    footer_html: String,
 }
 
 #[derive(Deserialize)]
@@ -439,6 +443,10 @@ async fn dashboard(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Stri
                                 ),
                                 None => "<span class=\"badge badge-warn\">No catch-all alias</span>".to_string(),
                         };
+                        let footer_state = match domain.footer_html.as_deref() {
+                                Some(html) if !html.trim().is_empty() => ("badge-good", "Footer injected".to_string()),
+                                _ => ("badge-warn", "No footer".to_string()),
+                        };
                         domain_cards.push_str(&format!(
                                 r#"<article class=\"domain-card\">
     <div class=\"domain-card__header\">
@@ -448,6 +456,7 @@ async fn dashboard(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Stri
     <ul class=\"status-list\">
         <li><span>DKIM</span><span class=\"badge {dkim_class}\">{dkim_label}</span></li>
         <li><span>Catch-all</span>{catch_html}</li>
+        <li><span>Footer</span><span class=\"badge {footer_class}\">{footer_label}</span></li>
     </ul>
     <div class=\"domain-card__actions\">
         <a class=\"btn btn-ghost btn-sm\" href=\"/domains/{id}/dns\">DNS runbook</a>
@@ -460,6 +469,8 @@ async fn dashboard(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Stri
                                 dkim_class = dkim_class,
                                 dkim_label = dkim_label,
                                 catch_html = catch_html,
+                                footer_class = footer_state.0,
+                                footer_label = footer_state.1,
                                 id = domain.id,
                         ));
                 }
@@ -545,8 +556,12 @@ async fn list_domains(_auth: AuthAdmin, State(state): State<AppState>) -> Html<S
     debug!("[web] found {} domains", domains.len());
     let mut rows = String::new();
     for d in &domains {
+        let footer_badge = match d.footer_html.as_deref() {
+            Some(html) if !html.trim().is_empty() => "Yes",
+            _ => "No",
+        };
         rows.push_str(&format!(
-            "<tr><td>{}</td><td>{}</td><td>{}</td><td>\
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>\
              <a href=\"/domains/{}/edit\">Edit</a> \
              <a href=\"/domains/{}/dns\">DNS</a> \
              <form method=\"post\" action=\"/domains/{}/dkim\" style=\"display:inline\">\
@@ -558,6 +573,7 @@ async fn list_domains(_auth: AuthAdmin, State(state): State<AppState>) -> Html<S
             esc(&d.domain),
             if d.active { "Yes" } else { "No" },
             if d.dkim_public_key.is_some() { "Yes" } else { "No" },
+            footer_badge,
             d.id, d.id, d.id, d.id,
         ));
     }
@@ -565,7 +581,7 @@ async fn list_domains(_auth: AuthAdmin, State(state): State<AppState>) -> Html<S
         r#"<h1>Domains</h1>
 <p><a href="/domains/new">Add Domain</a></p>
 <table>
-<tr><th>Domain</th><th>Active</th><th>DKIM</th><th>Actions</th></tr>
+<tr><th>Domain</th><th>Active</th><th>DKIM</th><th>Footer</th><th>Actions</th></tr>
 {rows}
 </table>"#,
         rows = rows,
@@ -575,9 +591,16 @@ async fn list_domains(_auth: AuthAdmin, State(state): State<AppState>) -> Html<S
 
 async fn new_domain_form(_auth: AuthAdmin) -> Html<String> {
     debug!("[web] GET /domains/new — new domain form");
-    let content = r#"<h1>Add Domain</h1>
+        let content = r#"<h1>Add Domain</h1>
+<section class="doc-panel doc-inline">
+    <h2>Domain footer</h2>
+    <p>Add a trusted HTML snippet that will be appended to every outbound HTML email for this domain.</p>
+    <p class="small">Leave blank to skip footer injection. Plain-text emails will receive a simplified version.</p>
+</section>
 <form method="post" action="/domains">
-<label>Domain Name<br><input type="text" name="domain" required></label><br>
+<label>Domain Name<br><input type="text" name="domain" required></label>
+<label>Footer HTML (optional)<br><textarea name="footer_html" rows="5" placeholder="&lt;p&gt;Confidential notice&lt;/p&gt;"></textarea></label>
+<p class="field-hint">Supports inline styles. Avoid external scripts.</p>
 <button type="submit">Create</button>
 </form>"#;
     Html(layout("Add Domain", "Domains", content, None))
@@ -588,8 +611,15 @@ async fn create_domain(
     State(state): State<AppState>,
     Form(form): Form<DomainForm>,
 ) -> Response {
-    info!("[web] POST /domains — creating domain={}", form.domain);
-    match state.db.create_domain(&form.domain) {
+    info!(
+        "[web] POST /domains — creating domain={}, footer_present={}",
+        form.domain,
+        !form.footer_html.trim().is_empty()
+    );
+    match state
+        .db
+        .create_domain(&form.domain, &form.footer_html)
+    {
         Ok(id) => {
             info!("[web] domain created successfully: {} (id={})", form.domain, id);
             regen_configs(&state);
@@ -620,16 +650,20 @@ async fn edit_domain_form(
         }
     };
     let checked = if domain.active { " checked" } else { "" };
+    let footer_value = esc(domain.footer_html.as_deref().unwrap_or(""));
     let content = format!(
         r#"<h1>Edit Domain</h1>
 <form method="post" action="/domains/{id}">
 <label>Domain Name<br><input type="text" name="domain" value="{domain}" required></label><br>
 <label><input type="checkbox" name="active" value="on"{checked}> Active</label><br>
+<label>Footer HTML (optional)<br><textarea name="footer_html" rows="6">{footer}</textarea></label>
+<p class="field-hint">Leave blank to disable footer injection for this domain.</p>
 <button type="submit">Save</button>
 </form>"#,
         id = domain.id,
         domain = esc(&domain.domain),
         checked = checked,
+        footer = footer_value,
     );
     Html(layout("Edit Domain", "Domains", &content, None)).into_response()
 }
@@ -641,8 +675,16 @@ async fn update_domain(
     Form(form): Form<DomainEditForm>,
 ) -> Response {
     let active = form.active.is_some();
-    info!("[web] POST /domains/{} — updating domain={}, active={}", id, form.domain, active);
-    state.db.update_domain(id, &form.domain, active);
+    info!(
+        "[web] POST /domains/{} — updating domain={}, active={}, footer_present={}",
+        id,
+        form.domain,
+        active,
+        !form.footer_html.trim().is_empty()
+    );
+    state
+        .db
+        .update_domain(id, &form.domain, active, &form.footer_html);
     regen_configs(&state);
     Redirect::to("/domains").into_response()
 }

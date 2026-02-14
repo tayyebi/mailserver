@@ -18,10 +18,16 @@ pub fn run_filter(db_path: &str, sender: &str, recipients: &[String], pixel_base
     debug!("[filter] opening database at {}", db_path);
     let db = Database::open(db_path);
     let tracking = db.is_tracking_enabled_for_sender(sender);
+    let footer_html = db.get_footer_for_sender(sender);
     info!("[filter] tracking enabled for sender={}: {}", sender, tracking);
 
     // 3. If tracking enabled, inject pixel
     let mut modified = email_data.clone();
+
+    if let Some(footer) = footer_html {
+        debug!("[filter] injecting footer for sender={}", sender);
+        modified = inject_footer(&modified, &footer);
+    }
 
     if tracking {
         let message_id = uuid::Uuid::new_v4().to_string();
@@ -58,6 +64,49 @@ pub fn run_filter(db_path: &str, sender: &str, recipients: &[String], pixel_base
     info!("[filter] reinjecting email via SMTP to 127.0.0.1:10025");
     reinject_smtp(&modified, sender, recipients);
     info!("[filter] email reinjected successfully");
+}
+
+fn inject_footer(email: &str, footer_html: &str) -> String {
+    if footer_html.trim().is_empty() {
+        return email.to_string();
+    }
+    let mut output = email.to_string();
+    let lower = output.to_ascii_lowercase();
+    let footer_block = format!(
+        r#"<div class="domain-footer" style="margin-top:24px;border-top:1px solid #e2e8f0;padding-top:12px;font-size:0.9em;color:#475569;line-height:1.4;">{}</div>"#,
+        footer_html
+    );
+    if let Some(pos) = lower.rfind("</body>") {
+        output.insert_str(pos, &footer_block);
+        return output;
+    }
+    if lower.contains("<html") {
+        output.push_str(&footer_block);
+        return output;
+    }
+    let plain = strip_html_tags(footer_html);
+    if plain.is_empty() {
+        return output;
+    }
+    output.push_str("\n\n-- \n");
+    output.push_str(&plain);
+    output
+}
+
+fn strip_html_tags(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut in_tag = false;
+    for c in input.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => {
+                in_tag = false;
+            }
+            _ if !in_tag => output.push(c),
+            _ => {}
+        }
+    }
+    output.trim().to_string()
 }
 
 fn extract_header(email: &str, header_name: &str) -> Option<String> {
