@@ -15,7 +15,8 @@ ssl_prefer_server_ciphers = yes
 
 # Cipher suite configuration - compatible with constrained devices
 # Focus on AEAD ciphers (GCM mode) for better security
-# ESP8266/ESP32 support these ciphers with modern SDKs
+# Includes both ECDHE (forward secrecy) and non-ECDHE ciphers
+# Non-ECDHE ciphers are needed for some ESP8266/ESP32 implementations
 ssl_cipher_list = ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:AES128-GCM-SHA256:AES256-GCM-SHA384:!aNULL:!eNULL:!EXPORT:!DES:!MD5:!PSK:!RC4
 
 # Use custom Diffie-Hellman parameters for key exchange
