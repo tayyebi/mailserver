@@ -56,7 +56,6 @@ async fn pixel_handler(
         StatusCode::OK,
         [
             (header::CONTENT_TYPE, "image/gif"),
-            (header::CACHE_CONTROL, "no-store, no-cache, must-revalidate"),
         ],
         gif.to_vec(),
     )
