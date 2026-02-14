@@ -4,7 +4,7 @@ hostname = {{ hostname }}
 
 mail_location = maildir:/data/mail/%d/%n/Maildir
 
-ssl = required
+ssl = yes
 ssl_cert = </data/ssl/cert.pem
 ssl_key = </data/ssl/key.pem
 
