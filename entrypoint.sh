@@ -9,25 +9,11 @@ echo "[entrypoint] INFO: ensuring required system users exist"
 id vmail >/dev/null 2>&1 || { echo "[entrypoint] INFO: creating vmail user"; addgroup -S vmail 2>/dev/null; adduser -S -D -H -G vmail -s /sbin/nologin vmail 2>/dev/null; }
 id opendkim >/dev/null 2>&1 || { echo "[entrypoint] INFO: creating opendkim user"; addgroup -S opendkim 2>/dev/null; adduser -S -D -H -G opendkim -s /sbin/nologin opendkim 2>/dev/null; }
 
-if [ ! -f /data/ssl/cert.pem ]; then
-    echo "[entrypoint] INFO: generating self-signed TLS certificate for hostname=${HOSTNAME:-mailserver}"
-    openssl req -new -newkey rsa:2048 -days 3650 -nodes -x509 \
-        -subj "/CN=${HOSTNAME:-mailserver}" \
-        -keyout /data/ssl/key.pem -out /data/ssl/cert.pem
-    chmod 600 /data/ssl/key.pem
-    echo "[entrypoint] INFO: TLS certificate generated successfully"
+if [ ! -f /data/ssl/cert.pem ] || [ ! -f /usr/share/dovecot/dh.pem ]; then
+    echo "[entrypoint] INFO: generating TLS certificates and DH parameters for hostname=${HOSTNAME:-mailserver}"
+    /usr/local/bin/mailserver gencerts
 else
-    echo "[entrypoint] INFO: TLS certificate already exists, skipping generation"
-fi
-
-# Generate DH parameters if they don't exist (for Dovecot TLS)
-if [ ! -f /usr/share/dovecot/dh.pem ]; then
-    echo "[entrypoint] INFO: generating Diffie-Hellman parameters (this may take a while)"
-    mkdir -p /usr/share/dovecot
-    openssl dhparam -out /usr/share/dovecot/dh.pem 2048
-    echo "[entrypoint] INFO: DH parameters generated successfully"
-else
-    echo "[entrypoint] INFO: DH parameters already exist, skipping generation"
+    echo "[entrypoint] INFO: TLS certificates and DH parameters already exist, skipping generation"
 fi
 
 echo "[entrypoint] INFO: seeding database"

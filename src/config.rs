@@ -388,3 +388,101 @@ pub fn reload_services() {
 
     info!("[config] service reload complete");
 }
+
+// ── Certificate and DH parameter generation ──
+
+pub fn generate_tls_certificate(hostname: &str) -> Result<(), String> {
+    info!("[config] generating self-signed TLS certificate for hostname={}", hostname);
+    
+    // Sanitize hostname for use in certificate subject
+    let safe_hostname: String = hostname.chars()
+        .filter(|c| c.is_alphanumeric() || *c == '.' || *c == '-')
+        .collect();
+    
+    if safe_hostname.is_empty() {
+        return Err("hostname is empty or contains only invalid characters".to_string());
+    }
+    
+    // Create SSL directory if it doesn't exist
+    if let Err(e) = fs::create_dir_all("/data/ssl") {
+        error!("[config] failed to create /data/ssl directory: {}", e);
+        return Err(format!("failed to create SSL directory: {}", e));
+    }
+    
+    // Generate certificate
+    let result = Command::new("openssl")
+        .args([
+            "req", "-new", "-newkey", "rsa:2048", "-days", "3650",
+            "-nodes", "-x509",
+            "-subj", &format!("/CN={}", safe_hostname),
+            "-keyout", "/data/ssl/key.pem",
+            "-out", "/data/ssl/cert.pem",
+        ])
+        .output();
+    
+    match result {
+        Ok(output) if output.status.success() => {
+            // Set secure permissions on the private key
+            match Command::new("chmod").args(["600", "/data/ssl/key.pem"]).output() {
+                Ok(o) if o.status.success() => debug!("[config] set key.pem permissions to 600"),
+                Ok(o) => warn!("[config] chmod 600 key.pem exited with status {}", o.status),
+                Err(e) => warn!("[config] failed to set key.pem permissions: {}", e),
+            }
+            info!("[config] TLS certificate generated successfully");
+            Ok(())
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            error!("[config] openssl failed: {}", stderr);
+            Err(format!("openssl failed: {}", stderr))
+        }
+        Err(e) => {
+            error!("[config] failed to run openssl: {}", e);
+            Err(format!("failed to run openssl: {}", e))
+        }
+    }
+}
+
+pub fn generate_dh_parameters() -> Result<(), String> {
+    info!("[config] generating Diffie-Hellman parameters (this may take a while)");
+    
+    // Create dovecot directory if it doesn't exist
+    if let Err(e) = fs::create_dir_all("/usr/share/dovecot") {
+        error!("[config] failed to create /usr/share/dovecot directory: {}", e);
+        return Err(format!("failed to create directory: {}", e));
+    }
+    
+    // Generate DH parameters
+    let result = Command::new("openssl")
+        .args(["dhparam", "-out", "/usr/share/dovecot/dh.pem", "2048"])
+        .output();
+    
+    match result {
+        Ok(output) if output.status.success() => {
+            info!("[config] DH parameters generated successfully");
+            Ok(())
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            error!("[config] openssl dhparam failed: {}", stderr);
+            Err(format!("openssl dhparam failed: {}", stderr))
+        }
+        Err(e) => {
+            error!("[config] failed to run openssl dhparam: {}", e);
+            Err(format!("failed to run openssl dhparam: {}", e))
+        }
+    }
+}
+
+pub fn generate_all_certificates(hostname: &str) -> Result<(), String> {
+    info!("[config] generating all certificates and DH parameters for hostname={}", hostname);
+    
+    // Generate TLS certificate
+    generate_tls_certificate(hostname)?;
+    
+    // Generate DH parameters
+    generate_dh_parameters()?;
+    
+    info!("[config] all certificates and DH parameters generated successfully");
+    Ok(())
+}
