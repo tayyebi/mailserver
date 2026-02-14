@@ -2,11 +2,12 @@ FROM rust:alpine AS builder
 RUN apk add --update musl-dev pkgconf
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
-RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release 2>/dev/null; rm -rf src
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release 2>/dev/null; rm -rf src
 COPY src/ src/
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/target \
-    touch src/main.rs && cargo build --release \
+    cargo build --release \
     && cp target/release/mailserver /output \
     && strip /output
 
