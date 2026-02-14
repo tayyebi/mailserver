@@ -1,10 +1,11 @@
 use askama::Template;
 use axum::{
     extract::State,
+    http::header,
     response::{Html, Response, IntoResponse},
     Form,
 };
-use log::{info, warn};
+use log::{info, warn, error, debug};
 
 use crate::db::Admin;
 use crate::web::AppState;
@@ -21,6 +22,11 @@ struct SettingsTemplate<'a> {
     admin: Admin,
     pixel_host: String,
     pixel_port: String,
+    cert_subject: String,
+    cert_issuer: String,
+    cert_not_before: String,
+    cert_not_after: String,
+    cert_serial: String,
 }
 
 #[derive(Template)]
@@ -44,6 +50,41 @@ struct ErrorTemplate<'a> {
 }
 
 // ── Handlers ──
+
+fn read_cert_info() -> (String, String, String, String, String) {
+    let cert_path = "/data/ssl/cert.pem";
+    if !std::path::Path::new(cert_path).exists() {
+        return (String::new(), String::new(), String::new(), String::new(), String::new());
+    }
+    let output = std::process::Command::new("openssl")
+        .args(["x509", "-in", cert_path, "-noout", "-subject", "-issuer", "-dates", "-serial"])
+        .output();
+    match output {
+        Ok(o) if o.status.success() => {
+            let text = String::from_utf8_lossy(&o.stdout).to_string();
+            let mut subject = String::new();
+            let mut issuer = String::new();
+            let mut not_before = String::new();
+            let mut not_after = String::new();
+            let mut serial = String::new();
+            for line in text.lines() {
+                if let Some(v) = line.strip_prefix("subject=") {
+                    subject = v.trim().to_string();
+                } else if let Some(v) = line.strip_prefix("issuer=") {
+                    issuer = v.trim().to_string();
+                } else if let Some(v) = line.strip_prefix("notBefore=") {
+                    not_before = v.trim().to_string();
+                } else if let Some(v) = line.strip_prefix("notAfter=") {
+                    not_after = v.trim().to_string();
+                } else if let Some(v) = line.strip_prefix("serial=") {
+                    serial = v.trim().to_string();
+                }
+            }
+            (subject, issuer, not_before, not_after, serial)
+        }
+        _ => (String::new(), String::new(), String::new(), String::new(), String::new()),
+    }
+}
 
 pub async fn page(auth: AuthAdmin, State(state): State<AppState>) -> Html<String> {
     log::debug!("[web] GET /settings — settings page for username={}", auth.admin.username);
@@ -87,11 +128,18 @@ pub async fn page(auth: AuthAdmin, State(state): State<AppState>) -> Html<String
         }
     }
 
+    let (cert_subject, cert_issuer, cert_not_before, cert_not_after, cert_serial) = read_cert_info();
+
     let tmpl = SettingsTemplate {
         nav_active: "Settings", flash: None,
         admin: auth.admin,
         pixel_host,
         pixel_port,
+        cert_subject,
+        cert_issuer,
+        cert_not_before,
+        cert_not_after,
+        cert_serial,
     };
     Html(tmpl.render().unwrap())
 }
@@ -206,4 +254,106 @@ pub async fn disable_2fa(auth: AuthAdmin, State(state): State<AppState>) -> Resp
         back_url: "/settings", back_label: "Back to Settings",
     };
     Html(tmpl.render().unwrap()).into_response()
+}
+
+pub async fn regenerate_tls(
+    auth: AuthAdmin,
+    State(state): State<AppState>,
+) -> Response {
+    info!("[web] POST /settings/tls/regenerate — regenerating self-signed TLS certificate by username={}", auth.admin.username);
+    let hostname = &state.hostname;
+    let result = std::process::Command::new("openssl")
+        .args([
+            "req", "-new", "-newkey", "rsa:2048", "-days", "3650",
+            "-nodes", "-x509",
+            "-subj", &format!("/CN={}", hostname),
+            "-keyout", "/data/ssl/key.pem",
+            "-out", "/data/ssl/cert.pem",
+        ])
+        .output();
+    match result {
+        Ok(o) if o.status.success() => {
+            // Set secure permissions on the private key
+            let _ = std::process::Command::new("chmod").args(["600", "/data/ssl/key.pem"]).output();
+            info!("[web] TLS certificate regenerated successfully for hostname={}", hostname);
+            crate::config::reload_services();
+            let tmpl = ErrorTemplate {
+                nav_active: "Settings", flash: None,
+                title: "Success", message: "TLS certificate regenerated. Services have been reloaded.",
+                back_url: "/settings", back_label: "Back to Settings",
+            };
+            Html(tmpl.render().unwrap()).into_response()
+        }
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            error!("[web] openssl failed to regenerate TLS certificate: {}", stderr);
+            let tmpl = ErrorTemplate {
+                nav_active: "Settings", flash: None,
+                title: "Error", message: "Failed to regenerate TLS certificate.",
+                back_url: "/settings", back_label: "Back to Settings",
+            };
+            Html(tmpl.render().unwrap()).into_response()
+        }
+        Err(e) => {
+            error!("[web] failed to run openssl for TLS regeneration: {}", e);
+            let tmpl = ErrorTemplate {
+                nav_active: "Settings", flash: None,
+                title: "Error", message: "Failed to regenerate TLS certificate.",
+                back_url: "/settings", back_label: "Back to Settings",
+            };
+            Html(tmpl.render().unwrap()).into_response()
+        }
+    }
+}
+
+pub async fn download_cert(auth: AuthAdmin) -> Response {
+    debug!("[web] GET /settings/tls/cert.pem — certificate download by username={}", auth.admin.username);
+    let cert_path = "/data/ssl/cert.pem";
+    match std::fs::read(cert_path) {
+        Ok(data) => {
+            info!("[web] certificate downloaded by username={}", auth.admin.username);
+            (
+                [
+                    (header::CONTENT_TYPE, "application/x-pem-file"),
+                    (header::CONTENT_DISPOSITION, "attachment; filename=\"cert.pem\""),
+                ],
+                data,
+            ).into_response()
+        }
+        Err(e) => {
+            error!("[web] failed to read certificate file: {}", e);
+            let tmpl = ErrorTemplate {
+                nav_active: "Settings", flash: None,
+                title: "Error", message: "Certificate file not found.",
+                back_url: "/settings", back_label: "Back to Settings",
+            };
+            Html(tmpl.render().unwrap()).into_response()
+        }
+    }
+}
+
+pub async fn download_key(auth: AuthAdmin) -> Response {
+    debug!("[web] GET /settings/tls/key.pem — private key download by username={}", auth.admin.username);
+    let key_path = "/data/ssl/key.pem";
+    match std::fs::read(key_path) {
+        Ok(data) => {
+            info!("[web] private key downloaded by username={}", auth.admin.username);
+            (
+                [
+                    (header::CONTENT_TYPE, "application/x-pem-file"),
+                    (header::CONTENT_DISPOSITION, "attachment; filename=\"key.pem\""),
+                ],
+                data,
+            ).into_response()
+        }
+        Err(e) => {
+            error!("[web] failed to read private key file: {}", e);
+            let tmpl = ErrorTemplate {
+                nav_active: "Settings", flash: None,
+                title: "Error", message: "Private key file not found.",
+                back_url: "/settings", back_label: "Back to Settings",
+            };
+            Html(tmpl.render().unwrap()).into_response()
+        }
+    }
 }
