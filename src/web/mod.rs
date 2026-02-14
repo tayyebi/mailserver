@@ -34,27 +34,6 @@ impl AppState {
     }
 }
 
-// ── Middleware ──
-
-async fn disable_cache_middleware(
-    req: axum::extract::Request,
-    next: axum::middleware::Next,
-) -> axum::response::Response {
-    let mut response = next.run(req).await;
-
-    let headers = response.headers_mut();
-    headers.insert(
-        header::CACHE_CONTROL,
-        "no-store, no-cache, must-revalidate, max-age=0"
-            .parse()
-            .unwrap(),
-    );
-    headers.insert(header::PRAGMA, "no-cache".parse().unwrap());
-    headers.insert(header::EXPIRES, "0".parse().unwrap());
-
-    response
-}
-
 // ── Server ──
 
 pub async fn start_server(state: AppState) {

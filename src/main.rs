@@ -7,8 +7,7 @@ mod web;
 use log::{debug, error, info, warn};
 use std::env;
 
-#[tokio::main]
-async fn main() {
+fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_millis()
         .init();
@@ -54,7 +53,14 @@ async fn main() {
                 admin_port: port,
             };
 
-            web::start_server(state).await;
+            // Start Tokio runtime only for the HTTP server
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to build Tokio runtime");
+            rt.block_on(async move {
+                web::start_server(state).await;
+            });
         }
         "filter" => {
             let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
