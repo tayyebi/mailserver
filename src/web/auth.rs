@@ -1,7 +1,7 @@
 use axum::{
     extract::{FromRef, FromRequestParts},
     http::{header, request::Parts, StatusCode},
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use log::{debug, error, info, warn};
 
@@ -21,12 +21,12 @@ fn unauthorized() -> Response {
         "/",
         "Dashboard",
     );
-    (
-        StatusCode::UNAUTHORIZED,
-        [(header::WWW_AUTHENTICATE, "Basic realm=\"Mailserver Admin\"")],
-        body,
-    )
-        .into_response()
+    Response::builder()
+        .status(StatusCode::UNAUTHORIZED)
+        .header(header::WWW_AUTHENTICATE, "Basic realm=\"Mailserver Admin\"")
+        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+        .body(axum::body::Body::from(body.0))
+        .expect("Failed to build unauthorized response")
 }
 
 #[axum::async_trait]

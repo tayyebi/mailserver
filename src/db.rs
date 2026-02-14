@@ -110,108 +110,117 @@ pub struct Stats {
     pub open_count: i64,
 }
 
+
+fn load_available_migrations() -> Vec<(String, String)> {
+    let mut migrations = Vec::new();
+    let paths = vec!["migrations", "/app/migrations"];
+    let mut found_any = false;
+
+    for base_path in paths {
+        let path = std::path::Path::new(base_path);
+        if !path.exists() || !path.is_dir() {
+            continue;
+        }
+
+        found_any = true;
+        if let Ok(entries) = std::fs::read_dir(path) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() 
+                   && path.extension().and_then(|ext| ext.to_str()) == Some("sql") {
+                    if let Some(filename) = path.file_stem().and_then(|stem| stem.to_str()) {
+                        if let Ok(sql) = std::fs::read_to_string(&path) {
+                            migrations.push((filename.to_string(), sql));
+                        }
+                    }
+                }
+            }
+        }
+        // If we found a valid directory, we stop looking at other paths to avoid duplicates
+        // or mixing environments (unless we want to merge, but typically one source is enough)
+        break;
+    }
+
+    if !found_any {
+        warn!("[db] no migrations directory found (checked ./migrations and /app/migrations)");
+    }
+    
+    // Sort by filename to ensure correct order
+    migrations.sort_by(|a, b| a.0.cmp(&b.0));
+    migrations
+}
+
+fn run_migrations(client: &mut Client) {
+    info!("[db] checking for database migrations");
+
+    // 1. Create _migrations table if it doesn't exist
+    client
+        .execute(
+            "CREATE TABLE IF NOT EXISTS _migrations (
+                id SERIAL PRIMARY KEY,
+                name TEXT UNIQUE NOT NULL,
+                applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )",
+            &[],
+        )
+        .expect("Failed to create _migrations table");
+
+    // 2. Load migrations from files
+    let migrations = load_available_migrations();
+
+    if migrations.is_empty() {
+        warn!("[db] no migration files found");
+        return;
+    }
+
+    // 3. Apply pending migrations
+    for (name, sql) in migrations {
+        let rows = client
+            .query("SELECT id FROM _migrations WHERE name = $1", &[&name])
+            .expect("Failed to query _migrations");
+
+        if rows.is_empty() {
+            info!("[db] applying migration: {}", name);
+            let mut transaction = client.transaction().expect("Failed to start transaction");
+            transaction.batch_execute(&sql).expect("Failed to execute migration script");
+            transaction
+                .execute("INSERT INTO _migrations (name) VALUES ($1)", &[&name])
+                .expect("Failed to record migration");
+            transaction.commit().expect("Failed to commit transaction");
+            info!("[db] migration {} applied successfully", name);
+        } else {
+            debug!("[db] migration {} already applied", name);
+        }
+    }
+}
+
 impl Database {
     pub fn open(url: &str) -> Self {
         info!("[db] opening PostgreSQL database at url={}", url);
-        let mut client = Client::connect(url, NoTls).expect("Failed to connect to PostgreSQL");
+        let mut retry_count = 0;
+        let max_retries = 30;
+        let mut client = loop {
+            match Client::connect(url, NoTls) {
+                Ok(c) => break c,
+                Err(e) => {
+                    retry_count += 1;
+                    if retry_count >= max_retries {
+                        error!(
+                            "[db] failed to connect to PostgreSQL after {} retries: {}",
+                            max_retries, e
+                        );
+                        panic!("Failed to connect to PostgreSQL: {}", e);
+                    }
+                    warn!(
+                        "[db] failed to connect to PostgreSQL, retrying ({}/{}): {}",
+                        retry_count, max_retries, e
+                    );
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                }
+            }
+        };
 
-        debug!("[db] creating tables if not exists");
-        client
-            .batch_execute(
-                "CREATE TABLE IF NOT EXISTS admins (
-                    id BIGSERIAL PRIMARY KEY,
-                    username TEXT UNIQUE NOT NULL,
-                    password_hash TEXT NOT NULL,
-                    totp_secret TEXT,
-                    totp_enabled BOOLEAN DEFAULT FALSE,
-                    created_at TEXT,
-                    updated_at TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS domains (
-                    id BIGSERIAL PRIMARY KEY,
-                    domain TEXT UNIQUE NOT NULL,
-                    active BOOLEAN DEFAULT TRUE,
-                    dkim_selector TEXT DEFAULT 'mail',
-                    dkim_private_key TEXT,
-                    dkim_public_key TEXT,
-                    footer_html TEXT DEFAULT '',
-                    created_at TEXT,
-                    updated_at TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS accounts (
-                    id BIGSERIAL PRIMARY KEY,
-                    domain_id BIGINT REFERENCES domains(id) ON DELETE CASCADE,
-                    username TEXT NOT NULL,
-                    password_hash TEXT NOT NULL,
-                    name TEXT DEFAULT '',
-                    active BOOLEAN DEFAULT TRUE,
-                    quota BIGINT DEFAULT 0,
-                    created_at TEXT,
-                    updated_at TEXT,
-                    UNIQUE(username, domain_id)
-                );
-
-                CREATE TABLE IF NOT EXISTS aliases (
-                    id BIGSERIAL PRIMARY KEY,
-                    domain_id BIGINT REFERENCES domains(id) ON DELETE CASCADE,
-                    source TEXT NOT NULL,
-                    destination TEXT NOT NULL,
-                    active BOOLEAN DEFAULT TRUE,
-                    tracking_enabled BOOLEAN DEFAULT FALSE,
-                    sort_order BIGINT DEFAULT 0,
-                    created_at TEXT,
-                    updated_at TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS tracked_messages (
-                    id BIGSERIAL PRIMARY KEY,
-                    message_id TEXT UNIQUE NOT NULL,
-                    sender TEXT,
-                    recipient TEXT,
-                    subject TEXT,
-                    alias_id BIGINT,
-                    created_at TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS pixel_opens (
-                    id BIGSERIAL PRIMARY KEY,
-                    message_id TEXT NOT NULL,
-                    client_ip TEXT,
-                    user_agent TEXT,
-                    opened_at TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS email_logs (
-                    id BIGSERIAL PRIMARY KEY,
-                    message_id TEXT UNIQUE NOT NULL,
-                    sender TEXT NOT NULL,
-                    recipient TEXT NOT NULL,
-                    subject TEXT,
-                    direction TEXT DEFAULT 'incoming',
-                    raw_message TEXT,
-                    logged_at TEXT NOT NULL,
-                    created_at TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS connection_logs (
-                    id BIGSERIAL PRIMARY KEY,
-                    log_type TEXT NOT NULL,
-                    username TEXT,
-                    client_ip TEXT,
-                    status TEXT DEFAULT 'success',
-                    details TEXT,
-                    logged_at TEXT NOT NULL,
-                    created_at TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS settings (
-                    key TEXT PRIMARY KEY,
-                    value TEXT
-                );",
-            )
-            .expect("Failed to create tables");
+        run_migrations(&mut client);
 
         info!("[db] PostgreSQL database opened and schema initialized successfully");
         Database {
@@ -233,11 +242,11 @@ impl Database {
             .flatten();
 
         let result = row.map(|row| Admin {
-            id: row.get(0),
-            username: row.get(1),
-            password_hash: row.get(2),
-            totp_secret: row.get(3),
-            totp_enabled: row.get(4),
+            id: row.get::<_, i64>(0),
+            username: row.get::<_, String>(1),
+            password_hash: row.get::<_, String>(2),
+            totp_secret: row.get::<_, Option<String>>(3),
+            totp_enabled: row.get::<_, Option<bool>>(4).unwrap_or(false),
         });
 
         if result.is_some() {

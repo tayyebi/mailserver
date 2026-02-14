@@ -3,10 +3,10 @@ mod errors;
 mod forms;
 mod routes;
 
-use axum::http::{header, StatusCode, Uri};
+use axum::http::{StatusCode, Uri};
 use axum::response::Response;
 use axum::routing::get_service;
-use axum::{middleware, Router};
+use axum::Router;
 use log::info;
 use tower_http::services::ServeDir;
 
@@ -28,9 +28,17 @@ impl AppState {
         R: Send + 'static,
     {
         let db = self.db.clone();
-        tokio::task::spawn_blocking(move || f(&db))
-            .await
-            .expect("Database blocking task panicked")
+        // Use std::thread instead of tokio::task::spawn_blocking to avoid "runtime within runtime" panic
+        // because the synchronous postgres crate uses its own internal runtime which conflicts with
+        // tokio's blocking thread pool context.
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        
+        std::thread::spawn(move || {
+            let result = f(&db);
+            let _ = tx.send(result);
+        });
+
+        rx.await.expect("Database thread panicked or was dropped")
     }
 }
 
