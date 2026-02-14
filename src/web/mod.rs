@@ -3,12 +3,11 @@ mod errors;
 mod forms;
 mod routes;
 
-use axum::error_handling::HandleErrorLayer;
 use axum::http::{header, StatusCode, Uri};
 use axum::response::Response;
+use axum::routing::get_service;
 use axum::{middleware, Router};
 use log::{error, info};
-use tower::{BoxError, ServiceBuilder};
 use tower_http::services::ServeDir;
 
 use crate::web::errors::status_response;
@@ -74,24 +73,12 @@ pub async fn start_server(state: AppState) {
     let pixel_routes = routes::pixel::routes();
     let auth_routes = routes::auth_routes();
 
-    let static_service =
-        ServeDir::new(static_dir).handle_error(|error: std::io::Error| async move {
-            error!("[web] failed to serve static asset: {}", error);
-            let message = format!("Unable to load static asset: {}", error);
-            status_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Static asset failure",
-                &message,
-                "/",
-                "Dashboard",
-            )
-        });
+    let static_service = get_service(ServeDir::new(static_dir));
 
     let app = Router::new()
         .merge(pixel_routes)
         .merge(auth_routes)
         .nest_service("/static", static_service)
-        .layer(ServiceBuilder::new().layer(HandleErrorLayer::new(handle_service_error)))
         .layer(middleware::from_fn(disable_cache_middleware))
         .fallback(handle_not_found)
         .with_state(state);
@@ -102,18 +89,6 @@ pub async fn start_server(state: AppState) {
         .unwrap_or_else(|e| panic!("Failed to bind address {}: {}", addr, e));
     info!("[web] admin dashboard listening on {}", addr);
     axum::serve(listener, app).await.expect("Server error");
-}
-
-async fn handle_service_error(error: BoxError) -> Response {
-    error!("[web] service layer error: {}", error);
-    let message = format!("An unexpected error occurred: {}", error);
-    status_response(
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "Internal server error",
-        &message,
-        "/",
-        "Dashboard",
-    )
 }
 
 async fn handle_not_found(uri: Uri) -> Response {

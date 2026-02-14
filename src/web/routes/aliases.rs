@@ -72,6 +72,8 @@ struct EditTemplate<'a> {
 struct ErrorTemplate<'a> {
     nav_active: &'a str,
     flash: Option<&'a str>,
+    status_code: u16,
+    status_text: &'a str,
     title: &'a str,
     message: &'a str,
     back_url: &'a str,
@@ -191,6 +193,8 @@ pub async fn create(
             let tmpl = ErrorTemplate {
                 nav_active: "Aliases",
                 flash: None,
+                status_code: 500,
+                status_text: "Error",
                 title: "Error",
                 message: &e,
                 back_url: "/aliases/new",

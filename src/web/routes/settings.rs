@@ -43,6 +43,8 @@ struct Setup2faTemplate<'a> {
 struct ErrorTemplate<'a> {
     nav_active: &'a str,
     flash: Option<&'a str>,
+    status_code: u16,
+    status_text: &'a str,
     title: &'a str,
     message: &'a str,
     back_url: &'a str,
@@ -164,6 +166,8 @@ pub async fn update_pixel(
         let tmpl = ErrorTemplate {
             nav_active: "Settings",
             flash: None,
+            status_code: 400,
+            status_text: "Bad Request",
             title: "Error",
             message: "Host may not be empty.",
             back_url: "/settings",
@@ -183,6 +187,8 @@ pub async fn update_pixel(
     let tmpl = ErrorTemplate {
         nav_active: "Settings",
         flash: None,
+        status_code: 200,
+        status_text: "OK",
         title: "Success",
         message: "Pixel tracker base URL updated.",
         back_url: "/settings",
@@ -208,6 +214,8 @@ pub async fn change_password(
         let tmpl = ErrorTemplate {
             nav_active: "Settings",
             flash: None,
+            status_code: 400,
+            status_text: "Bad Request",
             title: "Error",
             message: "Current password is incorrect.",
             back_url: "/settings",
@@ -223,6 +231,8 @@ pub async fn change_password(
         let tmpl = ErrorTemplate {
             nav_active: "Settings",
             flash: None,
+            status_code: 400,
+            status_text: "Bad Request",
             title: "Error",
             message: "New passwords do not match.",
             back_url: "/settings",
@@ -239,6 +249,8 @@ pub async fn change_password(
     let tmpl = ErrorTemplate {
         nav_active: "Settings",
         flash: None,
+        status_code: 200,
+        status_text: "OK",
         title: "Success",
         message: "Password changed successfully.",
         back_url: "/settings",
@@ -280,6 +292,8 @@ pub async fn enable_2fa(
         let tmpl = ErrorTemplate {
             nav_active: "Settings",
             flash: None,
+            status_code: 400,
+            status_text: "Bad Request",
             title: "Error",
             message: "Invalid verification code. Please try again.",
             back_url: "/settings/2fa",
@@ -297,6 +311,8 @@ pub async fn enable_2fa(
     let tmpl = ErrorTemplate {
         nav_active: "Settings",
         flash: None,
+        status_code: 200,
+        status_text: "OK",
         title: "Success",
         message: "Two-factor authentication has been enabled.",
         back_url: "/settings",
@@ -318,6 +334,8 @@ pub async fn disable_2fa(auth: AuthAdmin, State(state): State<AppState>) -> Resp
     let tmpl = ErrorTemplate {
         nav_active: "Settings",
         flash: None,
+        status_code: 200,
+        status_text: "OK",
         title: "Success",
         message: "Two-factor authentication has been disabled.",
         back_url: "/settings",
@@ -340,6 +358,8 @@ pub async fn regenerate_tls(
         error!("[web] hostname is empty or contains only invalid characters: {}", hostname);
         let tmpl = ErrorTemplate {
             nav_active: "Settings", flash: None,
+            status_code: 400,
+            status_text: "Bad Request",
             title: "Error", message: "Invalid hostname for certificate generation.",
             back_url: "/settings", back_label: "Back to Settings",
         };
@@ -366,6 +386,8 @@ pub async fn regenerate_tls(
             crate::config::reload_services();
             let tmpl = ErrorTemplate {
                 nav_active: "Settings", flash: None,
+                status_code: 200,
+                status_text: "OK",
                 title: "Success", message: "TLS certificate regenerated. Services have been reloaded.",
                 back_url: "/settings", back_label: "Back to Settings",
             };
@@ -376,6 +398,8 @@ pub async fn regenerate_tls(
             error!("[web] openssl failed to regenerate TLS certificate: {}", stderr);
             let tmpl = ErrorTemplate {
                 nav_active: "Settings", flash: None,
+                status_code: 500,
+                status_text: "Error",
                 title: "Error", message: "Failed to regenerate TLS certificate.",
                 back_url: "/settings", back_label: "Back to Settings",
             };
@@ -385,6 +409,8 @@ pub async fn regenerate_tls(
             error!("[web] failed to run openssl for TLS regeneration: {}", e);
             let tmpl = ErrorTemplate {
                 nav_active: "Settings", flash: None,
+                status_code: 500,
+                status_text: "Error",
                 title: "Error", message: "Failed to regenerate TLS certificate.",
                 back_url: "/settings", back_label: "Back to Settings",
             };
@@ -411,6 +437,8 @@ pub async fn download_cert(auth: AuthAdmin) -> Response {
             error!("[web] failed to read certificate file: {}", e);
             let tmpl = ErrorTemplate {
                 nav_active: "Settings", flash: None,
+                status_code: 404,
+                status_text: "Not Found",
                 title: "Error", message: "Certificate file not found.",
                 back_url: "/settings", back_label: "Back to Settings",
             };
@@ -437,6 +465,8 @@ pub async fn download_key(auth: AuthAdmin) -> Response {
             error!("[web] failed to read private key file: {}", e);
             let tmpl = ErrorTemplate {
                 nav_active: "Settings", flash: None,
+                status_code: 404,
+                status_text: "Not Found",
                 title: "Error", message: "Private key file not found.",
                 back_url: "/settings", back_label: "Back to Settings",
             };

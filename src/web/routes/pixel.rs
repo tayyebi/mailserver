@@ -49,8 +49,15 @@ async fn pixel_handler(
             .to_string();
 
         let message_id = params.id.clone();
+
+        let db_message_id = message_id.clone();
+        let db_client_ip = client_ip.clone();
+        let db_user_agent = user_agent.clone();
+
         state
-            .blocking_db(move |db| db.record_pixel_open(&message_id, &client_ip, &user_agent))
+            .blocking_db(move |db| {
+                db.record_pixel_open(&db_message_id, &db_client_ip, &db_user_agent)
+            })
             .await;
         info!(
             "[web] pixel open recorded: message_id={}, client_ip={}, user_agent={}",

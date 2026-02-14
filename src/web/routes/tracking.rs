@@ -45,6 +45,8 @@ struct DetailTemplate<'a> {
 struct ErrorTemplate<'a> {
     nav_active: &'a str,
     flash: Option<&'a str>,
+    status_code: u16,
+    status_text: &'a str,
     title: &'a str,
     message: &'a str,
     back_url: &'a str,
@@ -100,6 +102,8 @@ pub async fn detail(
             let tmpl = ErrorTemplate {
                 nav_active: "Tracking",
                 flash: None,
+                status_code: 404,
+                status_text: "Not Found",
                 title: "Not Found",
                 message: "Message not found.",
                 back_url: "/tracking",

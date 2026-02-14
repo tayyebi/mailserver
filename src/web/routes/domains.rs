@@ -63,6 +63,8 @@ struct DnsTemplate<'a> {
 struct ErrorTemplate<'a> {
     nav_active: &'a str,
     flash: Option<&'a str>,
+    status_code: u16,
+    status_text: &'a str,
     title: &'a str,
     message: &'a str,
     back_url: &'a str,
@@ -133,6 +135,8 @@ pub async fn create(
             let tmpl = ErrorTemplate {
                 nav_active: "Domains",
                 flash: None,
+                status_code: 500,
+                status_text: "Error",
                 title: "Error",
                 message: &e,
                 back_url: "/domains/new",
@@ -231,6 +235,8 @@ pub async fn generate_dkim(
             let tmpl = ErrorTemplate {
                 nav_active: "Domains",
                 flash: None,
+                status_code: 500,
+                status_text: "Error",
                 title: "Error",
                 message: "Failed to generate DKIM private key.",
                 back_url: "/domains",
@@ -246,6 +252,8 @@ pub async fn generate_dkim(
             let tmpl = ErrorTemplate {
                 nav_active: "Domains",
                 flash: None,
+                status_code: 500,
+                status_text: "Error",
                 title: "Error",
                 message: "Failed to generate DKIM private key.",
                 back_url: "/domains",
@@ -286,6 +294,8 @@ pub async fn generate_dkim(
             let tmpl = ErrorTemplate {
                 nav_active: "Domains",
                 flash: None,
+                status_code: 500,
+                status_text: "Error",
                 title: "Error",
                 message: "Failed to extract DKIM public key.",
                 back_url: "/domains",
@@ -301,6 +311,8 @@ pub async fn generate_dkim(
             let tmpl = ErrorTemplate {
                 nav_active: "Domains",
                 flash: None,
+                status_code: 500,
+                status_text: "Error",
                 title: "Error",
                 message: "Failed to extract DKIM public key.",
                 back_url: "/domains",
