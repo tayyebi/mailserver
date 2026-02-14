@@ -86,6 +86,15 @@ submission inet  n       -       n       -       -       smtpd
   -o smtpd_sasl_type=dovecot
   -o smtpd_sasl_path=inet:localhost:12345
   -o smtpd_recipient_restrictions=permit_sasl_authenticated,reject
+smtps     inet  n       -       n       -       -       smtpd
+  -o syslog_name=postfix/smtps
+  -o smtpd_tls_wrappermode=yes
+  -o smtpd_sasl_auth_enable=yes
+  -o smtpd_sasl_type=dovecot
+  -o smtpd_sasl_path=inet:localhost:12345
+  -o smtpd_recipient_restrictions=permit_sasl_authenticated,reject
+2525      inet  n       -       n       -       -       smtpd
+  -o syslog_name=postfix/smtp-alt
 
 pickup    unix  n       -       n       60      1       pickup
 cleanup   unix  n       -       n       -       0       cleanup
@@ -145,6 +154,26 @@ service auth {
 service lmtp {
   inet_listener lmtp {
     port = 24
+  }
+}
+
+service imap-login {
+  inet_listener imap {
+    port = 143
+  }
+  inet_listener imaps {
+    port = 993
+    ssl = yes
+  }
+}
+
+service pop3-login {
+  inet_listener pop3 {
+    port = 110
+  }
+  inet_listener pop3s {
+    port = 995
+    ssl = yes
   }
 }
 

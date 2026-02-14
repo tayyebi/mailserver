@@ -31,6 +31,6 @@ RUN chmod +x /entrypoint.sh \
     && mkdir -p /data/ssl /data/dkim /data/mail /data/db /var/spool/postfix \
     && addgroup -S vmail 2>/dev/null; adduser -S -D -H -G vmail -s /sbin/nologin vmail 2>/dev/null; \
     postconf compatibility_level=3.6
-EXPOSE 25 587 465 143 993 110 995 8080
+EXPOSE 25 587 465 2525 143 993 110 995 8080
 VOLUME ["/data"]
 ENTRYPOINT ["/entrypoint.sh"]
