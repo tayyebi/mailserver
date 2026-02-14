@@ -1,0 +1,23 @@
+{% extends "layout.html" %}
+{% block title %}Edit Account{% endblock %}
+{% block content %}
+<h1>Edit Account</h1>
+<form method="post" action="/accounts/{{ account.id }}">
+<label>Display Name<br><input type="text" name="name" value="{{ account.name }}"></label>
+<label>New Password (leave blank to keep)<br><input type="password" name="password"></label>
+<label><input type="checkbox" name="active" value="on"{% if account.active %} checked{% endif %}> Active</label>
+<label>Quota (MB)<br><input type="number" name="quota" value="{{ account.quota }}"></label>
+<button type="submit">Save</button>
+</form>
+{% if !send_as_aliases.is_empty() %}
+<aside>
+    <h2>Send-as aliases</h2>
+    <p>This account can send mail as the following aliases (same domain):</p>
+    <ul>
+    {% for alias in send_as_aliases %}
+        <li>{{ alias.source }} → {{ alias.destination }}</li>
+    {% endfor %}
+    </ul>
+</aside>
+{% endif %}
+{% endblock %}

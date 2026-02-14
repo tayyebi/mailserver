@@ -1,0 +1,103 @@
+{% extends "layout.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<section>
+    <hgroup>
+        <small>Deliverability overview</small>
+        <h1>Mailserver Control Panel</h1>
+    </hgroup>
+    <p>Track DNS, DKIM, and alias coverage for {{ hostname }}. Catch issues before they page you.</p>
+    <nav>
+        <a href="/domains"><strong>Manage domains</strong></a>
+        <a href="/aliases">Tune aliases</a>
+    </nav>
+    <dl>
+        <dt>Hostname</dt><dd>{{ hostname }}</dd>
+        <dt>SMTP</dt><dd>25 / 587 / 465</dd>
+        <dt>IMAP</dt><dd>143 / 993</dd>
+        <dt>POP3</dt><dd>110 / 995</dd>
+    </dl>
+</section>
+
+<section>
+    <hgroup>
+        <small>Platform health</small>
+        <h2>Live counters</h2>
+    </hgroup>
+    <details>
+        <summary>How do these refresh?</summary>
+        <p>Counts are queried live from SQLite each time you load the console.</p>
+    </details>
+    <div>
+        <article><data value="{{ stats.domain_count }}">{{ stats.domain_count }}</data><strong>Domains</strong><small>Managed zones</small></article>
+        <article><data value="{{ stats.account_count }}">{{ stats.account_count }}</data><strong>Accounts</strong><small>Provisioned mailboxes</small></article>
+        <article><data value="{{ stats.alias_count }}">{{ stats.alias_count }}</data><strong>Aliases</strong><small>Routing rules</small></article>
+        <article><data value="{{ stats.tracked_count }}">{{ stats.tracked_count }}</data><strong>Tracked Messages</strong><small>Pixels injected</small></article>
+        <article><data value="{{ stats.open_count }}">{{ stats.open_count }}</data><strong>Pixel Opens</strong><small>Engagement events</small></article>
+    </div>
+</section>
+
+<section>
+    <hgroup>
+        <small>DNS &amp; DKIM posture</small>
+        <h2>Per-domain status</h2>
+    </hgroup>
+    <details>
+        <summary>Why this matters</summary>
+        <p>Missing DKIM keys or catch-all routing gaps often surface as delivery failures. Review each domain regularly.</p>
+    </details>
+    <div>
+    {% if domain_cards.is_empty() %}
+        <p><em>No domains yet. Add your first domain to unlock DNS guidance.</em></p>
+    {% else %}
+        {% for card in domain_cards %}
+        <article>
+            <header>
+                <h3>{{ card.domain }}</h3>
+                <mark>{{ card.active_label }}</mark>
+            </header>
+            <dl>
+                <dt>DKIM</dt><dd>{{ card.dkim_label }}</dd>
+                <dt>Catch-all</dt><dd>{{ card.catch_all_label }}</dd>
+                <dt>Footer</dt><dd>{{ card.footer_label }}</dd>
+            </dl>
+            <nav>
+                <a href="/domains/{{ card.id }}/dns"><small>DNS runbook</small></a>
+                <a href="/aliases"><small>Alias registry</small></a>
+            </nav>
+        </article>
+        {% endfor %}
+    {% endif %}
+    </div>
+</section>
+
+<section>
+    <hgroup>
+        <small>Alias coverage</small>
+        <h2>Catch-all readiness</h2>
+    </hgroup>
+    <details>
+        <summary>How catch-all works</summary>
+        <p>Define an alias like <code>*@example.com</code> to collect any recipient the directory does not know about.</p>
+    </details>
+    <table>
+        <thead>
+            <tr><th>Domain</th><th>Status</th><th>Route target</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+        {% if catch_rows.is_empty() %}
+            <tr><td colspan="4">Add a domain to start tracking catch-all coverage.</td></tr>
+        {% else %}
+            {% for row in catch_rows %}
+            <tr>
+                <td>{{ row.domain }}</td>
+                <td><mark>{{ row.status }}</mark></td>
+                <td>{{ row.destination }}</td>
+                <td><a href="/aliases">Create / edit</a></td>
+            </tr>
+            {% endfor %}
+        {% endif %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

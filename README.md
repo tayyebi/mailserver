@@ -2,6 +2,8 @@
 
 Single-container mail server with built-in admin dashboard.
 
+> LESS MOVING PARTS, LESS FAILURE.
+
 Alpine + Postfix + Dovecot + OpenDKIM + Rust.
 
 ![Dashboard Screenshot](https://github.com/user-attachments/assets/da6ee91d-dfc2-4622-98fd-26622215a500)

@@ -1,0 +1,27 @@
+{% extends "layout.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<h2>Admin Account</h2>
+<dl>
+<dt>Username</dt><dd>{{ admin.username }}</dd>
+<dt>2FA Status</dt><dd>{% if admin.totp_enabled %}Enabled{% else %}Disabled{% endif %}</dd>
+</dl>
+
+<h2>Change Password</h2>
+<form method="post" action="/settings/password">
+<label>Current Password<br><input type="password" name="current_password" required></label>
+<label>New Password<br><input type="password" name="new_password" required></label>
+<label>Confirm Password<br><input type="password" name="confirm_password" required></label>
+<button type="submit">Change Password</button>
+</form>
+
+<h2>Two-Factor Authentication</h2>
+{% if admin.totp_enabled %}
+<form method="post" action="/settings/2fa/disable">
+<button type="submit">Disable 2FA</button>
+</form>
+{% else %}
+<p><a href="/settings/2fa">Enable 2FA</a></p>
+{% endif %}
+{% endblock %}

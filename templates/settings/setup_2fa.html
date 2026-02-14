@@ -1,0 +1,15 @@
+{% extends "layout.html" %}
+{% block title %}Setup 2FA{% endblock %}
+{% block content %}
+<h1>Setup Two-Factor Authentication</h1>
+<p>Add this secret to your authenticator app:</p>
+<p><code>{{ secret }}</code></p>
+<p>Or use this URI:</p>
+<p><code>{{ uri }}</code></p>
+<form method="post" action="/settings/2fa/enable">
+<input type="hidden" name="secret" value="{{ secret }}">
+<label>Verification Code<br><input type="text" name="code" pattern="[0-9]{6}" maxlength="6" required></label>
+<button type="submit">Verify &amp; Enable</button>
+</form>
+<p><a href="/settings">Cancel</a></p>
+{% endblock %}

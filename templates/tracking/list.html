@@ -1,0 +1,20 @@
+{% extends "layout.html" %}
+{% block title %}Tracking{% endblock %}
+{% block content %}
+<h1>Tracking</h1>
+<table>
+<thead><tr><th>Message ID</th><th>Sender</th><th>Recipient</th><th>Subject</th><th>Date</th><th>Opens</th></tr></thead>
+<tbody>
+{% for m in messages %}
+<tr>
+    <td><a href="/tracking/{{ m.message_id }}">{{ m.message_id_short }}</a></td>
+    <td>{{ m.sender }}</td>
+    <td>{{ m.recipient }}</td>
+    <td>{{ m.subject }}</td>
+    <td>{{ m.created_at }}</td>
+    <td>{{ m.open_count }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+{% endblock %}

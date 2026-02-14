@@ -1,0 +1,48 @@
+{% extends "layout.html" %}
+{% block title %}Aliases{% endblock %}
+{% block content %}
+<section>
+    <hgroup>
+        <small>Routing intelligence</small>
+        <h1>Aliases</h1>
+    </hgroup>
+    <p>Use direct aliases for known senders and catch-alls for the rest. Keep tracking toggled where compliance allows.</p>
+    <a href="/aliases/new"><strong>Add alias</strong></a>
+</section>
+<aside>
+    <h2>Catch-all coverage</h2>
+    <p>{{ coverage_copy }}</p>
+    <progress value="{{ coverage_pct }}" max="100"></progress>
+    <ul>
+        <li>Create <code>*@domain.com</code> to scoop stray recipients.</li>
+        <li>Use tracking to learn which aliases are still receiving mail.</li>
+        <li>Disable catch-all aliases temporarily instead of deleting them.</li>
+    </ul>
+</aside>
+<table>
+    <thead>
+        <tr><th>Order</th><th>Domain</th><th>Source</th><th>Destination</th><th>Type</th><th>Tracking</th><th>Status</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+    {% if alias_rows.is_empty() %}
+        <tr><td colspan="8">No aliases yet — create one to start routing mail.</td></tr>
+    {% else %}
+        {% for a in alias_rows %}
+        <tr>
+            <td>{{ a.sort_order }}</td>
+            <td>{{ a.domain_name }}</td>
+            <td>{{ a.source }}</td>
+            <td>{{ a.destination }}</td>
+            <td>{{ a.type_label }}</td>
+            <td>{{ a.tracking_label }}</td>
+            <td>{{ a.active_label }}</td>
+            <td>
+                <a href="/aliases/{{ a.id }}/edit">Edit</a>
+                <form method="post" action="/aliases/{{ a.id }}/delete" style="display:inline" onsubmit="return confirm('Delete this alias?')"><button type="submit">Delete</button></form>
+            </td>
+        </tr>
+        {% endfor %}
+    {% endif %}
+    </tbody>
+</table>
+{% endblock %}

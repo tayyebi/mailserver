@@ -1,0 +1,22 @@
+{% extends "layout.html" %}
+{% block title %}Message Details{% endblock %}
+{% block content %}
+<h1>Message Details</h1>
+<dl>
+<dt>Message ID</dt><dd>{{ message.message_id }}</dd>
+<dt>Sender</dt><dd>{{ message.sender }}</dd>
+<dt>Recipient</dt><dd>{{ message.recipient }}</dd>
+<dt>Subject</dt><dd>{{ message.subject }}</dd>
+<dt>Date</dt><dd>{{ message.created_at }}</dd>
+</dl>
+<h2>Opens ({{ opens.len() }})</h2>
+<table>
+<thead><tr><th>IP Address</th><th>User Agent</th><th>Time</th></tr></thead>
+<tbody>
+{% for o in opens %}
+<tr><td>{{ o.client_ip }}</td><td>{{ o.user_agent }}</td><td>{{ o.opened_at }}</td></tr>
+{% endfor %}
+</tbody>
+</table>
+<p><a href="/tracking">Back to Tracking</a></p>
+{% endblock %}

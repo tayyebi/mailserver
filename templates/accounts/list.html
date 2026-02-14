@@ -1,0 +1,24 @@
+{% extends "layout.html" %}
+{% block title %}Accounts{% endblock %}
+{% block content %}
+<h1>Accounts</h1>
+<p><a href="/accounts/new">Add Account</a></p>
+<table>
+<thead><tr><th>Username</th><th>Domain</th><th>Name</th><th>Active</th><th>Quota (MB)</th><th>Actions</th></tr></thead>
+<tbody>
+{% for a in accounts %}
+<tr>
+    <td>{{ a.username }}</td>
+    <td>{{ a.domain_name.as_deref().unwrap_or("-") }}</td>
+    <td>{{ a.name }}</td>
+    <td>{% if a.active %}Yes{% else %}No{% endif %}</td>
+    <td>{{ a.quota }}</td>
+    <td>
+        <a href="/accounts/{{ a.id }}/edit">Edit</a>
+        <form method="post" action="/accounts/{{ a.id }}/delete" style="display:inline" onsubmit="return confirm('Delete this account?')"><button type="submit">Delete</button></form>
+    </td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+{% endblock %}

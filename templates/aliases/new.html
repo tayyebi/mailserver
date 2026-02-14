@@ -1,0 +1,21 @@
+{% extends "layout.html" %}
+{% block title %}Add Alias{% endblock %}
+{% block content %}
+<h1>Add Alias</h1>
+<aside>
+    <h2>When to use catch-all</h2>
+    <p>Configure <code>*@domain.com</code> to collect unknown addresses, then forward them to a monitored mailbox.</p>
+    <p><small>Tip: leave tracking enabled on new catch-alls for the first week.</small></p>
+</aside>
+<form method="post" action="/aliases">
+<label>Domain<br><select name="domain_id" required>{% for d in domains %}<option value="{{ d.id }}">{{ d.domain }}</option>{% endfor %}</select></label>
+<label>Source (full address)<br><input type="text" name="source" placeholder="*@example.com" required></label>
+<small>Use an asterisk to build a catch-all; otherwise provide the exact mailbox.</small>
+<label>Destination (full address)<br><input type="text" name="destination" placeholder="ops@example.com" required></label>
+<small>This mailbox receives copies of anything that matches the alias.</small>
+<label><input type="checkbox" name="tracking_enabled" value="on" checked> Enable Tracking</label>
+<label>Sort Order<br><input type="number" name="sort_order" value="0"></label>
+<small>Lower values are evaluated first. Aliases run in ascending order.</small>
+<button type="submit">Create</button>
+</form>
+{% endblock %}

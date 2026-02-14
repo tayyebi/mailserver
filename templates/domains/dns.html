@@ -1,0 +1,60 @@
+{% extends "layout.html" %}
+{% block title %}DNS Records{% endblock %}
+{% block content %}
+<section>
+    <hgroup>
+        <small>DNS runbook</small>
+        <h1>{{ domain_name }}</h1>
+    </hgroup>
+    <p>Apply these records to Route 53 (or your DNS provider) to keep the domain aligned.</p>
+    <form method="post" action="/domains/{{ domain_id }}/dkim">
+        <button type="submit">Generate DKIM key</button>
+    </form>
+</section>
+<aside>
+    <h2>Deployment checklist</h2>
+    <ol>
+        <li>Update MX and SPF first to establish routing.</li>
+        <li>Publish DKIM selector <code>{{ dkim_selector }}</code> and wait for propagation.</li>
+        <li>Add DMARC with <code>p=none</code> until you trust reports.</li>
+        <li>Verify reverse DNS points back to <code>{{ hostname }}</code>.</li>
+        <li>Set up autodiscover records for mail client auto-configuration.</li>
+    </ol>
+    <small>Catch-all aliases rely on MX reaching this host. Keep DNS fresh.</small>
+</aside>
+<table>
+    <thead><tr><th>Type</th><th>Name</th><th>Value</th><th>Purpose</th></tr></thead>
+    <tbody>
+        <tr><td>MX</td><td>@</td><td><code>10 {{ hostname }}.</code></td><td>Primary mail exchanger</td></tr>
+        <tr><td>TXT</td><td>@</td><td><code>v=spf1 a mx ~all</code></td><td>Baseline SPF policy</td></tr>
+        {% if !dkim_record.is_empty() %}
+        <tr><td>TXT</td><td><code>{{ dkim_selector }}._domainkey</code></td><td><code>v=DKIM1; k=rsa; p={{ dkim_record }}</code></td><td>DKIM signing key</td></tr>
+        {% endif %}
+        <tr><td>TXT</td><td>_dmarc</td><td><code>v=DMARC1; p=none; rua=mailto:postmaster@{{ domain_name }}</code></td><td>DMARC monitoring</td></tr>
+        <tr><td>SRV</td><td>_autodiscover._tcp</td><td><code>0 0 443 {{ hostname }}.</code></td><td>Outlook autodiscover</td></tr>
+        <tr><td>CNAME</td><td>autoconfig</td><td><code>{{ hostname }}.</code></td><td>Thunderbird autoconfig</td></tr>
+        <tr><td>CNAME</td><td>autodiscover</td><td><code>{{ hostname }}.</code></td><td>Outlook autodiscover</td></tr>
+        <tr><td>SRV</td><td>_imaps._tcp</td><td><code>0 1 993 {{ hostname }}.</code></td><td>IMAP service discovery</td></tr>
+        <tr><td>SRV</td><td>_submission._tcp</td><td><code>0 1 587 {{ hostname }}.</code></td><td>SMTP submission discovery</td></tr>
+    </tbody>
+</table>
+<section>
+    <hgroup>
+        <small>DKIM payload</small>
+        <h2>Selector {{ dkim_selector }}</h2>
+    </hgroup>
+    {% if !dkim_record.is_empty() %}
+    <figure>
+        <figcaption><small>selector: {{ dkim_selector }}</small></figcaption>
+        <pre>v=DKIM1; k=rsa; p={{ dkim_record }}</pre>
+    </figure>
+    {% else %}
+    <p><em>Generate a DKIM key to unlock signing coverage.</em></p>
+    {% endif %}
+</section>
+<aside>
+    <h2>Reverse DNS</h2>
+    <p>Ask your provider to point the PTR record for your public IP back to <code>{{ hostname }}</code>.</p>
+    <p><a href="/domains">Back to Domains</a></p>
+</aside>
+{% endblock %}

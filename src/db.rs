@@ -54,6 +54,7 @@ pub struct Alias {
     pub destination: String,
     pub active: bool,
     pub tracking_enabled: bool,
+    pub sort_order: i64,
     pub domain_name: Option<String>,
 }
 
@@ -107,12 +108,6 @@ impl Database {
             );
 
             CREATE TABLE IF NOT EXISTS domains (
-
-        // Backfill footer column for pre-existing databases (ignore error if it already exists)
-        let _ = conn.execute(
-            "ALTER TABLE domains ADD COLUMN footer_html TEXT DEFAULT ''",
-            params![],
-        );
                 id INTEGER PRIMARY KEY,
                 domain TEXT UNIQUE NOT NULL,
                 active INTEGER DEFAULT 1,
@@ -144,6 +139,7 @@ impl Database {
                 destination TEXT NOT NULL,
                 active INTEGER DEFAULT 1,
                 tracking_enabled INTEGER DEFAULT 0,
+                sort_order INTEGER DEFAULT 0,
                 created_at TEXT,
                 updated_at TEXT
             );
@@ -167,6 +163,10 @@ impl Database {
             );",
         )
         .expect("Failed to create tables");
+
+        // Backfill columns for pre-existing databases (ignore errors if they already exist)
+        let _ = conn.execute("ALTER TABLE domains ADD COLUMN footer_html TEXT DEFAULT ''", params![]);
+        let _ = conn.execute("ALTER TABLE aliases ADD COLUMN sort_order INTEGER DEFAULT 0", params![]);
 
         info!("[db] database opened and schema initialized successfully");
         Database {
@@ -473,7 +473,7 @@ impl Database {
         debug!("[db] listing all aliases");
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
-            .prepare("SELECT id, domain_id, source, destination, active, tracking_enabled FROM aliases ORDER BY source")
+            .prepare("SELECT id, domain_id, source, destination, active, tracking_enabled, sort_order FROM aliases ORDER BY sort_order ASC, id ASC")
             .unwrap();
         stmt.query_map([], |row| {
             Ok(Alias {
@@ -483,6 +483,7 @@ impl Database {
                 destination: row.get(3)?,
                 active: row.get::<_, i64>(4)? != 0,
                 tracking_enabled: row.get::<_, i64>(5)? != 0,
+                sort_order: row.get(6)?,
                 domain_name: None,
             })
         })
@@ -495,7 +496,7 @@ impl Database {
         debug!("[db] getting alias id={}", id);
         let conn = self.conn.lock().unwrap();
         conn.query_row(
-            "SELECT id, domain_id, source, destination, active, tracking_enabled FROM aliases WHERE id = ?1",
+            "SELECT id, domain_id, source, destination, active, tracking_enabled, sort_order FROM aliases WHERE id = ?1",
             params![id],
             |row| {
                 Ok(Alias {
@@ -505,6 +506,7 @@ impl Database {
                     destination: row.get(3)?,
                     active: row.get::<_, i64>(4)? != 0,
                     tracking_enabled: row.get::<_, i64>(5)? != 0,
+                    sort_order: row.get(6)?,
                     domain_name: None,
                 })
             },
@@ -518,13 +520,14 @@ impl Database {
         source: &str,
         destination: &str,
         tracking: bool,
+        sort_order: i64,
     ) -> Result<i64, String> {
-        info!("[db] creating alias source={}, destination={}, tracking={}", source, destination, tracking);
+        info!("[db] creating alias source={}, destination={}, tracking={}, sort_order={}", source, destination, tracking, sort_order);
         let conn = self.conn.lock().unwrap();
         let ts = now();
         conn.execute(
-            "INSERT INTO aliases (domain_id, source, destination, tracking_enabled, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![domain_id, source, destination, tracking as i64, ts, ts],
+            "INSERT INTO aliases (domain_id, source, destination, tracking_enabled, sort_order, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![domain_id, source, destination, tracking as i64, sort_order, ts, ts],
         )
         .map_err(|e| {
             error!("[db] failed to create alias {} -> {}: {}", source, destination, e);
@@ -535,12 +538,12 @@ impl Database {
         Ok(id)
     }
 
-    pub fn update_alias(&self, id: i64, source: &str, destination: &str, active: bool, tracking: bool) {
-        info!("[db] updating alias id={}, source={}, destination={}, active={}, tracking={}", id, source, destination, active, tracking);
+    pub fn update_alias(&self, id: i64, source: &str, destination: &str, active: bool, tracking: bool, sort_order: i64) {
+        info!("[db] updating alias id={}, source={}, destination={}, active={}, tracking={}, sort_order={}", id, source, destination, active, tracking, sort_order);
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "UPDATE aliases SET source = ?1, destination = ?2, active = ?3, tracking_enabled = ?4, updated_at = ?5 WHERE id = ?6",
-            params![source, destination, active as i64, tracking as i64, now(), id],
+            "UPDATE aliases SET source = ?1, destination = ?2, active = ?3, tracking_enabled = ?4, sort_order = ?5, updated_at = ?6 WHERE id = ?7",
+            params![source, destination, active as i64, tracking as i64, sort_order, now(), id],
         )
         .ok();
     }
@@ -557,8 +560,8 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
-                "SELECT a.id, a.domain_id, a.source, a.destination, a.active, a.tracking_enabled, d.domain \
-                 FROM aliases a LEFT JOIN domains d ON a.domain_id = d.id ORDER BY a.source",
+                "SELECT a.id, a.domain_id, a.source, a.destination, a.active, a.tracking_enabled, a.sort_order, d.domain \
+                 FROM aliases a LEFT JOIN domains d ON a.domain_id = d.id ORDER BY a.sort_order ASC, a.id ASC",
             )
             .unwrap();
         stmt.query_map([], |row| {
@@ -569,7 +572,8 @@ impl Database {
                 destination: row.get(3)?,
                 active: row.get::<_, i64>(4)? != 0,
                 tracking_enabled: row.get::<_, i64>(5)? != 0,
-                domain_name: row.get(6)?,
+                sort_order: row.get(6)?,
+                domain_name: row.get(7)?,
             })
         })
         .unwrap()
@@ -589,6 +593,27 @@ impl Database {
             > 0;
         debug!("[db] tracking enabled for sender={}: {}", sender, enabled);
         enabled
+    }
+
+    /// Returns a list of (alias_source, account_email) for building sender_login_maps.
+    /// An account owns an alias if they share the same domain_id.
+    pub fn get_sender_login_map(&self) -> Vec<(String, String)> {
+        debug!("[db] building sender login map");
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT al.source, (ac.username || '@' || d.domain) AS account_email \
+             FROM aliases al \
+             JOIN domains d ON al.domain_id = d.id \
+             JOIN accounts ac ON ac.domain_id = al.domain_id \
+             WHERE al.active = 1 AND ac.active = 1 \
+             ORDER BY al.source, account_email"
+        ).unwrap();
+        stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .unwrap()
+        .filter_map(|r| r.ok())
+        .collect()
     }
 
     // ── Tracking methods ──

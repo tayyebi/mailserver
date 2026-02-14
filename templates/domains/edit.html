@@ -1,0 +1,12 @@
+{% extends "layout.html" %}
+{% block title %}Edit Domain{% endblock %}
+{% block content %}
+<h1>Edit Domain</h1>
+<form method="post" action="/domains/{{ domain.id }}">
+<label>Domain Name<br><input type="text" name="domain" value="{{ domain.domain }}" required></label>
+<label><input type="checkbox" name="active" value="on"{% if domain.active %} checked{% endif %}> Active</label>
+<label>Footer HTML (optional)<br><textarea name="footer_html" rows="6">{{ domain.footer_html.as_deref().unwrap_or("") }}</textarea></label>
+<small>Leave blank to disable footer injection for this domain.</small>
+<button type="submit">Save</button>
+</form>
+{% endblock %}

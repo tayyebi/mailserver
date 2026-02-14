@@ -1,0 +1,21 @@
+{% extends "layout.html" %}
+{% block title %}Edit Alias{% endblock %}
+{% block content %}
+<h1>Edit Alias</h1>
+<aside>
+    <h2>Routing notes</h2>
+    <p>Toggle <strong>Active</strong> instead of deleting when you want to pause a catch-all.</p>
+    <p><small>Tracking helps confirm whether a legacy alias is still in use.</small></p>
+</aside>
+<form method="post" action="/aliases/{{ alias.id }}">
+<label>Source<br><input type="text" name="source" value="{{ alias.source }}" required></label>
+<small>Keep <code>*@domain</code> syntax for catch-alls.</small>
+<label>Destination<br><input type="text" name="destination" value="{{ alias.destination }}" required></label>
+<small>Use a shared mailbox or list for observability.</small>
+<label><input type="checkbox" name="active" value="on"{% if alias.active %} checked{% endif %}> Active</label>
+<label><input type="checkbox" name="tracking_enabled" value="on"{% if alias.tracking_enabled %} checked{% endif %}> Enable Tracking</label>
+<label>Sort Order<br><input type="number" name="sort_order" value="{{ alias.sort_order }}"></label>
+<small>Lower values are evaluated first. Aliases run in ascending order.</small>
+<button type="submit">Save</button>
+</form>
+{% endblock %}
