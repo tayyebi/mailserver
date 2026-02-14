@@ -233,6 +233,8 @@ userdb {{
   args = uid=vmail gid=vmail home=/data/mail/%d/%n
 }}
 
+auth_username_format = %u
+
 service auth {{
   inet_listener sasl {{
     port = 12345
