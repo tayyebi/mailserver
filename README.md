@@ -219,7 +219,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Open `https://your-host:443` for the admin dashboard.
+Open `http://your-host:443` for the admin dashboard.
 
 ## Default Admin
 

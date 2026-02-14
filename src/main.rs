@@ -62,8 +62,8 @@ async fn main() {
                 });
             let pixel_base_url = env::var("PIXEL_BASE_URL")
                 .unwrap_or_else(|_| {
-                    warn!("[filter] PIXEL_BASE_URL not set, defaulting to https://localhost/pixel?id=");
-                    "https://localhost/pixel?id=".to_string()
+                    warn!("[filter] PIXEL_BASE_URL not set, defaulting to http://localhost/pixel?id=");
+                    "http://localhost/pixel?id=".to_string()
                 });
 
             let mut sender = String::new();
