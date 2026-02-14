@@ -36,11 +36,15 @@ mydestination = localhost
 inet_interfaces = all
 inet_protocols = all
 
+# Disable local alias database (we only use virtual domains)
+alias_maps =
+alias_database =
+
 # Virtual mailbox delivery via Dovecot LMTP
 virtual_transport = lmtp:inet:localhost:24
-virtual_mailbox_domains = hash:/etc/postfix/virtual_domains
-virtual_mailbox_maps = hash:/etc/postfix/vmailbox
-virtual_alias_maps = hash:/etc/postfix/virtual_aliases
+virtual_mailbox_domains = lmdb:/etc/postfix/virtual_domains
+virtual_mailbox_maps = lmdb:/etc/postfix/vmailbox
+virtual_alias_maps = lmdb:/etc/postfix/virtual_aliases
 
 # SASL auth via Dovecot
 smtpd_sasl_type = dovecot
@@ -64,7 +68,7 @@ milter_default_action = accept
 content_filter = pixelfilter:dummy
 
 # Sender login maps — allow accounts to send as their aliases
-smtpd_sender_login_maps = hash:/etc/postfix/sender_login_maps
+smtpd_sender_login_maps = lmdb:/etc/postfix/sender_login_maps
 smtpd_sender_restrictions = reject_authenticated_sender_login_mismatch, permit
 
 # Restrictions
@@ -529,20 +533,22 @@ pub fn postmap_files() {
         "/etc/postfix/virtual_aliases",
         "/etc/postfix/sender_login_maps",
     ] {
-        match Command::new("postmap").arg(path).output() {
+        // Explicitly specify lmdb format for Alpine Linux compatibility
+        let lmdb_path = format!("lmdb:{}", path);
+        match Command::new("postmap").arg(&lmdb_path).output() {
             Ok(output) if output.status.success() => {
-                debug!("[config] postmap succeeded for {}", path);
+                debug!("[config] postmap succeeded for {}", lmdb_path);
             }
             Ok(output) => {
                 warn!(
                     "[config] postmap for {} exited with status {}: {}",
-                    path,
+                    lmdb_path,
                     output.status,
                     String::from_utf8_lossy(&output.stderr)
                 );
             }
             Err(e) => {
-                warn!("[config] failed to run postmap for {}: {}", path, e);
+                warn!("[config] failed to run postmap for {}: {}", lmdb_path, e);
             }
         }
     }
