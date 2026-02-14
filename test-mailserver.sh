@@ -176,6 +176,126 @@ test_web_api() {
     fi
 }
 
+test_smtp_presence() {
+    local port="$1"
+    local label="$2"
+    local timeout_secs=5
+    local response
+
+    log_test "$label: Service presence on port $port"
+    response=$(timeout $timeout_secs bash -c "
+        exec 3<>/dev/tcp/$HOST/$port
+        timeout 2 head -1 <&3
+    " 2>&1)
+
+    if [[ $response == 220* ]]; then
+        log_pass "$label: Service banner received ($response)"
+        return 0
+    else
+        log_fail "$label: No valid SMTP banner on port $port — Response: $response"
+        return 1
+    fi
+}
+
+test_imap_presence() {
+    local timeout_secs=5
+    local response
+
+    log_test "IMAP: Service presence on port $IMAP_PORT"
+    response=$(timeout $timeout_secs bash -c "
+        exec 3<>/dev/tcp/$HOST/$IMAP_PORT
+        timeout 2 head -1 <&3
+    " 2>&1)
+
+    if [[ $response == "* OK"* ]]; then
+        log_pass "IMAP: Service banner received"
+        log_quiet "  Banner: $response"
+        return 0
+    else
+        log_fail "IMAP: Invalid or missing banner — Response: $response"
+        return 1
+    fi
+}
+
+test_imap_invalid_login() {
+    local timeout_secs=5
+    local bad_pass="${PASSWORD}__invalid"
+    local response
+
+    log_test "IMAP: Reject invalid credentials"
+    response=$(timeout $timeout_secs bash -c "
+        exec 3<>/dev/tcp/$HOST/$IMAP_PORT
+        timeout 1 head -1 <&3
+        echo 'A001 LOGIN \"$EMAIL\" \"$bad_pass\"' >&3
+        timeout 2 cat <&3 | sed -n '/^A001 /p' | head -1
+        echo 'A002 LOGOUT' >&3
+    " 2>&1)
+
+    if [[ $response == *"A001 NO"* ]] || [[ $response == *"A001 BAD"* ]]; then
+        log_pass "IMAP: Invalid credentials correctly rejected"
+        return 0
+    else
+        log_fail "IMAP: Invalid credentials were not rejected — Response: $response"
+        return 1
+    fi
+}
+
+test_pop3_presence() {
+    local timeout_secs=5
+    local response
+
+    log_test "POP3: Service presence on port $POP3_PORT"
+    response=$(timeout $timeout_secs bash -c "
+        exec 3<>/dev/tcp/$HOST/$POP3_PORT
+        timeout 2 head -1 <&3
+    " 2>&1)
+
+    if [[ $response == +OK* ]]; then
+        log_pass "POP3: Service banner received"
+        log_quiet "  Banner: $response"
+        return 0
+    else
+        log_fail "POP3: Invalid or missing banner — Response: $response"
+        return 1
+    fi
+}
+
+test_pop3_login() {
+    local username="$1"
+    local password="$2"
+    local should_succeed="$3"
+    local timeout_secs=5
+    local response
+
+    response=$(timeout $timeout_secs bash -c "
+        exec 3<>/dev/tcp/$HOST/$POP3_PORT
+        timeout 1 head -1 <&3
+        echo 'USER $username' >&3
+        timeout 1 head -1 <&3
+        echo 'PASS $password' >&3
+        timeout 1 head -1 <&3
+        echo 'QUIT' >&3
+    " 2>&1)
+
+    if [[ "$should_succeed" == "yes" ]]; then
+        if [[ $response == *"+OK"* ]] && [[ $response != *"-ERR"* ]]; then
+            log_pass "POP3: Login accepted for $username"
+            return 0
+        else
+            log_fail "POP3: Login failed for $username — Response: $response"
+            return 1
+        fi
+    else
+        if [[ $response == *"-ERR"* ]]; then
+            log_pass "POP3: Invalid credentials correctly rejected"
+            return 0
+        else
+            log_fail "POP3: Invalid credentials were not rejected — Response: $response"
+            return 1
+        fi
+    fi
+}
+
 # IMAP: Login and fetch inbox
 test_imap_login() {
     local response
@@ -189,14 +309,14 @@ test_imap_login() {
         # Read greeting
         timeout 1 head -1 <&3
         # Send LOGIN command
-        echo 'A001 LOGIN \"$EMAIL\" \"$PASSWORD\"'
-        # Read response
-        timeout 1 head -1 <&3
+        echo 'A001 LOGIN \"$EMAIL\" \"$PASSWORD\"' >&3
+        # Read tagged response for LOGIN
+        timeout 2 cat <&3 | sed -n '/^A001 /p' | head -1
         # Close connection
-        echo 'A002 LOGOUT'
+        echo 'A002 LOGOUT' >&3
     " 2>&1)
 
-    if [[ $response == *"OK"* ]] || [[ $response == *"LOGIN"* ]]; then
+    if [[ $response == *"A001 OK"* ]]; then
         log_pass "IMAP: Successfully logged in as $EMAIL"
         log_quiet "  Response: $(echo "$response" | tail -1)"
         return 0
@@ -220,16 +340,16 @@ test_imap_fetch_inbox() {
         # Read greeting
         timeout 1 head -1 <&3
         # Send LOGIN
-        echo 'A001 LOGIN \"$EMAIL\" \"$PASSWORD\"'
-        timeout 1 head -1 <&3
+        echo 'A001 LOGIN \"$EMAIL\" \"$PASSWORD\"' >&3
+        timeout 2 cat <&3 | sed -n '/^A001 /p' | head -1
         # Select INBOX
-        echo 'A002 SELECT INBOX'
-        timeout 2 cat <&3 | head -10
+        echo 'A002 SELECT INBOX' >&3
+        timeout 2 cat <&3 | sed -n '/^\* [0-9]\+ EXISTS\|^A002 /p' | head -10
         # Logout
-        echo 'A003 LOGOUT'
+        echo 'A003 LOGOUT' >&3
     " 2>&1)
 
-    if [[ $response == *"OK"* ]] || [[ $response == *"EXISTS"* ]]; then
+    if [[ $response == *"A001 OK"* ]] && [[ $response == *"A002 OK"* || $response == *"EXISTS"* ]]; then
         local msg_count=$(echo "$response" | grep -oE '[0-9]+ EXISTS' | head -1)
         if [[ -z "$msg_count" ]]; then
             msg_count="0 messages"
@@ -365,20 +485,17 @@ test_connectivity() {
 test_smtp_protocol() {
     log_section "SMTP PROTOCOL TESTS"
 
-    log_test "SMTP: Server is listening on port $SMTP_PORT"
-    log_pass "SMTP: Server is responding on port $SMTP_PORT"
+    test_smtp_presence "$SMTP_PORT" "SMTP" || true
     log_info "Note: Full SMTP testing requires TLS/STARTTLS support."
 
-    log_test "SMTP Submission: Server is listening on port $SUBMISSION_PORT"
-    log_pass "SMTP Submission: Server is responding on port $SUBMISSION_PORT"
+    test_smtp_presence "$SUBMISSION_PORT" "SMTP Submission" || true
     log_info "Note: Submission port ($SUBMISSION_PORT) requires STARTTLS and authentication."
 
-    log_test "SMTPS: Server is listening on port $SMTPS_PORT"
-    log_pass "SMTPS: Server is responding on port $SMTPS_PORT"
+    log_test "SMTPS: Service presence on port $SMTPS_PORT"
+    log_info "SMTPS uses implicit TLS, so plain TCP banner checks are skipped."
     log_info "Note: SMTPS port ($SMTPS_PORT) uses implicit TLS."
 
-    log_test "SMTP Alternate: Server is listening on port $SMTP_ALT_PORT"
-    log_pass "SMTP Alternate: Server is responding on port $SMTP_ALT_PORT"
+    test_smtp_presence "$SMTP_ALT_PORT" "SMTP Alternate" || true
     log_info "Note: Alternate SMTP port ($SMTP_ALT_PORT) for ISPs that block port 25."
 
     if [[ -z "$TEST_EMAIL" ]]; then
@@ -391,15 +508,15 @@ test_smtp_protocol() {
 test_imap_protocol() {
     log_section "IMAP PROTOCOL TESTS"
 
-    log_test "IMAP: Server is listening on port $IMAP_PORT"
-    log_pass "IMAP: Server is responding on port $IMAP_PORT"
+    test_imap_presence || true
 
-    log_test "IMAPS: Server is listening on port $IMAPS_PORT"
-    log_pass "IMAPS: Server is responding on port $IMAPS_PORT"
+    log_test "IMAPS: Service presence on port $IMAPS_PORT"
+    log_info "IMAPS uses implicit TLS, so plain TCP banner checks are skipped."
     log_info "Note: IMAPS port ($IMAPS_PORT) uses implicit TLS."
 
     if [[ $TEST_FETCH_INBOX -eq 1 ]]; then
         test_imap_login || true
+        test_imap_invalid_login || true
         test_imap_fetch_inbox || true
     fi
 }
@@ -407,12 +524,14 @@ test_imap_protocol() {
 test_pop3_protocol() {
     log_section "POP3 PROTOCOL TESTS"
 
-    log_test "POP3: Server is listening on port $POP3_PORT"
-    log_pass "POP3: Server is responding on port $POP3_PORT"
-    log_info "Note: Full POP3 testing requires authentication with valid credentials."
+    test_pop3_presence || true
+    log_test "POP3: Authenticate with valid credentials"
+    test_pop3_login "$EMAIL" "$PASSWORD" "yes" || true
+    log_test "POP3: Reject invalid credentials"
+    test_pop3_login "$EMAIL" "${PASSWORD}__invalid" "no" || true
 
-    log_test "POP3S: Server is listening on port $POP3S_PORT"
-    log_pass "POP3S: Server is responding on port $POP3S_PORT"
+    log_test "POP3S: Service presence on port $POP3S_PORT"
+    log_info "POP3S uses implicit TLS, so plain TCP banner checks are skipped."
     log_info "Note: POP3S port ($POP3S_PORT) uses implicit TLS."
 }
 
