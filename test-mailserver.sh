@@ -153,7 +153,6 @@ check_port() {
         fi
         log_fail "Cannot connect to $name on port $port — Reason: $reason"
         log_quiet "  Host: $HOST, Port: $port, Service: $name"
-        log_quiet "  Raw error: $error_output"
         return 1
     fi
 }
@@ -382,7 +381,11 @@ test_smtp_protocol() {
     log_pass "SMTP Alternate: Server is responding on port $SMTP_ALT_PORT"
     log_info "Note: Alternate SMTP port ($SMTP_ALT_PORT) for ISPs that block port 25."
 
-    test_smtp_send
+    if [[ -z "$TEST_EMAIL" ]]; then
+        log_warn "SMTP: No test recipient specified (use --test-email)"
+    elif [[ $TEST_SEND_EMAIL -eq 1 ]]; then
+        test_smtp_send_email "$TEST_EMAIL" || true
+    fi
 }
 
 test_imap_protocol() {
@@ -411,17 +414,6 @@ test_pop3_protocol() {
     log_test "POP3S: Server is listening on port $POP3S_PORT"
     log_pass "POP3S: Server is responding on port $POP3S_PORT"
     log_info "Note: POP3S port ($POP3S_PORT) uses implicit TLS."
-}
-
-test_smtp_send() {
-    if [[ -z "$TEST_EMAIL" ]]; then
-        log_warn "SMTP: No test recipient specified (use --test-email)"
-        return
-    fi
-
-    if [[ $TEST_SEND_EMAIL -eq 1 ]]; then
-        test_smtp_send_email "$TEST_EMAIL" || true
-    fi
 }
 
 test_web_dashboard() {

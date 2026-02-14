@@ -36,7 +36,7 @@
 </dl>
 <p>
   <a href="/settings/tls/cert.pem">Download Certificate</a>
-  <a href="/settings/tls/key.pem">Download Private Key</a>
+  <a href="/settings/tls/key.pem" onclick="return confirm('You are about to download the private key. This is a sensitive file. Continue?')">Download Private Key</a>
 </p>
 {% else %}
 <p><em>No TLS certificate found at /data/ssl/cert.pem</em></p>
