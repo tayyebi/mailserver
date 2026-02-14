@@ -1,8 +1,20 @@
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_DB=mailserver
+      - POSTGRES_USER=mailserver
+      - POSTGRES_PASSWORD=mailserver
+    volumes:
+      - maildb:/var/lib/postgresql/data
+    restart: unless-stopped
+
   mailserver:
     image: ghcr.io/tayyebi/mailserver:main
     build: .
     env_file: .env
+    depends_on:
+      - db
     ports:
       - "${SMTP_PORT:-25}:25"
       - "${SUBMISSION_PORT:-587}:587"
@@ -18,7 +30,7 @@ services:
     environment:
       - HOSTNAME=${HOSTNAME:-mail.example.com}
       - ADMIN_PORT=${HTTP_PORT:-8080}
-      - DB_PATH=/data/db/mailserver.sqlite
+      - DATABASE_URL=postgres://mailserver:mailserver@db/mailserver
       - PIXEL_BASE_URL=http://${HOSTNAME:-mail.example.com}:${HTTP_PORT:-8080}/pixel?id=
       - SEED_USER=${SEED_USER:-admin}
       - SEED_PASS=${SEED_PASS:-admin}
@@ -27,3 +39,4 @@ services:
 
 volumes:
   maildata:
+  maildb:

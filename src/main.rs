@@ -31,17 +31,17 @@ async fn main() {
                 warn!("[main] HOSTNAME not set, defaulting to localhost");
                 "localhost".to_string()
             });
-            let db_path = env::var("DB_PATH").unwrap_or_else(|_| {
-                debug!("[main] DB_PATH not set, defaulting to /data/db/mailserver.sqlite");
-                "/data/db/mailserver.sqlite".to_string()
+            let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
+                debug!("[main] DATABASE_URL not set, defaulting to postgres://mailserver:mailserver@localhost/mailserver");
+                "postgres://mailserver:mailserver@localhost/mailserver".to_string()
             });
 
             info!(
-                "[main] serve: port={}, hostname={}, db_path={}",
-                port, hostname, db_path
+                "[main] serve: port={}, hostname={}, db_url={}",
+                port, hostname, db_url
             );
 
-            let database = db::Database::open(&db_path);
+            let database = db::Database::open(&db_url);
 
             info!("[main] generating initial mail service configs");
             config::generate_all_configs(&database, &hostname);
@@ -57,12 +57,12 @@ async fn main() {
             web::start_server(state).await;
         }
         "filter" => {
-            let db_path = env::var("DB_PATH").unwrap_or_else(|_| {
-                debug!("[filter] DB_PATH not set, defaulting to /data/db/mailserver.sqlite");
-                "/data/db/mailserver.sqlite".to_string()
+            let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
+                debug!("[filter] DATABASE_URL not set, defaulting to postgres://mailserver:mailserver@localhost/mailserver");
+                "postgres://mailserver:mailserver@localhost/mailserver".to_string()
             });
             // Prefer pixel_base_url stored in the database (if set), fall back to env var, then default
-            let database = db::Database::open(&db_path);
+            let database = db::Database::open(&db_url);
             let pixel_base_url = database
                 .get_setting("pixel_base_url")
                 .or_else(|| env::var("PIXEL_BASE_URL").ok())
@@ -96,13 +96,13 @@ async fn main() {
                 sender,
                 recipients.join(", ")
             );
-            filter::run_filter(&db_path, &sender, &recipients, &pixel_base_url);
+            filter::run_filter(&db_url, &sender, &recipients, &pixel_base_url);
             info!("[filter] content filter completed");
         }
         "seed" => {
-            let db_path = env::var("DB_PATH").unwrap_or_else(|_| {
-                debug!("[seed] DB_PATH not set, defaulting to /data/db/mailserver.sqlite");
-                "/data/db/mailserver.sqlite".to_string()
+            let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
+                debug!("[seed] DATABASE_URL not set, defaulting to postgres://mailserver:mailserver@localhost/mailserver");
+                "postgres://mailserver:mailserver@localhost/mailserver".to_string()
             });
             let username = env::var("SEED_USER").unwrap_or_else(|_| {
                 debug!("[seed] SEED_USER not set, defaulting to admin");
@@ -114,15 +114,15 @@ async fn main() {
             });
 
             info!("[seed] seeding admin user: {}", username);
-            let database = db::Database::open(&db_path);
+            let database = db::Database::open(&db_url);
             let hash = auth::hash_password(&password);
             database.seed_admin(&username, &hash);
             info!("[seed] admin user seeded successfully: {}", username);
         }
         "genconfig" => {
-            let db_path = env::var("DB_PATH").unwrap_or_else(|_| {
-                debug!("[genconfig] DB_PATH not set, defaulting to /data/db/mailserver.sqlite");
-                "/data/db/mailserver.sqlite".to_string()
+            let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
+                debug!("[genconfig] DATABASE_URL not set, defaulting to postgres://mailserver:mailserver@localhost/mailserver");
+                "postgres://mailserver:mailserver@localhost/mailserver".to_string()
             });
             let hostname = env::var("HOSTNAME").unwrap_or_else(|_| {
                 warn!("[genconfig] HOSTNAME not set, defaulting to localhost");
@@ -130,7 +130,7 @@ async fn main() {
             });
 
             info!("[genconfig] generating configs for hostname={}", hostname);
-            let database = db::Database::open(&db_path);
+            let database = db::Database::open(&db_url);
             config::generate_all_configs(&database, &hostname);
             info!("[genconfig] configuration files generated successfully");
         }
@@ -150,7 +150,7 @@ async fn main() {
             println!("  ADMIN_PORT       Dashboard port (default: 8080)");
             println!("  HOSTNAME         Mail server hostname (default: localhost)");
             println!(
-                "  DB_PATH          SQLite database path (default: /data/db/mailserver.sqlite)"
+                "  DATABASE_URL    PostgreSQL connection string (default: postgres://mailserver:mailserver@localhost/mailserver)"
             );
             println!("  PIXEL_BASE_URL   Base URL for tracking pixels");
             println!("  SEED_USER        Default admin username (default: admin)");

@@ -3,7 +3,7 @@ use std::io::{self, Read};
 
 use crate::db::Database;
 
-pub fn run_filter(db_path: &str, sender: &str, recipients: &[String], pixel_base_url: &str) {
+pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_url: &str) {
     info!(
         "[filter] starting content filter sender={}, recipients={}",
         sender,
@@ -22,8 +22,8 @@ pub fn run_filter(db_path: &str, sender: &str, recipients: &[String], pixel_base
     );
 
     // 2. Open database and check if tracking is enabled for sender
-    debug!("[filter] opening database at {}", db_path);
-    let db = Database::open(db_path);
+    debug!("[filter] opening database at {}", db_url);
+    let db = Database::open(db_url);
     let tracking = db.is_tracking_enabled_for_sender(sender);
     let footer_html = db.get_footer_for_sender(sender);
     info!(

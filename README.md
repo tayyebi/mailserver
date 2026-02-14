@@ -21,15 +21,15 @@ graph LR
         Postfix[Postfix SMTP :25/587/465]
         Dovecot[Dovecot IMAP/POP3 :143/993/110/995]
         OpenDKIM[OpenDKIM]
-        SQLite[(SQLite DB)]
+        Postgres[(PostgreSQL DB)]
 
         Supervisor --> Admin
         Supervisor --> Postfix
         Supervisor --> Dovecot
         Supervisor --> OpenDKIM
 
-        Admin -->|read/write| SQLite
-        Filter -->|tracking & footer lookups| SQLite
+        Admin -->|read/write| Postgres
+        Filter -->|tracking & footer lookups| Postgres
         Admin -->|generate configs from DB| Postfix
         Admin -->|generate passwd from DB| Dovecot
         Admin -->|generate key tables from DB| OpenDKIM
@@ -50,7 +50,7 @@ graph LR
     Internet -->|IMAP/POP3| Dovecot
     Internet -->|HTTPS| Admin
 
-    SQLite --- DB
+    Postgres --- DB
     Dovecot --- Mail
     Postfix --- SSL
     OpenDKIM --- DKIM
@@ -63,7 +63,7 @@ sequenceDiagram
     participant Sender as Sender (Internet)
     participant Postfix
     participant Filter as Content Filter
-    participant SQLite as SQLite DB
+    participant Postgres as PostgreSQL DB
     participant OpenDKIM
     participant Dovecot
     participant Recipient as Recipient (Mailbox)
@@ -71,12 +71,12 @@ sequenceDiagram
     Note over Sender,Recipient: Inbound Email
     Sender->>Postfix: SMTP :25
     Postfix->>Filter: pipe via pixelfilter
-    Filter->>SQLite: lookup tracking + footer_html
+    Filter->>Postgres: lookup tracking + footer_html
     alt Footer configured
         Filter->>Filter: inject domain footer (HTML/plain text)
     end
     alt Tracking enabled
-        Filter->>SQLite: insert tracked_message
+        Filter->>Postgres: insert tracked_message
         Filter->>Filter: inject tracking pixel into HTML body
     end
     Filter->>Postfix: reinject via SMTP :10025
@@ -91,7 +91,7 @@ sequenceDiagram
 
     Note over Sender,Recipient: Tracking Pixel Open
     Sender->>Postfix: (later) recipient opens email
-    Recipient->>SQLite: GET /pixel?id=... → record pixel_open
+    Recipient->>Postgres: GET /pixel?id=... → record pixel_open
 ```
 
 ## Dashboard Insights
