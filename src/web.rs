@@ -6,6 +6,7 @@ use axum::{
     Form, Router,
 };
 use log::{info, warn, error, debug};
+use std::collections::HashMap;
 use serde::Deserialize;
 use tower_http::services::ServeDir;
 
@@ -40,7 +41,7 @@ fn layout(title: &str, nav_active: &str, content: &str, flash: Option<&str>) -> 
     let mut nav_html = String::new();
     for (label, href) in &nav_items {
         let class = if *label == nav_active { " class=\"active\"" } else { "" };
-        nav_html.push_str(&format!("<a href=\"{}\"{}>{}</a> ", esc(href), class, esc(label)));
+        nav_html.push_str(&format!("<a href=\"{}\"{}>{}</a>", esc(href), class, esc(label)));
     }
     let flash_html = match flash {
         Some(msg) => format!("<div class=\"flash\">{}</div>", esc(msg)),
@@ -56,10 +57,24 @@ fn layout(title: &str, nav_active: &str, content: &str, flash: Option<&str>) -> 
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<nav>{nav_html}</nav>
+<div class="bg-grid" aria-hidden="true"></div>
+<div class="app-shell">
+<header class="aws-nav">
+  <div class="brand-block">
+    <span class="brand-title">Mailserver</span>
+    <span class="brand-subtitle">Control Plane</span>
+  </div>
+  <nav class="nav-links">{nav_html}</nav>
+  <div class="nav-meta">
+    <span class="badge badge-good">Online</span>
+  </div>
+</header>
+<main>
 {flash_html}
-<main>{content}</main>
+<div class="page-frame">{content}</div>
+</main>
 <footer>Mailserver Admin</footer>
+</div>
 </body>
 </html>"#,
         title = esc(title),
@@ -67,6 +82,20 @@ fn layout(title: &str, nav_active: &str, content: &str, flash: Option<&str>) -> 
         flash_html = flash_html,
         content = content,
     )
+}
+
+fn is_catch_all(source: &str, domain: Option<&str>) -> bool {
+    let normalized = source.trim().to_ascii_lowercase();
+    if normalized == "*" || normalized.starts_with("*@") {
+        return true;
+    }
+    if let Some(domain) = domain {
+        let d = domain.to_ascii_lowercase();
+        if normalized == d || normalized == format!("@{}", d) {
+            return true;
+        }
+    }
+    false
 }
 
 // ── Basic Auth Extractor ──
@@ -311,31 +340,200 @@ fn regen_configs(state: &AppState) {
 async fn dashboard(_auth: AuthAdmin, State(state): State<AppState>) -> Html<String> {
     info!("[web] GET / — dashboard requested");
     let stats = state.db.get_stats();
-    debug!("[web] dashboard stats: domains={}, accounts={}, aliases={}, tracked={}, opens={}",
-        stats.domain_count, stats.account_count, stats.alias_count, stats.tracked_count, stats.open_count);
-    let content = format!(
-        r#"<h1>Dashboard</h1>
-<table>
-<tr><th>Domains</th><td>{}</td></tr>
-<tr><th>Accounts</th><td>{}</td></tr>
-<tr><th>Aliases</th><td>{}</td></tr>
-<tr><th>Tracked Messages</th><td>{}</td></tr>
-<tr><th>Pixel Opens</th><td>{}</td></tr>
-</table>
-<h2>Server Info</h2>
-<table>
-<tr><th>Hostname</th><td>{}</td></tr>
-<tr><th>SMTP</th><td>Port 25 / 587 (STARTTLS) / 465 (SSL)</td></tr>
-<tr><th>IMAP</th><td>Port 143 (STARTTLS) / 993 (SSL)</td></tr>
-<tr><th>POP3</th><td>Port 110 (STARTTLS) / 995 (SSL)</td></tr>
-</table>"#,
-        stats.domain_count,
-        stats.account_count,
-        stats.alias_count,
-        stats.tracked_count,
-        stats.open_count,
-        esc(&state.hostname),
-    );
+        debug!(
+                "[web] dashboard stats: domains={}, accounts={}, aliases={}, tracked={}, opens={}",
+                stats.domain_count,
+                stats.account_count,
+                stats.alias_count,
+                stats.tracked_count,
+                stats.open_count
+        );
+
+        let domains = state.db.list_domains();
+        let aliases = state.db.list_all_aliases_with_domain();
+        let mut catch_all_map: HashMap<i64, &crate::db::Alias> = HashMap::new();
+        for alias in &aliases {
+                if is_catch_all(&alias.source, alias.domain_name.as_deref()) {
+                        catch_all_map.insert(alias.domain_id, alias);
+                }
+        }
+
+        let hero = format!(
+                r#"<section class=\"hero\">
+    <div>
+        <p class=\"eyebrow\">Deliverability overview</p>
+        <h1>Mailserver Control Plane</h1>
+        <p class=\"lede\">Track DNS, DKIM, and alias coverage for {host}. Catch issues before they page you.</p>
+        <div class=\"hero-actions\">
+            <a class=\"btn btn-primary\" href=\"/domains\">Manage domains</a>
+            <a class=\"btn btn-ghost\" href=\"/aliases\">Tune aliases</a>
+        </div>
+    </div>
+    <div class=\"hero-meta\">
+        <div class=\"meta-line\"><span>Hostname</span><strong>{host}</strong></div>
+        <div class=\"meta-line\"><span>SMTP</span><strong>25 / 587 / 465</strong></div>
+        <div class=\"meta-line\"><span>IMAP</span><strong>143 / 993</strong></div>
+        <div class=\"meta-line\"><span>POP3</span><strong>110 / 995</strong></div>
+    </div>
+</section>"#,
+                host = esc(&state.hostname),
+        );
+
+        let stat_definitions = [
+                ("Domains", stats.domain_count, "Managed zones"),
+                ("Accounts", stats.account_count, "Provisioned mailboxes"),
+                ("Aliases", stats.alias_count, "Routing rules"),
+                ("Tracked Messages", stats.tracked_count, "Pixels injected"),
+                ("Pixel Opens", stats.open_count, "Engagement events"),
+        ];
+        let mut stat_cards = String::new();
+        for (label, value, caption) in &stat_definitions {
+                stat_cards.push_str(&format!(
+                        "<article class=\"stat-card\"><div class=\"number\">{}</div><div class=\"label\">{}</div><p>{}</p></article>",
+                        value,
+                        esc(label),
+                        esc(caption)
+                ));
+        }
+        let stats_section = format!(
+                r#"<section class=\"panel\">
+    <div class=\"panel-head\">
+        <div>
+            <p class=\"eyebrow\">Platform health</p>
+            <h2>Live counters</h2>
+        </div>
+        <details class=\"inline-doc\">
+            <summary>How do these refresh?</summary>
+            <p>Counts are queried live from SQLite each time you load the console.</p>
+        </details>
+    </div>
+    <div class=\"stat-grid\">{stat_cards}</div>
+</section>"#,
+                stat_cards = stat_cards,
+        );
+
+        let mut domain_cards = String::new();
+        if domains.is_empty() {
+                domain_cards.push_str(
+                        "<p class=\"empty-state\">No domains yet. Add your first domain to unlock DNS guidance.</p>"
+                );
+        } else {
+                for domain in &domains {
+                        let active_class = if domain.active { "badge-good" } else { "badge-bad" };
+                        let active_label = if domain.active { "Accepting mail" } else { "Suspended" };
+                        let dkim_ready = domain.dkim_public_key.is_some();
+                        let dkim_class = if dkim_ready { "badge-good" } else { "badge-warn" };
+                        let dkim_label = if dkim_ready {
+                                format!("Selector {} ready", esc(&domain.dkim_selector))
+                        } else {
+                                "Missing DKIM key".to_string()
+                        };
+                        let catch_html = match catch_all_map.get(&domain.id) {
+                                Some(alias) if alias.active => format!(
+                                        "<span class=\"badge badge-good\">Catch-all → {}</span>",
+                                        esc(&alias.destination)
+                                ),
+                                Some(alias) => format!(
+                                        "<span class=\"badge badge-warn\">Catch-all disabled ({})</span>",
+                                        esc(&alias.destination)
+                                ),
+                                None => "<span class=\"badge badge-warn\">No catch-all alias</span>".to_string(),
+                        };
+                        domain_cards.push_str(&format!(
+                                r#"<article class=\"domain-card\">
+    <div class=\"domain-card__header\">
+        <h3>{domain}</h3>
+        <span class=\"badge {active_class}\">{active_label}</span>
+    </div>
+    <ul class=\"status-list\">
+        <li><span>DKIM</span><span class=\"badge {dkim_class}\">{dkim_label}</span></li>
+        <li><span>Catch-all</span>{catch_html}</li>
+    </ul>
+    <div class=\"domain-card__actions\">
+        <a class=\"btn btn-ghost btn-sm\" href=\"/domains/{id}/dns\">DNS runbook</a>
+        <a class=\"btn btn-ghost btn-sm\" href=\"/aliases\">Alias registry</a>
+    </div>
+</article>"#,
+                                domain = esc(&domain.domain),
+                                active_class = active_class,
+                                active_label = active_label,
+                                dkim_class = dkim_class,
+                                dkim_label = dkim_label,
+                                catch_html = catch_html,
+                                id = domain.id,
+                        ));
+                }
+        }
+        let domains_section = format!(
+                r#"<section class=\"panel\">
+    <div class=\"panel-head\">
+        <div>
+            <p class=\"eyebrow\">DNS & DKIM posture</p>
+            <h2>Per-domain status</h2>
+        </div>
+        <details class=\"inline-doc\">
+            <summary>Why this matters</summary>
+            <p>Missing DKIM keys or catch-all routing gaps often surface as delivery failures. Review each domain regularly.</p>
+        </details>
+    </div>
+    <div class=\"domain-grid\">{domain_cards}</div>
+</section>"#,
+                domain_cards = domain_cards,
+        );
+
+        let mut catch_rows = String::new();
+        if domains.is_empty() {
+                catch_rows.push_str("<tr><td colspan=\"4\">Add a domain to start tracking catch-all coverage.</td></tr>");
+        } else {
+                for domain in &domains {
+                        let catch = catch_all_map.get(&domain.id);
+                        let (status, badge_class, destination) = match catch {
+                                Some(alias) if alias.active => (
+                                        "Protected",
+                                        "badge-good",
+                                        format!("{}", esc(&alias.destination)),
+                                ),
+                                Some(alias) => (
+                                        "Disabled",
+                                        "badge-warn",
+                                        format!("{}", esc(&alias.destination)),
+                                ),
+                        None => ("Uncovered", "badge-bad", "&mdash;".to_string()),
+                        };
+                        catch_rows.push_str(&format!(
+                                "<tr><td>{}</td><td><span class=\"badge {}\">{}</span></td><td>{}</td><td><a class=\"btn btn-link\" href=\"/aliases\">Create / edit</a></td></tr>",
+                                esc(&domain.domain),
+                                badge_class,
+                                status,
+                                destination,
+                        ));
+                }
+        }
+        let alias_focus = format!(
+                r#"<section class=\"panel\">
+    <div class=\"panel-head\">
+        <div>
+            <p class=\"eyebrow\">Alias coverage</p>
+            <h2>Catch-all readiness</h2>
+        </div>
+        <details class=\"inline-doc\">
+            <summary>How catch-all works</summary>
+            <p>Define an alias like <code>*@example.com</code> to collect any recipient the directory does not know about.</p>
+        </details>
+    </div>
+    <div class=\"table-card\">
+        <table>
+            <thead>
+                <tr><th>Domain</th><th>Status</th><th>Route target</th><th>Action</th></tr>
+            </thead>
+            <tbody>{catch_rows}</tbody>
+        </table>
+    </div>
+</section>"#,
+                catch_rows = catch_rows,
+        );
+
+        let content = format!("{hero}{stats}{domains}{aliases_doc}", hero = hero, stats = stats_section, domains = domains_section, aliases_doc = alias_focus);
     Html(layout("Dashboard", "Dashboard", &content, None))
 }
 
@@ -553,43 +751,96 @@ async fn dns_info(
     };
     let hostname = &state.hostname;
 
-    let mut records = format!(
-        r#"<h1>DNS Records for {domain}</h1>
-<table>
-<tr><th>Type</th><th>Name</th><th>Value</th></tr>
-<tr><td>MX</td><td>@</td><td><code>10 {hostname}.</code></td></tr>
-<tr><td>TXT</td><td>@</td><td><code>v=spf1 a mx ~all</code></td></tr>"#,
-        domain = esc(&domain.domain),
-        hostname = esc(hostname),
-    );
-
-    if let Some(ref pub_key) = domain.dkim_public_key {
-        // Strip PEM headers/footers and whitespace to get base64-only
-        let key_b64: String = pub_key
-            .lines()
-            .filter(|l| !l.starts_with("-----"))
-            .collect::<Vec<_>>()
-            .join("");
-        records.push_str(&format!(
-            "<tr><td>TXT</td><td><code>{}._domainkey</code></td>\
-             <td><code>v=DKIM1; k=rsa; p={}</code></td></tr>",
-            esc(&domain.dkim_selector),
-            esc(&key_b64),
+        let mut rows = String::new();
+        rows.push_str(&format!(
+                "<tr><td>MX</td><td>@</td><td><code>10 {hostname}.</code></td><td>Primary mail exchanger</td></tr>",
+                hostname = esc(hostname),
         ));
-    }
+        rows.push_str(
+                "<tr><td>TXT</td><td>@</td><td><code>v=spf1 a mx ~all</code></td><td>Baseline SPF policy</td></tr>",
+        );
 
-    records.push_str(&format!(
-        "<tr><td>TXT</td><td>_dmarc</td>\
-         <td><code>v=DMARC1; p=none; rua=mailto:postmaster@{domain}</code></td></tr>\
-         </table>\
-         <h2>Reverse DNS (PTR)</h2>\
-         <p>Set your server's PTR record to <code>{hostname}</code></p>\
-         <p><a href=\"/domains\">Back to Domains</a></p>",
-        domain = esc(&domain.domain),
-        hostname = esc(hostname),
-    ));
+        let mut dkim_block = String::from(
+                "<p class=\"inline-doc\">Generate a DKIM key to unlock signing coverage.</p>",
+        );
+        if let Some(ref pub_key) = domain.dkim_public_key {
+                let key_b64: String = pub_key
+                        .lines()
+                        .filter(|l| !l.starts_with("-----"))
+                        .collect::<Vec<_>>()
+                        .join("");
+                rows.push_str(&format!(
+                        "<tr><td>TXT</td><td><code>{selector}._domainkey</code></td><td><code>v=DKIM1; k=rsa; p={key}</code></td><td>DKIM signing key</td></tr>",
+                        selector = esc(&domain.dkim_selector),
+                        key = esc(&key_b64),
+                ));
+                dkim_block = format!(
+                        r#"<div class="dns-record">
+<div class="type">selector: {selector}</div>
+<pre>v=DKIM1; k=rsa; p={key}</pre>
+</div>"#,
+                        selector = esc(&domain.dkim_selector),
+                        key = esc(&key_b64),
+                );
+        }
 
-    Html(layout("DNS Records", "Domains", &records, None)).into_response()
+        rows.push_str(&format!(
+                "<tr><td>TXT</td><td>_dmarc</td><td><code>v=DMARC1; p=none; rua=mailto:postmaster@{domain}</code></td><td>DMARC monitoring</td></tr>",
+                domain = esc(&domain.domain),
+        ));
+
+        let content = format!(
+                r#"<section class="page-heading">
+    <div>
+        <p class="eyebrow">DNS runbook</p>
+        <h1>{domain}</h1>
+        <p class="lede">Apply these records to Route 53 (or your DNS provider) to keep the domain aligned.</p>
+    </div>
+    <div>
+        <form method="post" action="/domains/{id}/dkim">
+            <button class="btn btn-primary" type="submit">Generate DKIM key</button>
+        </form>
+    </div>
+</section>
+<section class="doc-panel doc-inline">
+    <h2>Deployment checklist</h2>
+    <ol>
+        <li>Update MX and SPF first to establish routing.</li>
+        <li>Publish DKIM selector <code>{selector}</code> and wait for propagation.</li>
+        <li>Add DMARC with <code>p=none</code> until you trust reports.</li>
+        <li>Verify reverse DNS points back to <code>{hostname}</code>.</li>
+    </ol>
+    <p class="small">Catch-all aliases rely on MX reaching this host. Keep DNS fresh.</p>
+</section>
+<div class="table-card">
+    <table>
+        <thead><tr><th>Type</th><th>Name</th><th>Value</th><th>Purpose</th></tr></thead>
+        <tbody>{rows}</tbody>
+    </table>
+</div>
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <p class="eyebrow">DKIM payload</p>
+            <h2>Selector {selector}</h2>
+        </div>
+    </div>
+    {dkim_block}
+</section>
+<section class="doc-panel doc-inline">
+    <h2>Reverse DNS</h2>
+    <p>Ask your provider to point the PTR record for your public IP back to <code>{hostname}</code>.</p>
+    <p><a class="btn btn-link" href="/domains">Back to Domains</a></p>
+</section>"#,
+                domain = esc(&domain.domain),
+                id = domain.id,
+                selector = esc(&domain.dkim_selector),
+                hostname = esc(hostname),
+                rows = rows,
+                dkim_block = dkim_block,
+        );
+
+        Html(layout("DNS Records", "Domains", &content, None)).into_response()
 }
 
 // ── Accounts ──
@@ -753,35 +1004,107 @@ async fn delete_account(
 async fn list_aliases(_auth: AuthAdmin, State(state): State<AppState>) -> Html<String> {
     info!("[web] GET /aliases — listing aliases");
     let aliases = state.db.list_all_aliases_with_domain();
-    debug!("[web] found {} aliases", aliases.len());
-    let mut rows = String::new();
-    for a in &aliases {
-        let domain = a.domain_name.as_deref().unwrap_or("-");
-        rows.push_str(&format!(
-            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>\
-             <a href=\"/aliases/{}/edit\">Edit</a> \
-             <form method=\"post\" action=\"/aliases/{}/delete\" style=\"display:inline\" \
-             onsubmit=\"return confirm('Delete this alias?')\">\
-             <button type=\"submit\">Delete</button></form>\
-             </td></tr>",
-            esc(domain),
-            esc(&a.source),
-            esc(&a.destination),
-            if a.tracking_enabled { "Yes" } else { "No" },
-            if a.active { "Yes" } else { "No" },
-            a.id,
-            a.id,
-        ));
-    }
-    let content = format!(
-        r#"<h1>Aliases</h1>
-<p><a href="/aliases/new">Add Alias</a></p>
-<table>
-<tr><th>Domain</th><th>Source</th><th>Destination</th><th>Tracking</th><th>Active</th><th>Actions</th></tr>
-{rows}
-</table>"#,
-        rows = rows,
-    );
+        debug!("[web] found {} aliases", aliases.len());
+        let domains = state.db.list_domains();
+        let mut catch_ready: HashMap<i64, bool> = HashMap::new();
+        let mut rows = String::new();
+        if aliases.is_empty() {
+                rows.push_str("<tr><td colspan=\"7\">No aliases yet — create one to start routing mail.</td></tr>");
+        } else {
+                for a in &aliases {
+                        let domain = a.domain_name.as_deref().unwrap_or("-");
+                        let is_catch = is_catch_all(&a.source, a.domain_name.as_deref());
+                        if is_catch && a.active {
+                                catch_ready.insert(a.domain_id, true);
+                        }
+                        let alias_type = if is_catch {
+                                "<span class=\"chip chip-warn\">Catch-all</span>"
+                        } else {
+                                "<span class=\"chip chip-neutral\">Targeted</span>"
+                        };
+                        let tracking_badge = if a.tracking_enabled {
+                                "<span class=\"badge badge-good\">On</span>"
+                        } else {
+                                "<span class=\"badge badge-warn\">Off</span>"
+                        };
+                        let active_badge = if a.active {
+                                "<span class=\"badge badge-good\">Active</span>"
+                        } else {
+                                "<span class=\"badge badge-bad\">Disabled</span>"
+                        };
+                        rows.push_str(&format!(
+                                r#"<tr>
+    <td>{domain}</td>
+    <td>{source}</td>
+    <td>{destination}</td>
+    <td>{alias_type}</td>
+    <td>{tracking}</td>
+    <td>{active}</td>
+    <td class="table-actions">
+        <a class="btn btn-ghost btn-sm" href="/aliases/{id}/edit">Edit</a>
+        <form method="post" action="/aliases/{id}/delete" class="inline-form" onsubmit="return confirm('Delete this alias?')">
+            <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+        </form>
+    </td>
+</tr>"#,
+                                domain = esc(domain),
+                                source = esc(&a.source),
+                                destination = esc(&a.destination),
+                                alias_type = alias_type,
+                                tracking = tracking_badge,
+                                active = active_badge,
+                                id = a.id,
+                        ));
+                }
+        }
+
+        let domain_total = domains.len() as f64;
+        let coverage_pct = if domain_total > 0.0 {
+                (catch_ready.len() as f64 / domain_total * 100.0).round()
+        } else {
+                0.0
+        };
+        let coverage_copy = if domain_total > 0.0 {
+                format!("{} of {} domains have an active catch-all", catch_ready.len(), domains.len())
+        } else {
+                "Add a domain to calculate catch-all coverage".to_string()
+        };
+
+        let content = format!(
+                r#"<section class="page-heading">
+    <div>
+        <p class="eyebrow">Routing intelligence</p>
+        <h1>Aliases</h1>
+        <p class="lede">Use direct aliases for known senders and catch-alls for the rest. Keep tracking toggled where compliance allows.</p>
+    </div>
+    <div>
+        <a class="btn btn-primary" href="/aliases/new">Add alias</a>
+    </div>
+</section>
+<section class="doc-panel">
+    <div>
+        <h2>Catch-all coverage</h2>
+        <p>{coverage_copy}</p>
+        <p class="coverage-meter"><span style="width:{coverage_pct}%"></span></p>
+    </div>
+    <ul>
+        <li>Create <code>*@domain.com</code> to scoop stray recipients.</li>
+        <li>Use tracking to learn which aliases are still receiving mail.</li>
+        <li>Disable catch-all aliases temporarily instead of deleting them.</li>
+    </ul>
+</section>
+<div class="table-card">
+    <table>
+        <thead>
+            <tr><th>Domain</th><th>Source</th><th>Destination</th><th>Type</th><th>Tracking</th><th>Status</th><th>Actions</th></tr>
+        </thead>
+        <tbody>{rows}</tbody>
+    </table>
+</div>"#,
+                coverage_copy = coverage_copy,
+                coverage_pct = coverage_pct,
+                rows = rows,
+        );
     Html(layout("Aliases", "Aliases", &content, None))
 }
 
@@ -798,11 +1121,18 @@ async fn new_alias_form(_auth: AuthAdmin, State(state): State<AppState>) -> Html
     }
     let content = format!(
         r#"<h1>Add Alias</h1>
+<section class="doc-panel doc-inline">
+  <h2>When to use catch-all</h2>
+  <p>Configure <code>*@domain.com</code> to collect unknown addresses, then forward them to a monitored mailbox.</p>
+  <p class="small">Tip: leave tracking enabled on new catch-alls for the first week.</p>
+</section>
 <form method="post" action="/aliases">
 <label>Domain<br><select name="domain_id" required>{options}</select></label><br>
-<label>Source (full address)<br><input type="text" name="source" required></label><br>
-<label>Destination (full address)<br><input type="text" name="destination" required></label><br>
-<label><input type="checkbox" name="tracking_enabled" value="on"> Enable Tracking</label><br>
+<label>Source (full address)<br><input type="text" name="source" placeholder="*@example.com" required></label>
+<p class="field-hint">Use an asterisk to build a catch-all; otherwise provide the exact mailbox.</p>
+<label>Destination (full address)<br><input type="text" name="destination" placeholder="ops@example.com" required></label>
+<p class="field-hint">This mailbox receives copies of anything that matches the alias.</p>
+<label class="checkbox-row"><input type="checkbox" name="tracking_enabled" value="on" checked> Enable Tracking</label><br>
 <button type="submit">Create</button>
 </form>"#,
         options = options,
@@ -854,11 +1184,18 @@ async fn edit_alias_form(
     let tracking_checked = if alias.tracking_enabled { " checked" } else { "" };
     let content = format!(
         r#"<h1>Edit Alias</h1>
+<section class="doc-panel doc-inline">
+  <h2>Routing notes</h2>
+  <p>Toggle <strong>Active</strong> instead of deleting when you want to pause a catch-all.</p>
+  <p class="small">Tracking helps confirm whether a legacy alias is still in use.</p>
+</section>
 <form method="post" action="/aliases/{id}">
-<label>Source<br><input type="text" name="source" value="{source}" required></label><br>
-<label>Destination<br><input type="text" name="destination" value="{destination}" required></label><br>
-<label><input type="checkbox" name="active" value="on"{active_checked}> Active</label><br>
-<label><input type="checkbox" name="tracking_enabled" value="on"{tracking_checked}> Enable Tracking</label><br>
+<label>Source<br><input type="text" name="source" value="{source}" required></label>
+<p class="field-hint">Keep <code>*@domain</code> syntax for catch-alls.</p>
+<label>Destination<br><input type="text" name="destination" value="{destination}" required></label>
+<p class="field-hint">Use a shared mailbox or list for observability.</p>
+<label class="checkbox-row"><input type="checkbox" name="active" value="on"{active_checked}> Active</label><br>
+<label class="checkbox-row"><input type="checkbox" name="tracking_enabled" value="on"{tracking_checked}> Enable Tracking</label><br>
 <button type="submit">Save</button>
 </form>"#,
         id = alias.id,
