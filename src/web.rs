@@ -40,41 +40,35 @@ fn layout(title: &str, nav_active: &str, content: &str, flash: Option<&str>) -> 
     ];
     let mut nav_html = String::new();
     for (label, href) in &nav_items {
-        let class = if *label == nav_active { " class=\"active\"" } else { "" };
-        nav_html.push_str(&format!("<a href=\"{}\"{}>{}</a>", esc(href), class, esc(label)));
+        let aria = if *label == nav_active { " aria-current=\"page\"" } else { "" };
+        nav_html.push_str(&format!("<a href=\"{}\"{}>{}</a>", esc(href), aria, esc(label)));
     }
     let flash_html = match flash {
-        Some(msg) => format!("<div class=\"flash\">{}</div>", esc(msg)),
+        Some(msg) => format!("<output>{}</output>", esc(msg)),
         None => String::new(),
     };
     format!(
         r#"<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title>
 <link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/desktop.css" media="(min-width: 768px)">
 </head>
 <body>
-<div class="bg-grid" aria-hidden="true"></div>
-<div class="app-shell">
-<header class="aws-nav">
-  <div class="brand-block">
-    <span class="brand-title">Mailserver</span>
-    <span class="brand-subtitle">Control Plane</span>
-  </div>
-  <nav class="nav-links">{nav_html}</nav>
-  <div class="nav-meta">
-    <span class="badge badge-good">Online</span>
-  </div>
+<header>
+  <strong>Mailserver</strong>
+  <small>Control Panel</small>
+  <nav>{nav_html}</nav>
+  <mark>Online</mark>
 </header>
 <main>
 {flash_html}
-<div class="page-frame">{content}</div>
+{content}
 </main>
-<footer>Mailserver Admin</footer>
-</div>
+<footer><small>Mailserver Admin</small></footer>
 </body>
 </html>"#,
         title = esc(title),
@@ -363,22 +357,22 @@ async fn dashboard(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Stri
         }
 
         let hero = format!(
-                r#"<section class=\"hero\">
-    <div>
-        <p class=\"eyebrow\">Deliverability overview</p>
-        <h1>Mailserver Control Plane</h1>
-        <p class=\"lede\">Track DNS, DKIM, and alias coverage for {host}. Catch issues before they page you.</p>
-        <div class=\"hero-actions\">
-            <a class=\"btn btn-primary\" href=\"/domains\">Manage domains</a>
-            <a class=\"btn btn-ghost\" href=\"/aliases\">Tune aliases</a>
-        </div>
-    </div>
-    <div class=\"hero-meta\">
-        <div class=\"meta-line\"><span>Hostname</span><strong>{host}</strong></div>
-        <div class=\"meta-line\"><span>SMTP</span><strong>25 / 587 / 465</strong></div>
-        <div class=\"meta-line\"><span>IMAP</span><strong>143 / 993</strong></div>
-        <div class=\"meta-line\"><span>POP3</span><strong>110 / 995</strong></div>
-    </div>
+                r#"<section>
+    <hgroup>
+        <small>Deliverability overview</small>
+        <h1>Mailserver Control Panel</h1>
+    </hgroup>
+    <p>Track DNS, DKIM, and alias coverage for {host}. Catch issues before they page you.</p>
+    <nav>
+        <a href=\"/domains\"><strong>Manage domains</strong></a>
+        <a href=\"/aliases\">Tune aliases</a>
+    </nav>
+    <dl>
+        <dt>Hostname</dt><dd>{host}</dd>
+        <dt>SMTP</dt><dd>25 / 587 / 465</dd>
+        <dt>IMAP</dt><dd>143 / 993</dd>
+        <dt>POP3</dt><dd>110 / 995</dd>
+    </dl>
 </section>"#,
                 host = esc(&state.hostname),
         );
@@ -393,25 +387,23 @@ async fn dashboard(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Stri
         let mut stat_cards = String::new();
         for (label, value, caption) in &stat_definitions {
                 stat_cards.push_str(&format!(
-                        "<article class=\"stat-card\"><div class=\"number\">{}</div><div class=\"label\">{}</div><p>{}</p></article>",
-                        value,
+                        "<article><data value=\"{}\">{}</data><strong>{}</strong><small>{}</small></article>",
+                        value, value,
                         esc(label),
                         esc(caption)
                 ));
         }
         let stats_section = format!(
-                r#"<section class=\"panel\">
-    <div class=\"panel-head\">
-        <div>
-            <p class=\"eyebrow\">Platform health</p>
-            <h2>Live counters</h2>
-        </div>
-        <details class=\"inline-doc\">
-            <summary>How do these refresh?</summary>
-            <p>Counts are queried live from SQLite each time you load the console.</p>
-        </details>
-    </div>
-    <div class=\"stat-grid\">{stat_cards}</div>
+                r#"<section>
+    <hgroup>
+        <small>Platform health</small>
+        <h2>Live counters</h2>
+    </hgroup>
+    <details>
+        <summary>How do these refresh?</summary>
+        <p>Counts are queried live from SQLite each time you load the console.</p>
+    </details>
+    <div>{stat_cards}</div>
 </section>"#,
                 stat_cards = stat_cards,
         );
@@ -419,14 +411,12 @@ async fn dashboard(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Stri
         let mut domain_cards = String::new();
         if domains.is_empty() {
                 domain_cards.push_str(
-                        "<p class=\"empty-state\">No domains yet. Add your first domain to unlock DNS guidance.</p>"
+                        "<p><em>No domains yet. Add your first domain to unlock DNS guidance.</em></p>"
                 );
         } else {
                 for domain in &domains {
-                        let active_class = if domain.active { "badge-good" } else { "badge-bad" };
                         let active_label = if domain.active { "Accepting mail" } else { "Suspended" };
                         let dkim_ready = domain.dkim_public_key.is_some();
-                        let dkim_class = if dkim_ready { "badge-good" } else { "badge-warn" };
                         let dkim_label = if dkim_ready {
                                 format!("Selector {} ready", esc(&domain.dkim_selector))
                         } else {
@@ -434,60 +424,55 @@ async fn dashboard(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Stri
                         };
                         let catch_html = match catch_all_map.get(&domain.id) {
                                 Some(alias) if alias.active => format!(
-                                        "<span class=\"badge badge-good\">Catch-all → {}</span>",
+                                        "<mark>Catch-all → {}</mark>",
                                         esc(&alias.destination)
                                 ),
                                 Some(alias) => format!(
-                                        "<span class=\"badge badge-warn\">Catch-all disabled ({})</span>",
+                                        "<mark>Catch-all disabled ({})</mark>",
                                         esc(&alias.destination)
                                 ),
-                                None => "<span class=\"badge badge-warn\">No catch-all alias</span>".to_string(),
+                                None => "<mark>No catch-all alias</mark>".to_string(),
                         };
-                        let footer_state = match domain.footer_html.as_deref() {
-                                Some(html) if !html.trim().is_empty() => ("badge-good", "Footer injected".to_string()),
-                                _ => ("badge-warn", "No footer".to_string()),
+                        let footer_label = match domain.footer_html.as_deref() {
+                                Some(html) if !html.trim().is_empty() => "Footer injected",
+                                _ => "No footer",
                         };
                         domain_cards.push_str(&format!(
-                                r#"<article class=\"domain-card\">
-    <div class=\"domain-card__header\">
+                                r#"<article>
+    <header>
         <h3>{domain}</h3>
-        <span class=\"badge {active_class}\">{active_label}</span>
-    </div>
-    <ul class=\"status-list\">
-        <li><span>DKIM</span><span class=\"badge {dkim_class}\">{dkim_label}</span></li>
-        <li><span>Catch-all</span>{catch_html}</li>
-        <li><span>Footer</span><span class=\"badge {footer_class}\">{footer_label}</span></li>
-    </ul>
-    <div class=\"domain-card__actions\">
-        <a class=\"btn btn-ghost btn-sm\" href=\"/domains/{id}/dns\">DNS runbook</a>
-        <a class=\"btn btn-ghost btn-sm\" href=\"/aliases\">Alias registry</a>
-    </div>
+        <mark>{active_label}</mark>
+    </header>
+    <dl>
+        <dt>DKIM</dt><dd>{dkim_label}</dd>
+        <dt>Catch-all</dt><dd>{catch_html}</dd>
+        <dt>Footer</dt><dd>{footer_label}</dd>
+    </dl>
+    <nav>
+        <a href=\"/domains/{id}/dns\"><small>DNS runbook</small></a>
+        <a href=\"/aliases\"><small>Alias registry</small></a>
+    </nav>
 </article>"#,
                                 domain = esc(&domain.domain),
-                                active_class = active_class,
                                 active_label = active_label,
-                                dkim_class = dkim_class,
                                 dkim_label = dkim_label,
                                 catch_html = catch_html,
-                                footer_class = footer_state.0,
-                                footer_label = footer_state.1,
+                                footer_label = footer_label,
                                 id = domain.id,
                         ));
                 }
         }
         let domains_section = format!(
-                r#"<section class=\"panel\">
-    <div class=\"panel-head\">
-        <div>
-            <p class=\"eyebrow\">DNS & DKIM posture</p>
-            <h2>Per-domain status</h2>
-        </div>
-        <details class=\"inline-doc\">
-            <summary>Why this matters</summary>
-            <p>Missing DKIM keys or catch-all routing gaps often surface as delivery failures. Review each domain regularly.</p>
-        </details>
-    </div>
-    <div class=\"domain-grid\">{domain_cards}</div>
+                r#"<section>
+    <hgroup>
+        <small>DNS &amp; DKIM posture</small>
+        <h2>Per-domain status</h2>
+    </hgroup>
+    <details>
+        <summary>Why this matters</summary>
+        <p>Missing DKIM keys or catch-all routing gaps often surface as delivery failures. Review each domain regularly.</p>
+    </details>
+    <div>{domain_cards}</div>
 </section>"#,
                 domain_cards = domain_cards,
         );
@@ -498,51 +483,44 @@ async fn dashboard(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Stri
         } else {
                 for domain in &domains {
                         let catch = catch_all_map.get(&domain.id);
-                        let (status, badge_class, destination) = match catch {
+                        let (status, destination) = match catch {
                                 Some(alias) if alias.active => (
                                         "Protected",
-                                        "badge-good",
                                         format!("{}", esc(&alias.destination)),
                                 ),
                                 Some(alias) => (
                                         "Disabled",
-                                        "badge-warn",
                                         format!("{}", esc(&alias.destination)),
                                 ),
-                        None => ("Uncovered", "badge-bad", "&mdash;".to_string()),
+                        None => ("Uncovered", "&mdash;".to_string()),
                         };
                         catch_rows.push_str(&format!(
-                                "<tr><td>{}</td><td><span class=\"badge {}\">{}</span></td><td>{}</td><td><a class=\"btn btn-link\" href=\"/aliases\">Create / edit</a></td></tr>",
+                                "<tr><td>{}</td><td><mark>{}</mark></td><td>{}</td><td><a href=\"/aliases\">Create / edit</a></td></tr>",
                                 esc(&domain.domain),
-                                badge_class,
                                 status,
                                 destination,
                         ));
                 }
         }
         let alias_focus = format!(
-                r#"<section class=\"panel\">
-    <div class=\"panel-head\">
-        <div>
-            <p class=\"eyebrow\">Alias coverage</p>
-            <h2>Catch-all readiness</h2>
-        </div>
-        <details class=\"inline-doc\">
-            <summary>How catch-all works</summary>
-            <p>Define an alias like <code>*@example.com</code> to collect any recipient the directory does not know about.</p>
-        </details>
-    </div>
-    <div class=\"table-card\">
-        <table>
-            <thead>
-                <tr><th>Domain</th><th>Status</th><th>Route target</th><th>Action</th></tr>
-            </thead>
-            <tbody>{catch_rows}</tbody>
-        </table>
-    </div>
+		r#"<section>
+    <hgroup>
+        <small>Alias coverage</small>
+        <h2>Catch-all readiness</h2>
+    </hgroup>
+    <details>
+        <summary>How catch-all works</summary>
+        <p>Define an alias like <code>*@example.com</code> to collect any recipient the directory does not know about.</p>
+    </details>
+    <table>
+        <thead>
+            <tr><th>Domain</th><th>Status</th><th>Route target</th><th>Action</th></tr>
+        </thead>
+        <tbody>{catch_rows}</tbody>
+    </table>
 </section>"#,
-                catch_rows = catch_rows,
-        );
+		catch_rows = catch_rows,
+	);
 
         let content = format!("{hero}{stats}{domains}{aliases_doc}", hero = hero, stats = stats_section, domains = domains_section, aliases_doc = alias_focus);
     Html(layout("Dashboard", "Dashboard", &content, None))
@@ -581,8 +559,8 @@ async fn list_domains(_auth: AuthAdmin, State(state): State<AppState>) -> Html<S
         r#"<h1>Domains</h1>
 <p><a href="/domains/new">Add Domain</a></p>
 <table>
-<tr><th>Domain</th><th>Active</th><th>DKIM</th><th>Footer</th><th>Actions</th></tr>
-{rows}
+<thead><tr><th>Domain</th><th>Active</th><th>DKIM</th><th>Footer</th><th>Actions</th></tr></thead>
+<tbody>{rows}</tbody>
 </table>"#,
         rows = rows,
     );
@@ -592,15 +570,15 @@ async fn list_domains(_auth: AuthAdmin, State(state): State<AppState>) -> Html<S
 async fn new_domain_form(_auth: AuthAdmin) -> Html<String> {
     debug!("[web] GET /domains/new — new domain form");
         let content = r#"<h1>Add Domain</h1>
-<section class="doc-panel doc-inline">
+<aside>
     <h2>Domain footer</h2>
     <p>Add a trusted HTML snippet that will be appended to every outbound HTML email for this domain.</p>
-    <p class="small">Leave blank to skip footer injection. Plain-text emails will receive a simplified version.</p>
-</section>
+    <p><small>Leave blank to skip footer injection. Plain-text emails will receive a simplified version.</small></p>
+</aside>
 <form method="post" action="/domains">
 <label>Domain Name<br><input type="text" name="domain" required></label>
 <label>Footer HTML (optional)<br><textarea name="footer_html" rows="5" placeholder="&lt;p&gt;Confidential notice&lt;/p&gt;"></textarea></label>
-<p class="field-hint">Supports inline styles. Avoid external scripts.</p>
+<small>Supports inline styles. Avoid external scripts.</small>
 <button type="submit">Create</button>
 </form>"#;
     Html(layout("Add Domain", "Domains", content, None))
@@ -654,10 +632,10 @@ async fn edit_domain_form(
     let content = format!(
         r#"<h1>Edit Domain</h1>
 <form method="post" action="/domains/{id}">
-<label>Domain Name<br><input type="text" name="domain" value="{domain}" required></label><br>
-<label><input type="checkbox" name="active" value="on"{checked}> Active</label><br>
+<label>Domain Name<br><input type="text" name="domain" value="{domain}" required></label>
+<label><input type="checkbox" name="active" value="on"{checked}> Active</label>
 <label>Footer HTML (optional)<br><textarea name="footer_html" rows="6">{footer}</textarea></label>
-<p class="field-hint">Leave blank to disable footer injection for this domain.</p>
+<small>Leave blank to disable footer injection for this domain.</small>
 <button type="submit">Save</button>
 </form>"#,
         id = domain.id,
@@ -803,7 +781,7 @@ async fn dns_info(
         );
 
         let mut dkim_block = String::from(
-                "<p class=\"inline-doc\">Generate a DKIM key to unlock signing coverage.</p>",
+                "<p><em>Generate a DKIM key to unlock signing coverage.</em></p>",
         );
         if let Some(ref pub_key) = domain.dkim_public_key {
                 let key_b64: String = pub_key
@@ -817,10 +795,10 @@ async fn dns_info(
                         key = esc(&key_b64),
                 ));
                 dkim_block = format!(
-                        r#"<div class="dns-record">
-<div class="type">selector: {selector}</div>
+                        r#"<figure>
+<figcaption><small>selector: {selector}</small></figcaption>
 <pre>v=DKIM1; k=rsa; p={key}</pre>
-</div>"#,
+</figure>"#,
                         selector = esc(&domain.dkim_selector),
                         key = esc(&key_b64),
                 );
@@ -832,19 +810,17 @@ async fn dns_info(
         ));
 
         let content = format!(
-                r#"<section class="page-heading">
-    <div>
-        <p class="eyebrow">DNS runbook</p>
+                r#"<section>
+    <hgroup>
+        <small>DNS runbook</small>
         <h1>{domain}</h1>
-        <p class="lede">Apply these records to Route 53 (or your DNS provider) to keep the domain aligned.</p>
-    </div>
-    <div>
-        <form method="post" action="/domains/{id}/dkim">
-            <button class="btn btn-primary" type="submit">Generate DKIM key</button>
-        </form>
-    </div>
+    </hgroup>
+    <p>Apply these records to Route 53 (or your DNS provider) to keep the domain aligned.</p>
+    <form method="post" action="/domains/{id}/dkim">
+        <button type="submit">Generate DKIM key</button>
+    </form>
 </section>
-<section class="doc-panel doc-inline">
+<aside>
     <h2>Deployment checklist</h2>
     <ol>
         <li>Update MX and SPF first to establish routing.</li>
@@ -852,28 +828,24 @@ async fn dns_info(
         <li>Add DMARC with <code>p=none</code> until you trust reports.</li>
         <li>Verify reverse DNS points back to <code>{hostname}</code>.</li>
     </ol>
-    <p class="small">Catch-all aliases rely on MX reaching this host. Keep DNS fresh.</p>
-</section>
-<div class="table-card">
-    <table>
-        <thead><tr><th>Type</th><th>Name</th><th>Value</th><th>Purpose</th></tr></thead>
-        <tbody>{rows}</tbody>
-    </table>
-</div>
-<section class="panel">
-    <div class="panel-head">
-        <div>
-            <p class="eyebrow">DKIM payload</p>
-            <h2>Selector {selector}</h2>
-        </div>
-    </div>
+    <small>Catch-all aliases rely on MX reaching this host. Keep DNS fresh.</small>
+</aside>
+<table>
+    <thead><tr><th>Type</th><th>Name</th><th>Value</th><th>Purpose</th></tr></thead>
+    <tbody>{rows}</tbody>
+</table>
+<section>
+    <hgroup>
+        <small>DKIM payload</small>
+        <h2>Selector {selector}</h2>
+    </hgroup>
     {dkim_block}
 </section>
-<section class="doc-panel doc-inline">
+<aside>
     <h2>Reverse DNS</h2>
     <p>Ask your provider to point the PTR record for your public IP back to <code>{hostname}</code>.</p>
-    <p><a class="btn btn-link" href="/domains">Back to Domains</a></p>
-</section>"#,
+    <p><a href="/domains">Back to Domains</a></p>
+</aside>"#,
                 domain = esc(&domain.domain),
                 id = domain.id,
                 selector = esc(&domain.dkim_selector),
@@ -914,8 +886,8 @@ async fn list_accounts(_auth: AuthAdmin, State(state): State<AppState>) -> Html<
         r#"<h1>Accounts</h1>
 <p><a href="/accounts/new">Add Account</a></p>
 <table>
-<tr><th>Username</th><th>Domain</th><th>Name</th><th>Active</th><th>Quota (MB)</th><th>Actions</th></tr>
-{rows}
+<thead><tr><th>Username</th><th>Domain</th><th>Name</th><th>Active</th><th>Quota (MB)</th><th>Actions</th></tr></thead>
+<tbody>{rows}</tbody>
 </table>"#,
         rows = rows,
     );
@@ -936,11 +908,11 @@ async fn new_account_form(_auth: AuthAdmin, State(state): State<AppState>) -> Ht
     let content = format!(
         r#"<h1>Add Account</h1>
 <form method="post" action="/accounts">
-<label>Domain<br><select name="domain_id" required>{options}</select></label><br>
-<label>Username<br><input type="text" name="username" required></label><br>
-<label>Password<br><input type="password" name="password" required></label><br>
-<label>Display Name<br><input type="text" name="name"></label><br>
-<label>Quota (MB, 0 = unlimited)<br><input type="number" name="quota" value="0"></label><br>
+<label>Domain<br><select name="domain_id" required>{options}</select></label>
+<label>Username<br><input type="text" name="username" required></label>
+<label>Password<br><input type="password" name="password" required></label>
+<label>Display Name<br><input type="text" name="name"></label>
+<label>Quota (MB, 0 = unlimited)<br><input type="number" name="quota" value="0"></label>
 <button type="submit">Create</button>
 </form>"#,
         options = options,
@@ -993,10 +965,10 @@ async fn edit_account_form(
     let content = format!(
         r#"<h1>Edit Account</h1>
 <form method="post" action="/accounts/{id}">
-<label>Display Name<br><input type="text" name="name" value="{name}"></label><br>
-<label>New Password (leave blank to keep)<br><input type="password" name="password"></label><br>
-<label><input type="checkbox" name="active" value="on"{checked}> Active</label><br>
-<label>Quota (MB)<br><input type="number" name="quota" value="{quota}"></label><br>
+<label>Display Name<br><input type="text" name="name" value="{name}"></label>
+<label>New Password (leave blank to keep)<br><input type="password" name="password"></label>
+<label><input type="checkbox" name="active" value="on"{checked}> Active</label>
+<label>Quota (MB)<br><input type="number" name="quota" value="{quota}"></label>
 <button type="submit">Save</button>
 </form>"#,
         id = account.id,
@@ -1060,19 +1032,19 @@ async fn list_aliases(_auth: AuthAdmin, State(state): State<AppState>) -> Html<S
                                 catch_ready.insert(a.domain_id, true);
                         }
                         let alias_type = if is_catch {
-                                "<span class=\"chip chip-warn\">Catch-all</span>"
+                                "<mark>Catch-all</mark>"
                         } else {
-                                "<span class=\"chip chip-neutral\">Targeted</span>"
+                                "<em>Targeted</em>"
                         };
                         let tracking_badge = if a.tracking_enabled {
-                                "<span class=\"badge badge-good\">On</span>"
+                                "<mark>On</mark>"
                         } else {
-                                "<span class=\"badge badge-warn\">Off</span>"
+                                "<em>Off</em>"
                         };
                         let active_badge = if a.active {
-                                "<span class=\"badge badge-good\">Active</span>"
+                                "<mark>Active</mark>"
                         } else {
-                                "<span class=\"badge badge-bad\">Disabled</span>"
+                                "<em>Disabled</em>"
                         };
                         rows.push_str(&format!(
                                 r#"<tr>
@@ -1082,10 +1054,10 @@ async fn list_aliases(_auth: AuthAdmin, State(state): State<AppState>) -> Html<S
     <td>{alias_type}</td>
     <td>{tracking}</td>
     <td>{active}</td>
-    <td class="table-actions">
-        <a class="btn btn-ghost btn-sm" href="/aliases/{id}/edit">Edit</a>
-        <form method="post" action="/aliases/{id}/delete" class="inline-form" onsubmit="return confirm('Delete this alias?')">
-            <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+    <td>
+        <a href="/aliases/{id}/edit">Edit</a>
+        <form method="post" action="/aliases/{id}/delete" style="display:inline" onsubmit="return confirm('Delete this alias?')">
+            <button type="submit">Delete</button>
         </form>
     </td>
 </tr>"#,
@@ -1113,36 +1085,30 @@ async fn list_aliases(_auth: AuthAdmin, State(state): State<AppState>) -> Html<S
         };
 
         let content = format!(
-                r#"<section class="page-heading">
-    <div>
-        <p class="eyebrow">Routing intelligence</p>
+                r#"<section>
+    <hgroup>
+        <small>Routing intelligence</small>
         <h1>Aliases</h1>
-        <p class="lede">Use direct aliases for known senders and catch-alls for the rest. Keep tracking toggled where compliance allows.</p>
-    </div>
-    <div>
-        <a class="btn btn-primary" href="/aliases/new">Add alias</a>
-    </div>
+    </hgroup>
+    <p>Use direct aliases for known senders and catch-alls for the rest. Keep tracking toggled where compliance allows.</p>
+    <a href="/aliases/new"><strong>Add alias</strong></a>
 </section>
-<section class="doc-panel">
-    <div>
-        <h2>Catch-all coverage</h2>
-        <p>{coverage_copy}</p>
-        <p class="coverage-meter"><span style="width:{coverage_pct}%"></span></p>
-    </div>
+<aside>
+    <h2>Catch-all coverage</h2>
+    <p>{coverage_copy}</p>
+    <progress value="{coverage_pct}" max="100"></progress>
     <ul>
         <li>Create <code>*@domain.com</code> to scoop stray recipients.</li>
         <li>Use tracking to learn which aliases are still receiving mail.</li>
         <li>Disable catch-all aliases temporarily instead of deleting them.</li>
     </ul>
-</section>
-<div class="table-card">
-    <table>
-        <thead>
-            <tr><th>Domain</th><th>Source</th><th>Destination</th><th>Type</th><th>Tracking</th><th>Status</th><th>Actions</th></tr>
-        </thead>
-        <tbody>{rows}</tbody>
-    </table>
-</div>"#,
+</aside>
+<table>
+    <thead>
+        <tr><th>Domain</th><th>Source</th><th>Destination</th><th>Type</th><th>Tracking</th><th>Status</th><th>Actions</th></tr>
+    </thead>
+    <tbody>{rows}</tbody>
+</table>"#,
                 coverage_copy = coverage_copy,
                 coverage_pct = coverage_pct,
                 rows = rows,
@@ -1163,18 +1129,18 @@ async fn new_alias_form(_auth: AuthAdmin, State(state): State<AppState>) -> Html
     }
     let content = format!(
         r#"<h1>Add Alias</h1>
-<section class="doc-panel doc-inline">
+<aside>
   <h2>When to use catch-all</h2>
   <p>Configure <code>*@domain.com</code> to collect unknown addresses, then forward them to a monitored mailbox.</p>
-  <p class="small">Tip: leave tracking enabled on new catch-alls for the first week.</p>
-</section>
+  <p><small>Tip: leave tracking enabled on new catch-alls for the first week.</small></p>
+</aside>
 <form method="post" action="/aliases">
-<label>Domain<br><select name="domain_id" required>{options}</select></label><br>
+<label>Domain<br><select name="domain_id" required>{options}</select></label>
 <label>Source (full address)<br><input type="text" name="source" placeholder="*@example.com" required></label>
-<p class="field-hint">Use an asterisk to build a catch-all; otherwise provide the exact mailbox.</p>
+<small>Use an asterisk to build a catch-all; otherwise provide the exact mailbox.</small>
 <label>Destination (full address)<br><input type="text" name="destination" placeholder="ops@example.com" required></label>
-<p class="field-hint">This mailbox receives copies of anything that matches the alias.</p>
-<label class="checkbox-row"><input type="checkbox" name="tracking_enabled" value="on" checked> Enable Tracking</label><br>
+<small>This mailbox receives copies of anything that matches the alias.</small>
+<label><input type="checkbox" name="tracking_enabled" value="on" checked> Enable Tracking</label>
 <button type="submit">Create</button>
 </form>"#,
         options = options,
@@ -1226,18 +1192,18 @@ async fn edit_alias_form(
     let tracking_checked = if alias.tracking_enabled { " checked" } else { "" };
     let content = format!(
         r#"<h1>Edit Alias</h1>
-<section class="doc-panel doc-inline">
+<aside>
   <h2>Routing notes</h2>
   <p>Toggle <strong>Active</strong> instead of deleting when you want to pause a catch-all.</p>
-  <p class="small">Tracking helps confirm whether a legacy alias is still in use.</p>
-</section>
+  <p><small>Tracking helps confirm whether a legacy alias is still in use.</small></p>
+</aside>
 <form method="post" action="/aliases/{id}">
 <label>Source<br><input type="text" name="source" value="{source}" required></label>
-<p class="field-hint">Keep <code>*@domain</code> syntax for catch-alls.</p>
+<small>Keep <code>*@domain</code> syntax for catch-alls.</small>
 <label>Destination<br><input type="text" name="destination" value="{destination}" required></label>
-<p class="field-hint">Use a shared mailbox or list for observability.</p>
-<label class="checkbox-row"><input type="checkbox" name="active" value="on"{active_checked}> Active</label><br>
-<label class="checkbox-row"><input type="checkbox" name="tracking_enabled" value="on"{tracking_checked}> Enable Tracking</label><br>
+<small>Use a shared mailbox or list for observability.</small>
+<label><input type="checkbox" name="active" value="on"{active_checked}> Active</label>
+<label><input type="checkbox" name="tracking_enabled" value="on"{tracking_checked}> Enable Tracking</label>
 <button type="submit">Save</button>
 </form>"#,
         id = alias.id,
@@ -1305,8 +1271,8 @@ async fn list_tracking(_auth: AuthAdmin, State(state): State<AppState>) -> Html<
     let content = format!(
         r#"<h1>Tracking</h1>
 <table>
-<tr><th>Message ID</th><th>Sender</th><th>Recipient</th><th>Subject</th><th>Date</th><th>Opens</th></tr>
-{rows}
+<thead><tr><th>Message ID</th><th>Sender</th><th>Recipient</th><th>Subject</th><th>Date</th><th>Opens</th></tr></thead>
+<tbody>{rows}</tbody>
 </table>"#,
         rows = rows,
     );
@@ -1342,17 +1308,17 @@ async fn tracking_detail(
 
     let content = format!(
         r#"<h1>Message Details</h1>
-<table>
-<tr><th>Message ID</th><td>{msg_id}</td></tr>
-<tr><th>Sender</th><td>{sender}</td></tr>
-<tr><th>Recipient</th><td>{recipient}</td></tr>
-<tr><th>Subject</th><td>{subject}</td></tr>
-<tr><th>Date</th><td>{date}</td></tr>
-</table>
+<dl>
+<dt>Message ID</dt><dd>{msg_id}</dd>
+<dt>Sender</dt><dd>{sender}</dd>
+<dt>Recipient</dt><dd>{recipient}</dd>
+<dt>Subject</dt><dd>{subject}</dd>
+<dt>Date</dt><dd>{date}</dd>
+</dl>
 <h2>Opens ({open_count})</h2>
 <table>
-<tr><th>IP Address</th><th>User Agent</th><th>Time</th></tr>
-{open_rows}
+<thead><tr><th>IP Address</th><th>User Agent</th><th>Time</th></tr></thead>
+<tbody>{open_rows}</tbody>
 </table>
 <p><a href="/tracking">Back to Tracking</a></p>"#,
         msg_id = esc(&message.message_id),
@@ -1383,16 +1349,16 @@ async fn settings_page(auth: AuthAdmin, State(_state): State<AppState>) -> Html<
     let content = format!(
         r#"<h1>Settings</h1>
 <h2>Admin Account</h2>
-<table>
-<tr><th>Username</th><td>{username}</td></tr>
-<tr><th>2FA Status</th><td>{totp_status}</td></tr>
-</table>
+<dl>
+<dt>Username</dt><dd>{username}</dd>
+<dt>2FA Status</dt><dd>{totp_status}</dd>
+</dl>
 
 <h2>Change Password</h2>
 <form method="post" action="/settings/password">
-<label>Current Password<br><input type="password" name="current_password" required></label><br>
-<label>New Password<br><input type="password" name="new_password" required></label><br>
-<label>Confirm Password<br><input type="password" name="confirm_password" required></label><br>
+<label>Current Password<br><input type="password" name="current_password" required></label>
+<label>New Password<br><input type="password" name="new_password" required></label>
+<label>Confirm Password<br><input type="password" name="confirm_password" required></label>
 <button type="submit">Change Password</button>
 </form>
 
@@ -1443,7 +1409,7 @@ async fn setup_2fa(auth: AuthAdmin, State(_state): State<AppState>) -> Html<Stri
 <p><code>{uri}</code></p>
 <form method="post" action="/settings/2fa/enable">
 <input type="hidden" name="secret" value="{secret}">
-<label>Verification Code<br><input type="text" name="code" pattern="[0-9]{{6}}" maxlength="6" required></label><br>
+<label>Verification Code<br><input type="text" name="code" pattern="[0-9]{{6}}" maxlength="6" required></label>
 <button type="submit">Verify &amp; Enable</button>
 </form>
 <p><a href="/settings">Cancel</a></p>"#,

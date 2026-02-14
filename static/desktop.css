@@ -1,0 +1,113 @@
+/* ── Desktop overrides (loaded via media="(min-width: 768px)") ── */
+
+/* ── Header: horizontal bar ── */
+
+header {
+  flex-direction: row;
+  align-items: center;
+  padding: 0 var(--space-lg);
+  gap: var(--space-md);
+  min-height: 3rem;
+}
+
+header > strong {
+  margin-right: var(--space-xs);
+}
+
+header > small {
+  margin-right: auto;
+  margin-bottom: 0;
+}
+
+header nav {
+  gap: var(--space-xs);
+}
+
+header mark {
+  margin-left: auto;
+}
+
+/* ── Main: constrained width ── */
+
+main {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: var(--space-xl) var(--space-lg);
+}
+
+/* ── Article grid for stat cards ── */
+
+section > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-md);
+}
+
+/* ── Tables: proper table layout ── */
+
+table {
+  display: table;
+}
+
+thead {
+  display: table-header-group;
+}
+
+tbody {
+  display: table-row-group;
+}
+
+tr {
+  display: table-row;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+}
+
+th, td {
+  display: table-cell;
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--gray-100);
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--gray-500);
+  background: var(--gray-50);
+  white-space: nowrap;
+}
+
+tbody tr:hover {
+  background: var(--gray-50);
+}
+
+td:last-child {
+  border-top: none;
+  margin-top: 0;
+  padding-top: var(--space-sm);
+}
+
+/* ── Forms: constrain width ── */
+
+form {
+  max-width: 640px;
+}
+
+/* ── Description lists: side-by-side ── */
+
+dl {
+  max-width: 640px;
+}
+
+/* ── Section headings with actions ── */
+
+section > hgroup + p + a,
+section > hgroup + a {
+  display: inline-block;
+}

@@ -15,7 +15,7 @@ graph LR
     subgraph Docker Container
         Supervisor[Supervisord]
         Admin[Rust Admin Dashboard :8080]
-        Filter[Content Filter]
+        Filter[Content Filter + Footer Injector]
         Postfix[Postfix SMTP :25/587/465]
         Dovecot[Dovecot IMAP/POP3 :143/993/110/995]
         OpenDKIM[OpenDKIM]
@@ -27,7 +27,7 @@ graph LR
         Supervisor --> OpenDKIM
 
         Admin -->|read/write| SQLite
-        Filter -->|tracking queries & inserts| SQLite
+        Filter -->|tracking & footer lookups| SQLite
         Admin -->|generate configs from DB| Postfix
         Admin -->|generate passwd from DB| Dovecot
         Admin -->|generate key tables from DB| OpenDKIM
@@ -69,7 +69,10 @@ sequenceDiagram
     Note over Sender,Recipient: Inbound Email
     Sender->>Postfix: SMTP :25
     Postfix->>Filter: pipe via pixelfilter
-    Filter->>SQLite: check tracking_enabled for alias
+    Filter->>SQLite: lookup tracking + footer_html
+    alt Footer configured
+        Filter->>Filter: inject domain footer (HTML/plain text)
+    end
     alt Tracking enabled
         Filter->>SQLite: insert tracked_message
         Filter->>Filter: inject tracking pixel into HTML body
@@ -87,6 +90,17 @@ sequenceDiagram
     Note over Sender,Recipient: Tracking Pixel Open
     Sender->>Postfix: (later) recipient opens email
     Recipient->>SQLite: GET /pixel?id=... → record pixel_open
+```
+
+## Dashboard Insights
+
+```mermaid
+pie title Dashboard Widget Mix
+    "Domains & DNS" : 30
+    "Accounts & Quotas" : 20
+    "Aliases & Catch-alls" : 20
+    "Tracking Analytics" : 15
+    "Settings / 2FA" : 15
 ```
 
 ## Database Schema (ERD)
