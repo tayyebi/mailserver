@@ -78,9 +78,10 @@ where
 
         debug!("[web] auth attempt for username={}", username);
 
+        let username_for_db = username.to_string();
         let admin = app_state
-            .db
-            .get_admin_by_username(username)
+            .blocking_db(move |db| db.get_admin_by_username(&username_for_db))
+            .await
             .ok_or_else(|| {
                 warn!(
                     "[web] authentication failed — unknown username={}",

@@ -84,9 +84,11 @@ struct ErrorTemplate<'a> {
 
 pub async fn list(_auth: AuthAdmin, State(state): State<AppState>) -> Html<String> {
     info!("[web] GET /aliases — listing aliases");
-    let aliases = state.db.list_all_aliases_with_domain();
+    let aliases = state
+        .blocking_db(|db| db.list_all_aliases_with_domain())
+        .await;
     debug!("[web] found {} aliases", aliases.len());
-    let domains = state.db.list_domains();
+    let domains = state.blocking_db(|db| db.list_domains()).await;
 
     let mut catch_ready: HashMap<i64, bool> = HashMap::new();
     for a in &aliases {
@@ -152,7 +154,7 @@ pub async fn list(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Strin
 
 pub async fn new_form(_auth: AuthAdmin, State(state): State<AppState>) -> Html<String> {
     debug!("[web] GET /aliases/new — new alias form");
-    let domains = state.db.list_domains();
+    let domains = state.blocking_db(|db| db.list_domains()).await;
     let tmpl = NewTemplate {
         nav_active: "Aliases",
         flash: None,
@@ -170,19 +172,21 @@ pub async fn create(
     let sort_order = form.sort_order.unwrap_or(0);
     info!("[web] POST /aliases — creating alias source={}, destination={}, tracking={}, sort_order={}",
         form.source, form.destination, tracking, sort_order);
-    match state.db.create_alias(
-        form.domain_id,
-        &form.source,
-        &form.destination,
-        tracking,
-        sort_order,
-    ) {
+    let domain_id = form.domain_id;
+    let source = form.source.clone();
+    let destination = form.destination.clone();
+    let create_result = state
+        .blocking_db(move |db| {
+            db.create_alias(domain_id, &source, &destination, tracking, sort_order)
+        })
+        .await;
+    match create_result {
         Ok(id) => {
             info!(
                 "[web] alias created successfully: {} -> {} (id={})",
                 form.source, form.destination, id
             );
-            regen_configs(&state);
+            regen_configs(&state).await;
             Redirect::to("/aliases").into_response()
         }
         Err(e) => {
@@ -211,7 +215,7 @@ pub async fn edit_form(
     Path(id): Path<i64>,
 ) -> Response {
     debug!("[web] GET /aliases/{}/edit — edit alias form", id);
-    let alias = match state.db.get_alias(id) {
+    let alias = match state.blocking_db(move |db| db.get_alias(id)).await {
         Some(a) => a,
         None => {
             warn!("[web] alias id={} not found for edit", id);
@@ -237,15 +241,14 @@ pub async fn update(
     let sort_order = form.sort_order.unwrap_or(0);
     info!("[web] POST /aliases/{} — updating alias source={}, destination={}, active={}, tracking={}, sort_order={}",
         id, form.source, form.destination, active, tracking, sort_order);
-    state.db.update_alias(
-        id,
-        &form.source,
-        &form.destination,
-        active,
-        tracking,
-        sort_order,
-    );
-    regen_configs(&state);
+    let source = form.source.clone();
+    let destination = form.destination.clone();
+    state
+        .blocking_db(move |db| {
+            db.update_alias(id, &source, &destination, active, tracking, sort_order)
+        })
+        .await;
+    regen_configs(&state).await;
     Redirect::to("/aliases").into_response()
 }
 
@@ -255,7 +258,7 @@ pub async fn delete(
     Path(id): Path<i64>,
 ) -> Response {
     warn!("[web] POST /aliases/{}/delete — deleting alias", id);
-    state.db.delete_alias(id);
-    regen_configs(&state);
+    state.blocking_db(move |db| db.delete_alias(id)).await;
+    regen_configs(&state).await;
     Redirect::to("/aliases").into_response()
 }

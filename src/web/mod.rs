@@ -88,7 +88,16 @@ async fn handle_not_found(uri: Uri) -> Response {
     )
 }
 
-pub(crate) fn regen_configs(state: &AppState) {
+pub(crate) async fn regen_configs(state: &AppState) {
     info!("[web] regenerating mail service configs");
-    crate::config::generate_all_configs(&state.db, &state.hostname);
+    let db = state.db.clone();
+    let hostname = state.hostname.clone();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+
+    std::thread::spawn(move || {
+        crate::config::generate_all_configs(&db, &hostname);
+        let _ = tx.send(());
+    });
+
+    let _ = rx.await;
 }

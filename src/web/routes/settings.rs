@@ -100,7 +100,10 @@ pub async fn page(auth: AuthAdmin, State(state): State<AppState>) -> Html<String
     let mut pixel_host = default_host.clone();
     let mut pixel_port: String = default_port.clone();
 
-    if let Some(base) = state.db.get_setting("pixel_base_url") {
+    if let Some(base) = state
+        .blocking_db(|db| db.get_setting("pixel_base_url"))
+        .await
+    {
         // remove scheme and /pixel?id= suffix if present
         let trimmed = base
             .trim_end_matches("/pixel?id=")
@@ -179,7 +182,10 @@ pub async fn update_pixel(
         Some(p) if p > 0 && p != 80 => format!("http://{}:{}/pixel?id=", host, p),
         _ => format!("http://{}/pixel?id=", host),
     };
-    state.db.set_setting("pixel_base_url", &base);
+    let base_for_db = base.clone();
+    state
+        .blocking_db(move |db| db.set_setting("pixel_base_url", &base_for_db))
+        .await;
     info!(
         "[web] pixel_base_url updated to {} by user={}",
         base, auth.admin.username
@@ -241,7 +247,10 @@ pub async fn change_password(
         return Html(tmpl.render().unwrap()).into_response();
     }
     let hash = crate::auth::hash_password(&form.new_password);
-    state.db.update_admin_password(auth.admin.id, &hash);
+    let admin_id = auth.admin.id;
+    state
+        .blocking_db(move |db| db.update_admin_password(admin_id, &hash))
+        .await;
     info!(
         "[web] password changed successfully for username={}",
         auth.admin.username
@@ -301,9 +310,11 @@ pub async fn enable_2fa(
         };
         return Html(tmpl.render().unwrap()).into_response();
     }
+    let admin_id = auth.admin.id;
+    let secret = form.secret.clone();
     state
-        .db
-        .update_admin_totp(auth.admin.id, Some(&form.secret), true);
+        .blocking_db(move |db| db.update_admin_totp(admin_id, Some(&secret), true))
+        .await;
     info!(
         "[web] 2FA enabled successfully for username={}",
         auth.admin.username
@@ -326,7 +337,10 @@ pub async fn disable_2fa(auth: AuthAdmin, State(state): State<AppState>) -> Resp
         "[web] POST /settings/2fa/disable — disabling 2FA for username={}",
         auth.admin.username
     );
-    state.db.update_admin_totp(auth.admin.id, None, false);
+    let admin_id = auth.admin.id;
+    state
+        .blocking_db(move |db| db.update_admin_totp(admin_id, None, false))
+        .await;
     info!(
         "[web] 2FA disabled successfully for username={}",
         auth.admin.username

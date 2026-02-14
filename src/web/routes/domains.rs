@@ -75,7 +75,7 @@ struct ErrorTemplate<'a> {
 
 pub async fn list(_auth: AuthAdmin, State(state): State<AppState>) -> Html<String> {
     info!("[web] GET /domains — listing domains");
-    let domains = state.db.list_domains();
+    let domains = state.blocking_db(|db| db.list_domains()).await;
     debug!("[web] found {} domains", domains.len());
 
     let domain_rows: Vec<DomainRow> = domains
@@ -121,13 +121,18 @@ pub async fn create(
     Form(form): Form<DomainForm>,
 ) -> Response {
     info!("[web] POST /domains — creating domain={}", form.domain);
-    match state.db.create_domain(&form.domain, &form.footer_html) {
+    let domain = form.domain.clone();
+    let footer_html = form.footer_html.clone();
+    let create_result = state
+        .blocking_db(move |db| db.create_domain(&domain, &footer_html))
+        .await;
+    match create_result {
         Ok(id) => {
             info!(
                 "[web] domain created successfully: {} (id={})",
                 form.domain, id
             );
-            regen_configs(&state);
+            regen_configs(&state).await;
             Redirect::to("/domains").into_response()
         }
         Err(e) => {
@@ -153,7 +158,7 @@ pub async fn edit_form(
     Path(id): Path<i64>,
 ) -> Response {
     debug!("[web] GET /domains/{}/edit — edit domain form", id);
-    let domain = match state.db.get_domain(id) {
+    let domain = match state.blocking_db(move |db| db.get_domain(id)).await {
         Some(d) => d,
         None => {
             warn!("[web] domain id={} not found for edit", id);
@@ -179,10 +184,12 @@ pub async fn update(
         "[web] POST /domains/{} — updating domain={}, active={}",
         id, form.domain, active
     );
+    let domain = form.domain.clone();
+    let footer_html = form.footer_html.clone();
     state
-        .db
-        .update_domain(id, &form.domain, active, &form.footer_html);
-    regen_configs(&state);
+        .blocking_db(move |db| db.update_domain(id, &domain, active, &footer_html))
+        .await;
+    regen_configs(&state).await;
     Redirect::to("/domains").into_response()
 }
 
@@ -192,8 +199,8 @@ pub async fn delete(
     Path(id): Path<i64>,
 ) -> Response {
     warn!("[web] POST /domains/{}/delete — deleting domain", id);
-    state.db.delete_domain(id);
-    regen_configs(&state);
+    state.blocking_db(move |db| db.delete_domain(id)).await;
+    regen_configs(&state).await;
     Redirect::to("/domains").into_response()
 }
 
@@ -203,7 +210,7 @@ pub async fn generate_dkim(
     Path(id): Path<i64>,
 ) -> Response {
     info!("[web] POST /domains/{}/dkim — generating DKIM keys", id);
-    let domain = match state.db.get_domain(id) {
+    let domain = match state.blocking_db(move |db| db.get_domain(id)).await {
         Some(d) => d,
         None => {
             warn!("[web] domain id={} not found for DKIM generation", id);
@@ -326,10 +333,11 @@ pub async fn generate_dkim(
         "[web] DKIM keys generated successfully for domain={}",
         domain.domain
     );
+    let selector = domain.dkim_selector.clone();
     state
-        .db
-        .update_domain_dkim(id, &domain.dkim_selector, &private_key, &public_key);
-    regen_configs(&state);
+        .blocking_db(move |db| db.update_domain_dkim(id, &selector, &private_key, &public_key))
+        .await;
+    regen_configs(&state).await;
     Redirect::to(&format!("/domains/{}/dns", id)).into_response()
 }
 
@@ -339,7 +347,7 @@ pub async fn dns_info(
     Path(id): Path<i64>,
 ) -> Response {
     debug!("[web] GET /domains/{}/dns — DNS info requested", id);
-    let domain = match state.db.get_domain(id) {
+    let domain = match state.blocking_db(move |db| db.get_domain(id)).await {
         Some(d) => d,
         None => {
             warn!("[web] domain id={} not found for DNS info", id);

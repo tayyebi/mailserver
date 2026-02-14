@@ -57,29 +57,30 @@ struct ErrorTemplate<'a> {
 
 pub async fn list(_auth: AuthAdmin, State(state): State<AppState>) -> Html<String> {
     info!("[web] GET /tracking — listing tracked messages");
-    let raw_messages = state.db.list_tracked_messages(100);
+    let raw_messages = state.blocking_db(|db| db.list_tracked_messages(100)).await;
     debug!("[web] found {} tracked messages", raw_messages.len());
 
-    let messages: Vec<TrackingRow> = raw_messages
-        .into_iter()
-        .map(|m| {
-            let open_count = state.db.get_opens_for_message(&m.message_id).len();
-            let message_id_short = if m.message_id.len() > 20 {
-                m.message_id[..20].to_string()
-            } else {
-                m.message_id.clone()
-            };
-            TrackingRow {
-                message_id: m.message_id,
-                message_id_short,
-                sender: m.sender,
-                recipient: m.recipient,
-                subject: m.subject,
-                created_at: m.created_at,
-                open_count,
-            }
-        })
-        .collect();
+    let mut messages: Vec<TrackingRow> = Vec::with_capacity(raw_messages.len());
+    for m in raw_messages {
+        let message_id_for_db = m.message_id.clone();
+        let open_count = state
+            .blocking_db(move |db| db.get_opens_for_message(&message_id_for_db).len())
+            .await;
+        let message_id_short = if m.message_id.len() > 20 {
+            m.message_id[..20].to_string()
+        } else {
+            m.message_id.clone()
+        };
+        messages.push(TrackingRow {
+            message_id: m.message_id,
+            message_id_short,
+            sender: m.sender,
+            recipient: m.recipient,
+            subject: m.subject,
+            created_at: m.created_at,
+            open_count,
+        });
+    }
 
     let tmpl = ListTemplate {
         nav_active: "Tracking",
@@ -95,7 +96,11 @@ pub async fn detail(
     Path(msg_id): Path<String>,
 ) -> Response {
     debug!("[web] GET /tracking/{} — tracking detail requested", msg_id);
-    let message = match state.db.get_tracked_message(&msg_id) {
+    let msg_id_for_db = msg_id.clone();
+    let message = match state
+        .blocking_db(move |db| db.get_tracked_message(&msg_id_for_db))
+        .await
+    {
         Some(m) => m,
         None => {
             warn!("[web] tracked message not found: {}", msg_id);
@@ -112,7 +117,10 @@ pub async fn detail(
             return Html(tmpl.render().unwrap()).into_response();
         }
     };
-    let opens = state.db.get_opens_for_message(&msg_id);
+    let msg_id_for_db = msg_id.clone();
+    let opens = state
+        .blocking_db(move |db| db.get_opens_for_message(&msg_id_for_db))
+        .await;
     debug!("[web] tracked message {} has {} opens", msg_id, opens.len());
 
     let tmpl = DetailTemplate {

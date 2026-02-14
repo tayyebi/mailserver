@@ -82,7 +82,9 @@ pub async fn list(
     Query(params): Query<PaginationQuery>,
 ) -> Html<String> {
     info!("[web] GET /accounts — listing accounts");
-    let all_accounts = state.db.list_all_accounts_with_domain();
+    let all_accounts = state
+        .blocking_db(|db| db.list_all_accounts_with_domain())
+        .await;
     debug!("[web] found {} accounts", all_accounts.len());
 
     let total_count = all_accounts.len() as u32;
@@ -134,7 +136,7 @@ pub async fn list(
 
 pub async fn new_form(_auth: AuthAdmin, State(state): State<AppState>) -> Html<String> {
     debug!("[web] GET /accounts/new — new account form");
-    let domains = state.db.list_domains();
+    let domains = state.blocking_db(|db| db.list_domains()).await;
     let tmpl = NewTemplate {
         nav_active: "Accounts",
         flash: None,
@@ -154,16 +156,19 @@ pub async fn create(
     );
     let db_hash = crate::auth::hash_password(&form.password);
     let quota = form.quota.unwrap_or(0);
-    match state
-        .db
-        .create_account(form.domain_id, &form.username, &db_hash, &form.name, quota)
-    {
+    let domain_id = form.domain_id;
+    let username = form.username.clone();
+    let name = form.name.clone();
+    let create_result = state
+        .blocking_db(move |db| db.create_account(domain_id, &username, &db_hash, &name, quota))
+        .await;
+    match create_result {
         Ok(id) => {
             info!(
                 "[web] account created successfully: {} (id={})",
                 form.username, id
             );
-            regen_configs(&state);
+            regen_configs(&state).await;
             Redirect::to("/accounts").into_response()
         }
         Err(e) => {
@@ -189,7 +194,7 @@ pub async fn edit_form(
     Path(id): Path<i64>,
 ) -> Response {
     debug!("[web] GET /accounts/{}/edit — edit account form", id);
-    let account = match state.db.get_account(id) {
+    let account = match state.blocking_db(move |db| db.get_account(id)).await {
         Some(a) => a,
         None => {
             warn!("[web] account id={} not found for edit", id);
@@ -198,7 +203,9 @@ pub async fn edit_form(
     };
 
     // Find aliases on the same domain that the account can send as
-    let all_aliases = state.db.list_all_aliases_with_domain();
+    let all_aliases = state
+        .blocking_db(|db| db.list_all_aliases_with_domain())
+        .await;
     let send_as_aliases: Vec<Alias> = all_aliases
         .into_iter()
         .filter(|a| a.domain_id == account.domain_id && a.active)
@@ -225,18 +232,23 @@ pub async fn update(
         "[web] POST /accounts/{} — updating account active={}, quota={}",
         id, active, quota
     );
-    state.db.update_account(id, &form.name, active, quota);
+    let name = form.name.clone();
+    state
+        .blocking_db(move |db| db.update_account(id, &name, active, quota))
+        .await;
 
     // Only update password if field is not empty
     if let Some(ref pw) = form.password {
         if !pw.is_empty() {
             info!("[web] updating password for account id={}", id);
             let db_hash = crate::auth::hash_password(pw);
-            state.db.update_account_password(id, &db_hash);
+            state
+                .blocking_db(move |db| db.update_account_password(id, &db_hash))
+                .await;
         }
     }
 
-    regen_configs(&state);
+    regen_configs(&state).await;
     Redirect::to("/accounts").into_response()
 }
 
@@ -246,7 +258,7 @@ pub async fn delete(
     Path(id): Path<i64>,
 ) -> Response {
     warn!("[web] POST /accounts/{}/delete — deleting account", id);
-    state.db.delete_account(id);
-    regen_configs(&state);
+    state.blocking_db(move |db| db.delete_account(id)).await;
+    regen_configs(&state).await;
     Redirect::to("/accounts").into_response()
 }
