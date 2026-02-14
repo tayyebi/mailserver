@@ -94,17 +94,6 @@ sequenceDiagram
     Recipient->>Postgres: GET /pixel?id=... → record pixel_open
 ```
 
-## Dashboard Insights
-
-```mermaid
-pie title Dashboard Widget Mix
-    "Domains & DNS" : 30
-    "Accounts & Quotas" : 20
-    "Aliases & Catch-alls" : 20
-    "Tracking Analytics" : 15
-    "Settings / 2FA" : 15
-```
-
 ## Database Schema (ERD)
 
 ```mermaid
