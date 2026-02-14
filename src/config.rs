@@ -74,6 +74,10 @@ smtpd_sender_restrictions = reject_authenticated_sender_login_mismatch, permit
 # Restrictions
 smtpd_recipient_restrictions = permit_sasl_authenticated, permit_mynetworks, reject_unauth_destination
 
+# Reduce reverse DNS warnings
+smtpd_client_restrictions = permit
+disable_vrfy_command = yes
+
 # Limits
 message_size_limit = 31457280
 "#;
