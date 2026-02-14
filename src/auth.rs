@@ -1,6 +1,7 @@
 use bcrypt::{hash, verify, DEFAULT_COST};
 use data_encoding::BASE32;
 use hmac::{Hmac, Mac};
+use log::{info, warn, debug, error};
 use rand::Rng;
 use sha1::Sha1;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -8,23 +9,40 @@ use std::time::{SystemTime, UNIX_EPOCH};
 type HmacSha1 = Hmac<Sha1>;
 
 pub fn verify_password(password: &str, hash: &str) -> bool {
-    verify(password, hash).unwrap_or(false)
+    debug!("[auth] verifying password hash");
+    let result = verify(password, hash).unwrap_or(false);
+    if result {
+        debug!("[auth] password verification succeeded");
+    } else {
+        warn!("[auth] password verification failed");
+    }
+    result
 }
 
 pub fn hash_password(password: &str) -> String {
-    hash(password, DEFAULT_COST).expect("failed to hash password")
+    debug!("[auth] hashing password with bcrypt cost={}", DEFAULT_COST);
+    let result = hash(password, DEFAULT_COST).expect("failed to hash password");
+    debug!("[auth] password hashed successfully");
+    result
 }
 
 pub fn generate_totp_secret() -> String {
+    info!("[auth] generating new TOTP secret");
     let mut rng = rand::thread_rng();
     let secret: Vec<u8> = (0..20).map(|_| rng.gen::<u8>()).collect();
-    BASE32.encode(&secret)
+    let encoded = BASE32.encode(&secret);
+    debug!("[auth] TOTP secret generated (length={})", encoded.len());
+    encoded
 }
 
 pub fn verify_totp(secret_base32: &str, code: &str) -> bool {
+    debug!("[auth] verifying TOTP code");
     let secret = match BASE32.decode(secret_base32.as_bytes()) {
         Ok(s) => s,
-        Err(_) => return false,
+        Err(e) => {
+            error!("[auth] failed to decode TOTP secret: {}", e);
+            return false;
+        }
     };
 
     let now = SystemTime::now()
@@ -37,9 +55,11 @@ pub fn verify_totp(secret_base32: &str, code: &str) -> bool {
         let step = current_step.wrapping_add(offset);
         let generated = totp_code(&secret, step);
         if generated == code {
+            info!("[auth] TOTP verification succeeded (offset={})", offset);
             return true;
         }
     }
+    warn!("[auth] TOTP verification failed — code did not match any window");
     false
 }
 
@@ -61,6 +81,7 @@ fn totp_code(secret: &[u8], step: u64) -> String {
 }
 
 pub fn totp_uri(secret: &str, username: &str) -> String {
+    debug!("[auth] generating TOTP URI for username={}", username);
     format!(
         "otpauth://totp/Mailserver:{}?secret={}&issuer=Mailserver",
         username, secret

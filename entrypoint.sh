@@ -1,28 +1,34 @@
 #!/bin/sh
 set -e
 
+echo "[entrypoint] INFO: creating data directories"
 mkdir -p /data/ssl /data/dkim /data/mail /data/db
 
 # Ensure required users exist (safety net for pre-built images)
-id vmail >/dev/null 2>&1 || { addgroup -S vmail 2>/dev/null; adduser -S -D -H -G vmail -s /sbin/nologin vmail 2>/dev/null; }
-id opendkim >/dev/null 2>&1 || { addgroup -S opendkim 2>/dev/null; adduser -S -D -H -G opendkim -s /sbin/nologin opendkim 2>/dev/null; }
+echo "[entrypoint] INFO: ensuring required system users exist"
+id vmail >/dev/null 2>&1 || { echo "[entrypoint] INFO: creating vmail user"; addgroup -S vmail 2>/dev/null; adduser -S -D -H -G vmail -s /sbin/nologin vmail 2>/dev/null; }
+id opendkim >/dev/null 2>&1 || { echo "[entrypoint] INFO: creating opendkim user"; addgroup -S opendkim 2>/dev/null; adduser -S -D -H -G opendkim -s /sbin/nologin opendkim 2>/dev/null; }
 
 if [ ! -f /data/ssl/cert.pem ]; then
-    echo "Generating self-signed TLS certificate..."
+    echo "[entrypoint] INFO: generating self-signed TLS certificate for hostname=${HOSTNAME:-mailserver}"
     openssl req -new -newkey rsa:2048 -days 3650 -nodes -x509 \
         -subj "/CN=${HOSTNAME:-mailserver}" \
         -keyout /data/ssl/key.pem -out /data/ssl/cert.pem
     chmod 600 /data/ssl/key.pem
+    echo "[entrypoint] INFO: TLS certificate generated successfully"
+else
+    echo "[entrypoint] INFO: TLS certificate already exists, skipping generation"
 fi
 
-echo "Seeding database..."
+echo "[entrypoint] INFO: seeding database"
 /usr/local/bin/mailserver seed
 
-echo "Generating mail service configs..."
+echo "[entrypoint] INFO: generating mail service configs"
 /usr/local/bin/mailserver genconfig
 
+echo "[entrypoint] INFO: setting directory ownership"
 chown -R vmail:vmail /data/mail
 chown -R opendkim:opendkim /data/dkim
 
-echo "Starting services..."
+echo "[entrypoint] INFO: starting supervisord and all services"
 exec supervisord -c /etc/supervisord.conf
