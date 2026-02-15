@@ -444,6 +444,14 @@ pub fn generate_tls_certificate(hostname: &str) -> Result<(), String> {
 }
 
 pub fn generate_dh_parameters() -> Result<(), String> {
+    let dh_path = "/usr/share/dovecot/dh.pem";
+    
+    // Check if DH parameters already exist
+    if Path::new(dh_path).exists() {
+        info!("[config] DH parameters already exist at {}, skipping generation", dh_path);
+        return Ok(());
+    }
+    
     info!("[config] generating Diffie-Hellman parameters (this may take a while)");
     
     // Create dovecot directory if it doesn't exist
@@ -454,7 +462,7 @@ pub fn generate_dh_parameters() -> Result<(), String> {
     
     // Generate DH parameters
     let result = Command::new("openssl")
-        .args(["dhparam", "-out", "/usr/share/dovecot/dh.pem", "2048"])
+        .args(["dhparam", "-out", dh_path, "2048"])
         .output();
     
     match result {
