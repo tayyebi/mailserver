@@ -4,6 +4,10 @@ hostname = {{ hostname }}
 
 mail_location = maildir:/data/mail/%d/%n/Maildir
 
+# Allow system users with UID/GID starting from 100 (Alpine Linux system users)
+first_valid_uid = 100
+first_valid_gid = 100
+
 ssl = yes
 ssl_cert = </data/ssl/cert.pem
 ssl_key = </data/ssl/key.pem
