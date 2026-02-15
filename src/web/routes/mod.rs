@@ -2,7 +2,6 @@ pub mod accounts;
 pub mod aliases;
 pub mod dashboard;
 pub mod domains;
-pub mod logs;
 pub mod pixel;
 pub mod settings;
 pub mod tracking;
@@ -44,7 +43,4 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/settings/tls/regenerate", post(settings::regenerate_tls))
         .route("/settings/tls/cert.pem", get(settings::download_cert))
         .route("/settings/tls/key.pem", get(settings::download_key))
-        .route("/logs/email", get(logs::email_logs))
-        .route("/logs/email/:id/download", get(logs::email_download))
-        .route("/logs/connection", get(logs::connection_logs))
 }
