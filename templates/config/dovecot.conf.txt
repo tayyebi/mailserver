@@ -38,6 +38,9 @@ userdb {
 
 auth_username_format = %u
 
+# Enable SASL authentication mechanisms for compatibility with various clients
+auth_mechanisms = plain login
+
 service auth {
   inet_listener sasl {
     port = 12345
