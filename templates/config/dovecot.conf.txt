@@ -39,6 +39,10 @@ userdb {
 auth_username_format = %u
 
 # Enable SASL authentication mechanisms for compatibility with various clients
+# PLAIN and LOGIN are safe here because:
+# - Dovecot has ssl=yes (line 11) with TLS 1.2+ enforced
+# - Postfix submission port (587) requires encryption (smtpd_tls_security_level=encrypt)
+# - Postfix smtps port (465) uses TLS wrapper mode
 auth_mechanisms = plain login
 
 service auth {
