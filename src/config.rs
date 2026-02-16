@@ -433,12 +433,9 @@ pub fn generate_tls_certificate(hostname: &str) -> Result<(), String> {
     );
     
     // Use a unique temporary file to avoid race conditions
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let config_path = format!("/tmp/openssl-cert-{}.cnf", timestamp);
+    // Note: In Docker container context, /tmp is isolated and single-process
+    let uuid = uuid::Uuid::new_v4();
+    let config_path = format!("/tmp/openssl-cert-{}.cnf", uuid);
     
     if let Err(e) = fs::write(&config_path, &openssl_config) {
         error!("[config] failed to write OpenSSL config file: {}", e);
