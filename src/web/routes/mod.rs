@@ -1,5 +1,6 @@
 pub mod accounts;
 pub mod aliases;
+pub mod configs;
 pub mod dashboard;
 pub mod domains;
 pub mod pixel;
@@ -43,4 +44,5 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/settings/tls/regenerate", post(settings::regenerate_tls))
         .route("/settings/tls/cert.pem", get(settings::download_cert))
         .route("/settings/tls/key.pem", get(settings::download_key))
+        .route("/configs", get(configs::page))
 }
