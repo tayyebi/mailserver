@@ -882,4 +882,115 @@ impl Database {
             open_count,
         }
     }
+
+    // ── Table introspection methods ──
+
+    pub fn list_tables(&self) -> Vec<String> {
+        debug!("[db] listing all tables from information_schema");
+        let mut conn = self.conn.lock().unwrap_or_else(|e| {
+            warn!("[db] mutex was poisoned, recovering connection");
+            e.into_inner()
+        });
+        let rows = conn
+            .query(
+                "SELECT table_name FROM information_schema.tables 
+                 WHERE table_schema = 'public' 
+                 AND table_type = 'BASE TABLE' 
+                 ORDER BY table_name",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list tables: {}", e);
+                Vec::new()
+            });
+
+        rows.into_iter()
+            .map(|row| row.get::<_, String>(0))
+            .collect()
+    }
+
+    pub fn get_table_columns(&self, table_name: &str) -> Vec<(String, String)> {
+        debug!("[db] getting columns for table {}", table_name);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| {
+            warn!("[db] mutex was poisoned, recovering connection");
+            e.into_inner()
+        });
+        let rows = conn
+            .query(
+                "SELECT column_name, data_type 
+                 FROM information_schema.columns 
+                 WHERE table_schema = 'public' 
+                 AND table_name = $1 
+                 ORDER BY ordinal_position",
+                &[&table_name],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to get columns for table {}: {}", table_name, e);
+                Vec::new()
+            });
+
+        rows.into_iter()
+            .map(|row| (row.get::<_, String>(0), row.get::<_, String>(1)))
+            .collect()
+    }
+
+    pub fn count_table_rows(&self, table_name: &str) -> i64 {
+        debug!("[db] counting rows in table {}", table_name);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| {
+            warn!("[db] mutex was poisoned, recovering connection");
+            e.into_inner()
+        });
+        // Validate table name to prevent SQL injection
+        let tables = self.list_tables();
+        if !tables.contains(&table_name.to_string()) {
+            warn!("[db] invalid table name: {}", table_name);
+            return 0;
+        }
+        let query = format!("SELECT COUNT(*) FROM {}", table_name);
+        conn.query_one(&query, &[])
+            .map(|row| row.get(0))
+            .unwrap_or(0)
+    }
+
+    pub fn get_table_data(
+        &self,
+        table_name: &str,
+        page: i64,
+        per_page: i64,
+    ) -> Vec<Vec<String>> {
+        debug!(
+            "[db] getting data from table {} page={} per_page={}",
+            table_name, page, per_page
+        );
+        let mut conn = self.conn.lock().unwrap_or_else(|e| {
+            warn!("[db] mutex was poisoned, recovering connection");
+            e.into_inner()
+        });
+        // Validate table name to prevent SQL injection
+        let tables = self.list_tables();
+        if !tables.contains(&table_name.to_string()) {
+            warn!("[db] invalid table name: {}", table_name);
+            return Vec::new();
+        }
+        let offset = (page - 1) * per_page;
+        let query = format!(
+            "SELECT * FROM {} ORDER BY 1 LIMIT {} OFFSET {}",
+            table_name, per_page, offset
+        );
+        let rows = conn.query(&query, &[]).unwrap_or_else(|e| {
+            error!("[db] failed to get data from table {}: {}", table_name, e);
+            Vec::new()
+        });
+
+        rows.into_iter()
+            .map(|row| {
+                (0..row.len())
+                    .map(|i| {
+                        row.get::<_, Option<String>>(i)
+                            .unwrap_or_else(|| "NULL".to_string())
+                    })
+                    .collect()
+            })
+            .collect()
+    }
 }

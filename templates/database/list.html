@@ -1,0 +1,35 @@
+{% extends "layout.html" %}
+{% block title %}Database Tables{% endblock %}
+{% block content %}
+<section>
+    <hgroup>
+        <small>Database administration</small>
+        <h1>Database Tables</h1>
+    </hgroup>
+    <p>View all tables in the database with their data. Click on a table to see its contents.</p>
+</section>
+
+<section>
+    <h2>Available Tables</h2>
+    {% if tables.is_empty() %}
+        <p><em>No tables found in the database.</em></p>
+    {% else %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Table Name</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for table in tables %}
+                <tr>
+                    <td><code>{{ table }}</code></td>
+                    <td><a href="/database/{{ table }}">View Data</a></td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+</section>
+{% endblock %}

@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod aliases;
 pub mod dashboard;
+pub mod database;
 pub mod domains;
 pub mod pixel;
 pub mod settings;
@@ -43,4 +44,6 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/settings/tls/regenerate", post(settings::regenerate_tls))
         .route("/settings/tls/cert.pem", get(settings::download_cert))
         .route("/settings/tls/key.pem", get(settings::download_key))
+        .route("/database", get(database::list_tables))
+        .route("/database/:table_name", get(database::view_table))
 }

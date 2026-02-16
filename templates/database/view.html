@@ -1,0 +1,60 @@
+{% extends "layout.html" %}
+{% block title %}{{ table_name }} - Database{% endblock %}
+{% block content %}
+<section>
+    <hgroup>
+        <small><a href="/database">Database</a> / {{ table_name }}</small>
+        <h1>Table: {{ table_name }}</h1>
+    </hgroup>
+    <p>
+        Showing {{ rows.len() }} of {{ total_rows }} rows 
+        (Page {{ page }} of {{ total_pages }})
+    </p>
+</section>
+
+<section>
+    {% if rows.is_empty() %}
+        <p><em>No data in this table.</em></p>
+    {% else %}
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                    {% for col in columns %}
+                        <th>{{ col }}</th>
+                    {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                {% for row in rows %}
+                    <tr>
+                    {% for cell in row %}
+                        <td>{{ cell }}</td>
+                    {% endfor %}
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+</section>
+
+<section>
+    <nav>
+        {% if has_prev %}
+            <a href="/database/{{ table_name }}?page={{ page - 1 }}">← Previous</a>
+        {% else %}
+            <span style="color: #888;">← Previous</span>
+        {% endif %}
+        
+        <span>Page {{ page }} of {{ total_pages }}</span>
+        
+        {% if has_next %}
+            <a href="/database/{{ table_name }}?page={{ page + 1 }}">Next →</a>
+        {% else %}
+            <span style="color: #888;">Next →</span>
+        {% endif %}
+    </nav>
+    <p><a href="/database">← Back to Tables</a></p>
+</section>
+{% endblock %}
