@@ -1,6 +1,6 @@
 use askama::Template;
 use axum::{extract::State, response::Html};
-use log::debug;
+use log::{debug, error};
 use std::fs;
 
 use crate::web::AppState;
@@ -36,7 +36,6 @@ pub async fn page(auth: AuthAdmin, State(_state): State<AppState>) -> Html<Strin
         ("Virtual Aliases", "/etc/postfix/virtual_aliases"),
         ("Sender Login Maps", "/etc/postfix/sender_login_maps"),
         ("Dovecot Config", "/etc/dovecot/dovecot.conf"),
-        ("Dovecot Passwd", "/etc/dovecot/passwd"),
         ("OpenDKIM Config", "/etc/opendkim/opendkim.conf"),
         ("OpenDKIM KeyTable", "/etc/opendkim/KeyTable"),
         ("OpenDKIM SigningTable", "/etc/opendkim/SigningTable"),
@@ -68,5 +67,14 @@ pub async fn page(auth: AuthAdmin, State(_state): State<AppState>) -> Html<Strin
         config_files,
     };
 
-    Html(tmpl.render().unwrap())
+    match tmpl.render() {
+        Ok(html) => Html(html),
+        Err(e) => {
+            error!("[web] failed to render configs template: {}", e);
+            Html(format!(
+                "<html><body><h1>Error</h1><p>Failed to render configuration files page: {}</p></body></html>",
+                e
+            ))
+        }
+    }
 }
