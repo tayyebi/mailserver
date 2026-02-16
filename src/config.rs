@@ -392,7 +392,15 @@ pub fn reload_services() {
 // ── Certificate and DH parameter generation ──
 
 pub fn generate_tls_certificate(hostname: &str) -> Result<(), String> {
-    if Path::new("/data/ssl/cert.pem").exists() && Path::new("/data/ssl/key.pem").exists() {
+    if Path::new("/data/ssl/cert.pem").exists()
+        && Path::new("/data/ssl/key.pem").exists()
+        && fs::read("/data/ssl/cert.pem")
+            .map(|content| !content.is_empty())
+            .unwrap_or(false)
+        && fs::read("/data/ssl/key.pem")
+            .map(|content| !content.is_empty())
+            .unwrap_or(false)
+    {
         info!("[config] existing TLS certificate and key found, skipping certificate generation");
         return Ok(());
     }
