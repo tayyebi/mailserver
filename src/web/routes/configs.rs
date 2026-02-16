@@ -71,10 +71,13 @@ pub async fn page(auth: AuthAdmin, State(_state): State<AppState>) -> Html<Strin
         Ok(html) => Html(html),
         Err(e) => {
             error!("[web] failed to render configs template: {}", e);
-            Html(format!(
-                "<html><body><h1>Error</h1><p>Failed to render configuration files page: {}</p></body></html>",
-                e
-            ))
+            crate::web::errors::render_error_page(
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Template Error",
+                "Failed to render configuration files page. Please try again.",
+                "/",
+                "Dashboard",
+            )
         }
     }
 }
