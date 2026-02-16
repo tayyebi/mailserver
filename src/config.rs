@@ -409,16 +409,54 @@ pub fn generate_tls_certificate(hostname: &str) -> Result<(), String> {
         return Err(format!("failed to create SSL directory: {}", e));
     }
     
-    // Generate certificate
+    // Create OpenSSL config file with SAN extension
+    // Modern TLS clients require Subject Alternative Name (SAN) to be present
+    let openssl_config = format!(
+        "[req]\n\
+         default_bits = 2048\n\
+         prompt = no\n\
+         default_md = sha256\n\
+         distinguished_name = dn\n\
+         x509_extensions = v3_req\n\
+         \n\
+         [dn]\n\
+         CN = {}\n\
+         \n\
+         [v3_req]\n\
+         subjectAltName = @alt_names\n\
+         \n\
+         [alt_names]\n\
+         DNS.1 = {}\n\
+         DNS.2 = localhost\n\
+         IP.1 = 127.0.0.1\n",
+        safe_hostname, safe_hostname
+    );
+    
+    // Use a unique temporary file to avoid race conditions
+    // Note: In Docker container context, /tmp is isolated and single-process
+    let uuid = uuid::Uuid::new_v4();
+    let config_path = format!("/tmp/openssl-cert-{}.cnf", uuid);
+    
+    if let Err(e) = fs::write(&config_path, &openssl_config) {
+        error!("[config] failed to write OpenSSL config file: {}", e);
+        return Err(format!("failed to write OpenSSL config: {}", e));
+    }
+    
+    // Generate certificate with SAN extension
     let result = Command::new("openssl")
         .args([
             "req", "-new", "-newkey", "rsa:2048", "-days", "3650",
             "-nodes", "-x509",
-            "-subj", &format!("/CN={}", safe_hostname),
+            "-config", &config_path,
             "-keyout", "/data/ssl/key.pem",
             "-out", "/data/ssl/cert.pem",
         ])
         .output();
+    
+    // Clean up config file
+    if let Err(e) = fs::remove_file(&config_path) {
+        warn!("[config] failed to clean up temporary OpenSSL config file: {}", e);
+    }
     
     match result {
         Ok(output) if output.status.success() => {
@@ -428,7 +466,7 @@ pub fn generate_tls_certificate(hostname: &str) -> Result<(), String> {
                 Ok(o) => warn!("[config] chmod 600 key.pem exited with status {}", o.status),
                 Err(e) => warn!("[config] failed to set key.pem permissions: {}", e),
             }
-            info!("[config] TLS certificate generated successfully");
+            info!("[config] TLS certificate with SAN generated successfully");
             Ok(())
         }
         Ok(output) => {
