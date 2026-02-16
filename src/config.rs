@@ -432,8 +432,15 @@ pub fn generate_tls_certificate(hostname: &str) -> Result<(), String> {
         safe_hostname, safe_hostname
     );
     
-    let config_path = "/tmp/openssl-cert.cnf";
-    if let Err(e) = fs::write(config_path, &openssl_config) {
+    // Use a unique temporary file to avoid race conditions
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let config_path = format!("/tmp/openssl-cert-{}.cnf", timestamp);
+    
+    if let Err(e) = fs::write(&config_path, &openssl_config) {
         error!("[config] failed to write OpenSSL config file: {}", e);
         return Err(format!("failed to write OpenSSL config: {}", e));
     }
@@ -443,14 +450,16 @@ pub fn generate_tls_certificate(hostname: &str) -> Result<(), String> {
         .args([
             "req", "-new", "-newkey", "rsa:2048", "-days", "3650",
             "-nodes", "-x509",
-            "-config", config_path,
+            "-config", &config_path,
             "-keyout", "/data/ssl/key.pem",
             "-out", "/data/ssl/cert.pem",
         ])
         .output();
     
     // Clean up config file
-    let _ = fs::remove_file(config_path);
+    if let Err(e) = fs::remove_file(&config_path) {
+        warn!("[config] failed to clean up temporary OpenSSL config file: {}", e);
+    }
     
     match result {
         Ok(output) if output.status.success() => {
