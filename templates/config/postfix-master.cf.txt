@@ -19,6 +19,9 @@ smtps     inet  n       -       n       -       -       smtpd
   -o smtpd_recipient_restrictions=permit_sasl_authenticated,reject
 2525      inet  n       -       n       -       -       smtpd
   -o syslog_name=postfix/smtp-alt
+127.0.0.1:10025 inet n - n - - smtpd
+  -o syslog_name=postfix/reinject
+  -o content_filter=
 
 pickup    unix  n       -       n       60      1       pickup
 cleanup   unix  n       -       n       -       0       cleanup
