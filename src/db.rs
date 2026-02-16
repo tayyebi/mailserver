@@ -940,16 +940,16 @@ impl Database {
             warn!("[db] mutex was poisoned, recovering connection");
             e.into_inner()
         });
-        // Validate table name to prevent SQL injection
-        let tables = self.list_tables();
-        if !tables.contains(&table_name.to_string()) {
-            warn!("[db] invalid table name: {}", table_name);
-            return 0;
-        }
-        let query = format!("SELECT COUNT(*) FROM {}", table_name);
+        // Use quoted identifier to prevent SQL injection
+        let query = format!("SELECT COUNT(*) FROM {}", Self::quote_identifier(table_name));
         conn.query_one(&query, &[])
             .map(|row| row.get(0))
             .unwrap_or(0)
+    }
+
+    fn quote_identifier(name: &str) -> String {
+        // PostgreSQL identifier quoting - escape double quotes and wrap in double quotes
+        format!("\"{}\"", name.replace("\"", "\"\""))
     }
 
     pub fn get_table_data(
@@ -966,30 +966,50 @@ impl Database {
             warn!("[db] mutex was poisoned, recovering connection");
             e.into_inner()
         });
-        // Validate table name to prevent SQL injection
-        let tables = self.list_tables();
-        if !tables.contains(&table_name.to_string()) {
-            warn!("[db] invalid table name: {}", table_name);
-            return Vec::new();
-        }
+        // Use quoted identifier to prevent SQL injection
         let offset = (page - 1) * per_page;
         let query = format!(
             "SELECT * FROM {} ORDER BY 1 LIMIT {} OFFSET {}",
-            table_name, per_page, offset
+            Self::quote_identifier(table_name), per_page, offset
         );
-        let rows = conn.query(&query, &[]).unwrap_or_else(|e| {
-            error!("[db] failed to get data from table {}: {}", table_name, e);
-            Vec::new()
-        });
+        
+        debug!("[db] executing query: {}", query);
+        
+        let rows = match conn.query(&query, &[]) {
+            Ok(r) => r,
+            Err(e) => {
+                error!("[db] failed to query table {}: {}", table_name, e);
+                return Vec::new();
+            }
+        };
 
         rows.into_iter()
             .map(|row| {
-                (0..row.len())
-                    .map(|i| {
-                        row.get::<_, Option<String>>(i)
-                            .unwrap_or_else(|| "NULL".to_string())
-                    })
-                    .collect()
+                let mut result_row = Vec::new();
+                for i in 0..row.len() {
+                    let value = match row.try_get::<_, Option<i64>>(i) {
+                        Ok(Some(v)) => v.to_string(),
+                        Ok(None) => "NULL".to_string(),
+                        Err(_) => match row.try_get::<_, Option<i32>>(i) {
+                            Ok(Some(v)) => v.to_string(),
+                            Ok(None) => "NULL".to_string(),
+                            Err(_) => match row.try_get::<_, Option<String>>(i) {
+                                Ok(Some(v)) => v,
+                                Ok(None) => "NULL".to_string(),
+                                Err(_) => match row.try_get::<_, Option<bool>>(i) {
+                                    Ok(Some(v)) => v.to_string(),
+                                    Ok(None) => "NULL".to_string(),
+                                    Err(_) => {
+                                        debug!("[db] unable to convert column {} to string", i);
+                                        "?".to_string()
+                                    }
+                                }
+                            }
+                        }
+                    };
+                    result_row.push(value);
+                }
+                result_row
             })
             .collect()
     }
