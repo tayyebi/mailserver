@@ -1,0 +1,27 @@
+{% extends "layout.html" %}
+{% block title %}Configuration Files{% endblock %}
+{% block content %}
+<h1>Configuration Files</h1>
+<p>View the content of generated configuration files used by mail services.</p>
+
+{% for config in config_files %}
+<section>
+  <h2>{{ config.name }}</h2>
+  <p><strong>Path:</strong> <code>{{ config.path }}</code></p>
+  {% if let Some(error) = config.error %}
+    <p style="color: #d00;"><em>{{ error }}</em></p>
+  {% else %}
+    {% if config.content != "" %}
+      <details open>
+        <summary>View Content</summary>
+        <pre style="background: #f5f5f5; padding: 1rem; overflow-x: auto; border: 1px solid #ddd; border-radius: 4px;"><code>{{ config.content }}</code></pre>
+      </details>
+    {% else %}
+      <p><em>File is empty</em></p>
+    {% endif %}
+  {% endif %}
+</section>
+<hr>
+{% endfor %}
+
+{% endblock %}
