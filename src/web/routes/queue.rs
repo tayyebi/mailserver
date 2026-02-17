@@ -1,10 +1,13 @@
 use askama::Template;
 use axum::{extract::State, response::Html};
-use log::debug;
+use log::{debug, error};
+use std::path::Path;
 use std::process::Command;
 
 use crate::web::AppState;
 use crate::web::auth::AuthAdmin;
+
+const POSTQUEUE_PATHS: [&str; 2] = ["/usr/sbin/postqueue", "/usr/bin/postqueue"];
 
 #[derive(Template)]
 #[template(path = "queue/list.html")]
@@ -21,15 +24,38 @@ pub async fn list(auth: AuthAdmin, State(_state): State<AppState>) -> Html<Strin
         auth.admin.username
     );
 
-    let (queue_output, error) = match Command::new("postqueue").arg("-p").output() {
-        Ok(output) if output.status.success() => {
-            (String::from_utf8_lossy(&output.stdout).to_string(), None)
-        }
-        Ok(output) => (
+    let postqueue_bin = POSTQUEUE_PATHS
+        .into_iter()
+        .find(|path| Path::new(path).exists());
+
+    let (queue_output, error) = match postqueue_bin {
+        Some(postqueue_bin) => match Command::new(postqueue_bin).arg("-p").output() {
+            Ok(output) if output.status.success() => {
+                (String::from_utf8_lossy(&output.stdout).to_string(), None)
+            }
+            Ok(output) => {
+                error!(
+                    "[web] postqueue failed with status {}: {}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                (
+                    String::new(),
+                    Some("Failed to read queue output from postqueue.".to_string()),
+                )
+            }
+            Err(e) => {
+                error!("[web] failed to run postqueue: {}", e);
+                (
+                    String::new(),
+                    Some("Failed to run postqueue command.".to_string()),
+                )
+            }
+        },
+        None => (
             String::new(),
-            Some(String::from_utf8_lossy(&output.stderr).to_string()),
+            Some("postqueue binary not found in /usr/sbin or /usr/bin.".to_string()),
         ),
-        Err(e) => (String::new(), Some(format!("Failed to run postqueue: {}", e))),
     };
 
     let tmpl = QueueTemplate {
@@ -39,5 +65,17 @@ pub async fn list(auth: AuthAdmin, State(_state): State<AppState>) -> Html<Strin
         error,
     };
 
-    Html(tmpl.render().unwrap())
+    match tmpl.render() {
+        Ok(html) => Html(html),
+        Err(e) => {
+            error!("[web] failed to render queue template: {}", e);
+            crate::web::errors::render_error_page(
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Template Error",
+                "Failed to render queue page. Please try again.",
+                "/",
+                "Dashboard",
+            )
+        }
+    }
 }

@@ -273,8 +273,8 @@ pub fn generate_opendkim_tables(db: &Database) {
     info!("[config] generating OpenDKIM key/signing/trusted tables");
     let domains = db.list_domains();
 
-    let generated_at = generated_at();
-    let header = generated_header_with(&generated_at);
+    let timestamp = generated_at();
+    let header = generated_header_with(&timestamp);
     let mut key_table = header.clone();
     let mut signing_table = header.clone();
     let mut trusted_hosts = format!("{}127.0.0.1\nlocalhost\n", header);
