@@ -4,6 +4,7 @@ pub mod configs;
 pub mod dashboard;
 pub mod domains;
 pub mod pixel;
+pub mod queue;
 pub mod settings;
 pub mod tracking;
 
@@ -35,6 +36,7 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/aliases/:id", post(aliases::update))
         .route("/tracking", get(tracking::list))
         .route("/tracking/:msg_id", get(tracking::detail))
+        .route("/queue", get(queue::list))
         .route("/settings", get(settings::page))
         .route("/settings/password", post(settings::change_password))
         .route("/settings/2fa", get(settings::setup_2fa))

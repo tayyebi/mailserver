@@ -1,0 +1,12 @@
+{% extends "layout.html" %}
+{% block title %}Mail Queue{% endblock %}
+{% block content %}
+<h1>Mail Queue</h1>
+<p>Current Postfix queue from <code>postqueue -p</code>.</p>
+
+{% if let Some(err) = error %}
+  <p style="color: #d00;"><em>{{ err }}</em></p>
+{% else %}
+  <pre style="background: #f5f5f5; padding: 1rem; overflow-x: auto; border: 1px solid #ddd; border-radius: 4px;"><code>{{ queue_output }}</code></pre>
+{% endif %}
+{% endblock %}
