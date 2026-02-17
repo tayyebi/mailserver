@@ -2,8 +2,12 @@ use crate::db::Database;
 use chrono::Utc;
 use log::{debug, error, info, warn};
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 use std::process::Command;
+
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 
 // ── Template Loading ──
 
@@ -43,6 +47,29 @@ fn generated_header_with(timestamp: &str) -> String {
 
 fn generated_at() -> String {
     Utc::now().to_rfc3339()
+}
+
+/// Write content to a file with secure permissions (0600 - owner read/write only)
+/// This is used for sensitive files like DKIM private keys and password databases
+#[cfg(unix)]
+fn write_secure_file(path: &str, content: &str) -> std::io::Result<()> {
+    use std::fs::OpenOptions;
+    
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)  // rw------- (owner read/write only)
+        .open(path)?;
+    
+    file.write_all(content.as_bytes())?;
+    Ok(())
+}
+
+/// Fallback for non-Unix systems (Windows, etc.)
+#[cfg(not(unix))]
+fn write_secure_file(path: &str, content: &str) -> std::io::Result<()> {
+    fs::write(path, content)
 }
 
 pub fn generate_all_configs(db: &Database, hostname: &str) {
@@ -246,9 +273,9 @@ pub fn generate_dovecot_passwd(db: &Database) {
             ));
         }
     }
-    match fs::write("/etc/dovecot/passwd", lines) {
+    match write_secure_file("/etc/dovecot/passwd", &lines) {
         Ok(_) => debug!(
-            "[config] wrote /etc/dovecot/passwd ({} accounts)",
+            "[config] wrote /etc/dovecot/passwd with secure permissions ({} accounts)",
             accounts.len()
         ),
         Err(e) => error!("[config] failed to write /etc/dovecot/passwd: {}", e),
@@ -290,13 +317,13 @@ pub fn generate_opendkim_tables(db: &Database) {
             let domain = &d.domain;
             let key_path = format!("/data/dkim/{}.private", safe_filename(domain));
 
-            // Write the private key file
+            // Write the private key file with secure permissions (0600)
             if let Err(e) = fs::create_dir_all("/data/dkim") {
                 error!("[config] failed to create /data/dkim directory: {}", e);
             }
-            match fs::write(&key_path, private_key) {
+            match write_secure_file(&key_path, private_key) {
                 Ok(_) => debug!(
-                    "[config] wrote DKIM private key for domain={} to {}",
+                    "[config] wrote DKIM private key for domain={} to {} with secure permissions",
                     domain, key_path
                 ),
                 Err(e) => error!(
