@@ -112,7 +112,7 @@ pub async fn list(auth: AuthAdmin, State(_state): State<AppState>) -> Html<Strin
     }
 }
 
-pub async fn flush(auth: AuthAdmin, headers: HeaderMap, State(_state): State<AppState>) -> Response {
+pub async fn flush(auth: AuthAdmin, headers: HeaderMap) -> Response {
     debug!(
         "[web] POST /queue/flush — flush queue for username={}",
         auth.admin.username
