@@ -716,6 +716,36 @@ impl Database {
             .collect()
     }
 
+    /// Check if an email address exists as an active account
+    pub fn email_exists(&self, email: &str) -> bool {
+        debug!("[db] checking if email exists: {}", email);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        
+        // Parse email into username and domain
+        let parts: Vec<&str> = email.split('@').collect();
+        if parts.len() != 2 {
+            warn!("[db] invalid email format: {}", email);
+            return false;
+        }
+        
+        let username = parts[0];
+        let domain = parts[1];
+        
+        let count: i64 = conn
+            .query_one(
+                "SELECT COUNT(*) FROM accounts ac
+                 JOIN domains d ON ac.domain_id = d.id
+                 WHERE ac.username = $1 AND d.domain = $2 AND ac.active = TRUE AND d.active = TRUE",
+                &[&username, &domain],
+            )
+            .map(|row| row.get(0))
+            .unwrap_or(0);
+        
+        let exists = count > 0;
+        debug!("[db] email {} exists: {}", email, exists);
+        exists
+    }
+
     // ── Tracking methods ──
 
     pub fn create_tracked_message(

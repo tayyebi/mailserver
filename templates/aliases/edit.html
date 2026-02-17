@@ -8,10 +8,10 @@
     <p><small>Tracking helps confirm whether a legacy alias is still in use.</small></p>
 </aside>
 <form method="post" action="/aliases/{{ alias.id }}">
-<label>Source<br><input type="text" name="source" value="{{ alias.source }}" required></label>
-<small>Keep <code>*@domain</code> syntax for catch-alls.</small>
-<label>Destination<br><input type="text" name="destination" value="{{ alias.destination }}" required></label>
-<small>Use a shared mailbox or list for observability.</small>
+<label>Source Email<br><input type="text" name="source" value="{{ alias.source }}" pattern="[\*]?[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}" required></label>
+<small>Full email address or <code>*@domain</code> for catch-all. Cannot change the domain after creation.</small>
+<label>Destination Email<br><input type="text" name="destination" value="{{ alias.destination }}" pattern="[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}" required></label>
+<small>Must be an existing mailbox account. Messages will be delivered here.</small>
 <label><input type="checkbox" name="active" value="on"{% if alias.active %} checked{% endif %}> Active</label>
 <label><input type="checkbox" name="tracking_enabled" value="on"{% if alias.tracking_enabled %} checked{% endif %}> Enable Tracking</label>
 <label>Sort Order<br><input type="number" name="sort_order" value="{{ alias.sort_order }}"></label>

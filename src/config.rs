@@ -2,8 +2,12 @@ use crate::db::Database;
 use chrono::Utc;
 use log::{debug, error, info, warn};
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 use std::process::Command;
+
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 
 // ── Template Loading ──
 
@@ -43,6 +47,50 @@ fn generated_header_with(timestamp: &str) -> String {
 
 fn generated_at() -> String {
     Utc::now().to_rfc3339()
+}
+
+/// Write content to a file with secure permissions (0600 - owner read/write only)
+/// This is used for sensitive files like DKIM private keys and password databases
+/// 
+/// Defense in depth approach:
+/// 1. mode(0o600) sets permissions on newly created files
+/// 2. set_permissions() ensures correct permissions even if file already existed
+/// 3. truncate(true) clears existing content before writing
+/// 4. sync_all() ensures data is flushed to disk
+#[cfg(unix)]
+fn write_secure_file(path: &str, content: &str) -> std::io::Result<()> {
+    use std::fs::{OpenOptions, Permissions};
+    use std::os::unix::fs::PermissionsExt;
+    
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)  // Sets permissions for newly created files
+        .open(path)?;
+    
+    file.write_all(content.as_bytes())?;
+    
+    // Ensure data is flushed to disk
+    file.sync_all()?;
+    
+    // Explicitly set permissions to ensure they're correct even if file existed
+    // This is necessary because .mode() only affects newly created files
+    let permissions = Permissions::from_mode(0o600);
+    std::fs::set_permissions(path, permissions)?;
+    
+    Ok(())
+}
+
+/// Fallback for non-Unix systems (Windows, etc.)
+/// WARNING: This does not enforce secure file permissions
+#[cfg(not(unix))]
+fn write_secure_file(path: &str, content: &str) -> std::io::Result<()> {
+    warn!(
+        "[config] Writing {} without secure permissions - platform does not support Unix file modes",
+        path
+    );
+    fs::write(path, content)
 }
 
 pub fn generate_all_configs(db: &Database, hostname: &str) {
@@ -146,15 +194,25 @@ pub fn generate_virtual_aliases(db: &Database) {
     info!("[config] generating /etc/postfix/virtual_aliases");
     let aliases = db.list_all_aliases_with_domain();
     let mut lines = generated_header();
+    
+    let mut active_count = 0;
     for a in &aliases {
         if a.active {
             lines.push_str(&format!("{} {}\n", a.source, a.destination));
+            active_count += 1;
         }
     }
-    match fs::write("/etc/postfix/virtual_aliases", lines) {
+    
+    // Add a comment if there are no active aliases to make the file more informative
+    if active_count == 0 {
+        lines.push_str("# No active aliases configured\n");
+        lines.push_str("# Add aliases in the admin dashboard to configure email forwarding\n");
+    }
+    
+    match write_secure_file("/etc/postfix/virtual_aliases", &lines) {
         Ok(_) => debug!(
-            "[config] wrote /etc/postfix/virtual_aliases ({} aliases)",
-            aliases.len()
+            "[config] wrote /etc/postfix/virtual_aliases with secure permissions ({} active aliases)",
+            active_count
         ),
         Err(e) => error!(
             "[config] failed to write /etc/postfix/virtual_aliases: {}",
@@ -202,9 +260,9 @@ pub fn generate_sender_login_maps(db: &Database) {
                 .join(",")
         ));
     }
-    match fs::write("/etc/postfix/sender_login_maps", lines) {
+    match write_secure_file("/etc/postfix/sender_login_maps", &lines) {
         Ok(_) => debug!(
-            "[config] wrote /etc/postfix/sender_login_maps ({} entries)",
+            "[config] wrote /etc/postfix/sender_login_maps with secure permissions ({} entries)",
             map.len()
         ),
         Err(e) => error!(
@@ -246,9 +304,9 @@ pub fn generate_dovecot_passwd(db: &Database) {
             ));
         }
     }
-    match fs::write("/etc/dovecot/passwd", lines) {
+    match write_secure_file("/etc/dovecot/passwd", &lines) {
         Ok(_) => debug!(
-            "[config] wrote /etc/dovecot/passwd ({} accounts)",
+            "[config] wrote /etc/dovecot/passwd with secure permissions ({} accounts)",
             accounts.len()
         ),
         Err(e) => error!("[config] failed to write /etc/dovecot/passwd: {}", e),
@@ -290,13 +348,13 @@ pub fn generate_opendkim_tables(db: &Database) {
             let domain = &d.domain;
             let key_path = format!("/data/dkim/{}.private", safe_filename(domain));
 
-            // Write the private key file
+            // Write the private key file with secure permissions (0600)
             if let Err(e) = fs::create_dir_all("/data/dkim") {
                 error!("[config] failed to create /data/dkim directory: {}", e);
             }
-            match fs::write(&key_path, private_key) {
+            match write_secure_file(&key_path, private_key) {
                 Ok(_) => debug!(
-                    "[config] wrote DKIM private key for domain={} to {}",
+                    "[config] wrote DKIM private key for domain={} to {} with secure permissions",
                     domain, key_path
                 ),
                 Err(e) => error!(
