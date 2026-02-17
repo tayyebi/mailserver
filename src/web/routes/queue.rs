@@ -1,5 +1,8 @@
 use askama::Template;
-use axum::{extract::State, response::Html};
+use axum::{
+    extract::State,
+    response::{Html, IntoResponse, Redirect, Response},
+};
 use log::{debug, error};
 use std::path::Path;
 use std::process::Command;
@@ -8,6 +11,12 @@ use crate::web::AppState;
 use crate::web::auth::AuthAdmin;
 
 const POSTQUEUE_PATHS: [&str; 2] = ["/usr/sbin/postqueue", "/usr/bin/postqueue"];
+
+fn find_postqueue_bin() -> Option<&'static str> {
+    POSTQUEUE_PATHS
+        .into_iter()
+        .find(|path| Path::new(path).exists())
+}
 
 #[derive(Template)]
 #[template(path = "queue/list.html")]
@@ -24,9 +33,7 @@ pub async fn list(auth: AuthAdmin, State(_state): State<AppState>) -> Html<Strin
         auth.admin.username
     );
 
-    let postqueue_bin = POSTQUEUE_PATHS
-        .into_iter()
-        .find(|path| Path::new(path).exists());
+    let postqueue_bin = find_postqueue_bin();
 
     let (queue_output, error) = match postqueue_bin {
         Some(postqueue_bin) => match Command::new(postqueue_bin).arg("-p").output() {
@@ -78,4 +85,32 @@ pub async fn list(auth: AuthAdmin, State(_state): State<AppState>) -> Html<Strin
             )
         }
     }
+}
+
+pub async fn flush(auth: AuthAdmin, State(_state): State<AppState>) -> Response {
+    debug!(
+        "[web] POST /queue/flush — flush queue for username={}",
+        auth.admin.username
+    );
+
+    match find_postqueue_bin() {
+        Some(postqueue_bin) => match Command::new(postqueue_bin).arg("-f").output() {
+            Ok(output) if output.status.success() => {
+                debug!("[web] queue flush command completed successfully");
+            }
+            Ok(output) => {
+                error!(
+                    "[web] queue flush failed with status {}: {}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            Err(e) => {
+                error!("[web] failed to run queue flush command: {}", e);
+            }
+        },
+        None => error!("[web] postqueue binary not found; queue flush unavailable"),
+    }
+
+    Redirect::to("/queue").into_response()
 }

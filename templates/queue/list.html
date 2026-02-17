@@ -3,6 +3,9 @@
 {% block content %}
 <h1>Mail Queue</h1>
 <p>Current Postfix queue from <code>postqueue -p</code>.</p>
+<form method="post" action="/queue/flush" style="margin-bottom: 1rem;" onsubmit="return confirm('Flush the mail queue now?')">
+  <button type="submit">Flush Queue</button>
+</form>
 
 {% if let Some(err) = error %}
   <p style="color: #d00;"><strong>Error:</strong> <em>{{ err }}</em></p>
