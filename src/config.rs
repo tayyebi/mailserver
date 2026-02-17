@@ -83,8 +83,13 @@ fn write_secure_file(path: &str, content: &str) -> std::io::Result<()> {
 }
 
 /// Fallback for non-Unix systems (Windows, etc.)
+/// WARNING: This does not enforce secure file permissions
 #[cfg(not(unix))]
 fn write_secure_file(path: &str, content: &str) -> std::io::Result<()> {
+    warn!(
+        "[config] Writing {} without secure permissions - platform does not support Unix file modes",
+        path
+    );
     fs::write(path, content)
 }
 
