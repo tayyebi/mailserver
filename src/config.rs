@@ -310,7 +310,7 @@ pub fn generate_opendkim_tables(db: &Database) {
                 selector, domain, domain, selector, key_path
             ));
             signing_table.push_str(&format!(
-                "*@{} {}._domainkey.{}\n",
+                ".*@{} {}._domainkey.{}\n",
                 domain, selector, domain
             ));
             trusted_hosts.push_str(&format!("{}\n", domain));
