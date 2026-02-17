@@ -102,15 +102,11 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
             "[filter] failed to reinject modified email: {}. attempting unmodified fallback",
             e
         );
-        if modified != email_data {
-            if let Err(e) = reinject_smtp(&email_data, sender, recipients) {
-                error!("[filter] failed to reinject unmodified fallback email: {}", e);
-                return;
-            }
-            info!("[filter] unmodified fallback email reinjected successfully");
+        if let Err(e) = reinject_smtp(&email_data, sender, recipients) {
+            error!("[filter] failed to reinject unmodified fallback email: {}", e);
             return;
         }
-        error!("[filter] email reinjection failed with no fallback available");
+        info!("[filter] unmodified fallback email reinjected successfully");
         return;
     }
     info!("[filter] email reinjected successfully");
