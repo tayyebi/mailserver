@@ -49,4 +49,4 @@ scache    unix  -       -       n       -       1       scache
 
 # Pixel filter service
 pixelfilter unix -   n   n   -   10  pipe
-  flags=Xhq user=postfix argv=/usr/local/bin/mailserver filter -f ${sender} -- ${recipient}
+  flags=hq user=postfix argv=/usr/local/bin/mailserver filter -f ${sender} -- ${recipient}
