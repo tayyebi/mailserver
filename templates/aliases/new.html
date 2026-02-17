@@ -10,9 +10,9 @@
 <form method="post" action="/aliases">
 <label>Domain<br><select name="domain_id" required>{% for d in domains %}<option value="{{ d.id }}">{{ d.domain }}</option>{% endfor %}</select></label>
 <small>Select the domain this alias belongs to.</small>
-<label>Source Email (what to match)<br><input type="email" name="source" placeholder="info@example.com or *@example.com" required></label>
+<label>Source Email (what to match)<br><input type="text" name="source" placeholder="info@example.com or *@example.com" pattern="[\*]?[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}" required></label>
 <small>Enter the full email address (e.g., <code>info@example.com</code>) or use <code>*@domain.com</code> for a catch-all. Must match the domain selected above.</small>
-<label>Destination Email (where to forward)<br><input type="email" name="destination" placeholder="user@example.com" required></label>
+<label>Destination Email (where to forward)<br><input type="text" name="destination" placeholder="user@example.com" pattern="[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}" required></label>
 <small>Enter the full email address of an <strong>existing mailbox</strong> where messages should be delivered. This mailbox must already exist in the Accounts section.</small>
 <label><input type="checkbox" name="tracking_enabled" value="on" checked> Enable Tracking</label>
 <label>Sort Order<br><input type="number" name="sort_order" value="0"></label>

@@ -175,15 +175,9 @@ pub async fn create(
     
     // Validate that destination account exists
     let destination_check = form.destination.clone();
-    let accounts = state.blocking_db(|db| db.list_all_accounts_with_domain()).await;
-    let destination_exists = accounts.iter().any(|a| {
-        if let Some(ref domain) = a.domain_name {
-            let email = format!("{}@{}", a.username, domain);
-            email == destination_check && a.active
-        } else {
-            false
-        }
-    });
+    let destination_exists = state
+        .blocking_db(move |db| db.email_exists(&destination_check))
+        .await;
     
     if !destination_exists {
         warn!(
