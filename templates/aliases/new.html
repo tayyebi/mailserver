@@ -9,10 +9,11 @@
 </aside>
 <form method="post" action="/aliases">
 <label>Domain<br><select name="domain_id" required>{% for d in domains %}<option value="{{ d.id }}">{{ d.domain }}</option>{% endfor %}</select></label>
-<label>Source (full address)<br><input type="text" name="source" placeholder="*@example.com" required></label>
-<small>Use an asterisk to build a catch-all; otherwise provide the exact mailbox.</small>
-<label>Destination (full address)<br><input type="text" name="destination" placeholder="ops@example.com" required></label>
-<small>This mailbox receives copies of anything that matches the alias.</small>
+<small>Select the domain this alias belongs to.</small>
+<label>Source Email (what to match)<br><input type="email" name="source" placeholder="info@example.com or *@example.com" required></label>
+<small>Enter the full email address (e.g., <code>info@example.com</code>) or use <code>*@domain.com</code> for a catch-all. Must match the domain selected above.</small>
+<label>Destination Email (where to forward)<br><input type="email" name="destination" placeholder="user@example.com" required></label>
+<small>Enter the full email address of an <strong>existing mailbox</strong> where messages should be delivered. This mailbox must already exist in the Accounts section.</small>
 <label><input type="checkbox" name="tracking_enabled" value="on" checked> Enable Tracking</label>
 <label>Sort Order<br><input type="number" name="sort_order" value="0"></label>
 <small>Lower values are evaluated first. Aliases run in ascending order.</small>

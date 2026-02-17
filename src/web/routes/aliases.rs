@@ -172,6 +172,40 @@ pub async fn create(
     let sort_order = form.sort_order.unwrap_or(0);
     info!("[web] POST /aliases — creating alias source={}, destination={}, tracking={}, sort_order={}",
         form.source, form.destination, tracking, sort_order);
+    
+    // Validate that destination account exists
+    let destination_check = form.destination.clone();
+    let accounts = state.blocking_db(|db| db.list_all_accounts_with_domain()).await;
+    let destination_exists = accounts.iter().any(|a| {
+        if let Some(ref domain) = a.domain_name {
+            let email = format!("{}@{}", a.username, domain);
+            email == destination_check && a.active
+        } else {
+            false
+        }
+    });
+    
+    if !destination_exists {
+        warn!(
+            "[web] attempted to create alias to non-existent destination: {}",
+            form.destination
+        );
+        let tmpl = ErrorTemplate {
+            nav_active: "Aliases",
+            flash: None,
+            status_code: 400,
+            status_text: "Invalid Destination",
+            title: "Invalid Destination",
+            message: &format!(
+                "The destination email '{}' does not exist. Please create the account first in the Accounts section.",
+                form.destination
+            ),
+            back_url: "/aliases/new",
+            back_label: "Back",
+        };
+        return Html(tmpl.render().unwrap()).into_response();
+    }
+    
     let domain_id = form.domain_id;
     let source = form.source.clone();
     let destination = form.destination.clone();
