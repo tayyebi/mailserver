@@ -1,4 +1,4 @@
-use log::{debug, info};
+use log::{debug, error, info, warn};
 use std::io::{self, Read};
 
 use crate::db::Database;
@@ -13,84 +13,102 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
     // 1. Read entire email from stdin
     debug!("[filter] reading email from stdin");
     let mut email_data = String::new();
-    io::stdin()
-        .read_to_string(&mut email_data)
-        .expect("Failed to read email from stdin");
+    if let Err(e) = io::stdin().read_to_string(&mut email_data) {
+        error!("[filter] failed to read email from stdin: {}", e);
+        return;
+    }
     info!(
         "[filter] read email from stdin ({} bytes)",
         email_data.len()
     );
 
     // 2. Open database and check if tracking is enabled for sender
-    debug!("[filter] opening database at {}", db_url);
-    let db = Database::open(db_url);
-    let tracking = db.is_tracking_enabled_for_sender(sender);
-    let footer_html = db.get_footer_for_sender(sender);
-    info!(
-        "[filter] tracking enabled for sender={}: {}",
-        sender, tracking
-    );
-
-    // 3. If tracking enabled, inject pixel
     let mut modified = email_data.clone();
-
-    if let Some(footer) = footer_html {
-        debug!("[filter] injecting footer for sender={}", sender);
-        modified = inject_footer(&modified, &footer);
-    }
-
-    if tracking {
-        let message_id = uuid::Uuid::new_v4().to_string();
-        let pixel_url = format!("{}{}", pixel_base_url, message_id);
-        let pixel_tag = format!(
-            r#"<img src="{}" width="1" height="1" style="display:none" alt="" />"#,
-            pixel_url
-        );
-        debug!(
-            "[filter] generated tracking pixel message_id={}",
-            message_id
-        );
-
-        // Try to inject before </body>
-        if let Some(pos) = modified.to_lowercase().rfind("</body>") {
-            modified.insert_str(pos, &pixel_tag);
+    match std::panic::catch_unwind(|| {
+        debug!("[filter] opening database at {}", db_url);
+        let db = Database::open(db_url);
+        let tracking = db.is_tracking_enabled_for_sender(sender);
+        let footer_html = db.get_footer_for_sender(sender);
+        (db, tracking, footer_html)
+    }) {
+        Ok((db, tracking, footer_html)) => {
             info!(
-                "[filter] injected tracking pixel before </body> for message_id={}",
-                message_id
+                "[filter] tracking enabled for sender={}: {}",
+                sender, tracking
             );
-        } else if modified.contains("<html") || modified.contains("<HTML") {
-            // Append to end if HTML but no </body>
-            modified.push_str(&pixel_tag);
-            info!(
-                "[filter] appended tracking pixel to HTML email for message_id={}",
-                message_id
-            );
-        } else {
-            debug!(
-                "[filter] email is not HTML — skipping pixel injection for message_id={}",
-                message_id
-            );
+            if let Some(footer) = footer_html {
+                debug!("[filter] injecting footer for sender={}", sender);
+                modified = inject_footer(&modified, &footer);
+            }
+
+            if tracking {
+                let message_id = uuid::Uuid::new_v4().to_string();
+                let pixel_url = format!("{}{}", pixel_base_url, message_id);
+                let pixel_tag = format!(
+                    r#"<img src="{}" width="1" height="1" style="display:none" alt="" />"#,
+                    pixel_url
+                );
+                debug!(
+                    "[filter] generated tracking pixel message_id={}",
+                    message_id
+                );
+
+                // Try to inject before </body>
+                if let Some(pos) = modified.to_lowercase().rfind("</body>") {
+                    modified.insert_str(pos, &pixel_tag);
+                    info!(
+                        "[filter] injected tracking pixel before </body> for message_id={}",
+                        message_id
+                    );
+                } else if modified.contains("<html") || modified.contains("<HTML") {
+                    // Append to end if HTML but no </body>
+                    modified.push_str(&pixel_tag);
+                    info!(
+                        "[filter] appended tracking pixel to HTML email for message_id={}",
+                        message_id
+                    );
+                } else {
+                    debug!(
+                        "[filter] email is not HTML — skipping pixel injection for message_id={}",
+                        message_id
+                    );
+                }
+
+                // Record tracked message
+                let subject = extract_header(&email_data, "Subject").unwrap_or_default();
+                let recipient = recipients.first().map(|s| s.as_str()).unwrap_or("");
+                debug!(
+                    "[filter] recording tracked message: message_id={}, subject={}",
+                    message_id, subject
+                );
+                db.create_tracked_message(&message_id, sender, recipient, &subject, None);
+                info!(
+                    "[filter] tracked message recorded: message_id={}",
+                    message_id
+                );
+            } else {
+                debug!("[filter] no tracking — passing email through unmodified");
+            }
         }
-
-        // Record tracked message
-        let subject = extract_header(&email_data, "Subject").unwrap_or_default();
-        let recipient = recipients.first().map(|s| s.as_str()).unwrap_or("");
-        debug!(
-            "[filter] recording tracked message: message_id={}, subject={}",
-            message_id, subject
-        );
-        db.create_tracked_message(&message_id, sender, recipient, &subject, None);
-        info!(
-            "[filter] tracked message recorded: message_id={}",
-            message_id
-        );
-    } else {
-        debug!("[filter] no tracking — passing email through unmodified");
+        Err(_) => {
+            warn!("[filter] filter database/pixel logic failed, falling back to unmodified email");
+        }
     }
 
     // 4. Reinject via SMTP to 127.0.0.1:10025
     info!("[filter] reinjecting email via SMTP to 127.0.0.1:10025");
-    reinject_smtp(&modified, sender, recipients);
+    if let Err(e) = reinject_smtp(&modified, sender, recipients) {
+        warn!(
+            "[filter] failed to reinject modified email: {}. attempting unmodified fallback",
+            e
+        );
+        if let Err(e) = reinject_smtp(&email_data, sender, recipients) {
+            error!("[filter] failed to reinject unmodified fallback email: {}", e);
+            return;
+        }
+        info!("[filter] unmodified fallback email reinjected successfully");
+        return;
+    }
     info!("[filter] email reinjected successfully");
 }
 
@@ -154,77 +172,77 @@ fn extract_header(email: &str, header_name: &str) -> Option<String> {
     None
 }
 
-fn reinject_smtp(email: &str, sender: &str, recipients: &[String]) {
+fn reinject_smtp(email: &str, sender: &str, recipients: &[String]) -> io::Result<()> {
     use std::io::Write;
     use std::net::TcpStream;
 
     debug!("[filter] connecting to 127.0.0.1:10025 for reinjection");
-    let mut stream =
-        TcpStream::connect("127.0.0.1:10025").expect("Failed to connect to reinjection port");
+    let mut stream = TcpStream::connect("127.0.0.1:10025")?;
     debug!("[filter] connected to reinjection port");
 
     let mut buf = [0u8; 512];
 
     // Read greeting
-    let greeting = read_response(&mut stream, &mut buf);
+    let greeting = read_response(&mut stream, &mut buf)?;
     debug!("[filter] SMTP greeting: {}", greeting.trim());
 
     // EHLO
-    write!(stream, "EHLO localhost\r\n").unwrap();
-    stream.flush().unwrap();
-    let resp = read_response(&mut stream, &mut buf);
+    write!(stream, "EHLO localhost\r\n")?;
+    stream.flush()?;
+    let resp = read_response(&mut stream, &mut buf)?;
     debug!("[filter] EHLO response: {}", resp.trim());
 
     // MAIL FROM
     debug!("[filter] sending MAIL FROM:<{}>", sender);
-    write!(stream, "MAIL FROM:<{}>\r\n", sender).unwrap();
-    stream.flush().unwrap();
-    let resp = read_response(&mut stream, &mut buf);
+    write!(stream, "MAIL FROM:<{}>\r\n", sender)?;
+    stream.flush()?;
+    let resp = read_response(&mut stream, &mut buf)?;
     debug!("[filter] MAIL FROM response: {}", resp.trim());
 
     // RCPT TO for each recipient
     for rcpt in recipients {
         debug!("[filter] sending RCPT TO:<{}>", rcpt);
-        write!(stream, "RCPT TO:<{}>\r\n", rcpt).unwrap();
-        stream.flush().unwrap();
-        let resp = read_response(&mut stream, &mut buf);
+        write!(stream, "RCPT TO:<{}>\r\n", rcpt)?;
+        stream.flush()?;
+        let resp = read_response(&mut stream, &mut buf)?;
         debug!("[filter] RCPT TO response: {}", resp.trim());
     }
 
     // DATA
     debug!("[filter] sending DATA command");
-    write!(stream, "DATA\r\n").unwrap();
-    stream.flush().unwrap();
-    let resp = read_response(&mut stream, &mut buf);
+    write!(stream, "DATA\r\n")?;
+    stream.flush()?;
+    let resp = read_response(&mut stream, &mut buf)?;
     debug!("[filter] DATA response: {}", resp.trim());
 
     // Send email body (dot-stuff lines starting with .)
     debug!("[filter] sending email body ({} bytes)", email.len());
     for line in email.lines() {
         if line.starts_with('.') {
-            write!(stream, ".{}\r\n", line).unwrap();
+            write!(stream, ".{}\r\n", line)?;
         } else {
-            write!(stream, "{}\r\n", line).unwrap();
+            write!(stream, "{}\r\n", line)?;
         }
     }
 
     // End DATA
-    write!(stream, ".\r\n").unwrap();
-    stream.flush().unwrap();
-    let resp = read_response(&mut stream, &mut buf);
+    write!(stream, ".\r\n")?;
+    stream.flush()?;
+    let resp = read_response(&mut stream, &mut buf)?;
     debug!("[filter] end-of-data response: {}", resp.trim());
 
     // QUIT
-    write!(stream, "QUIT\r\n").unwrap();
-    stream.flush().unwrap();
-    let resp = read_response(&mut stream, &mut buf);
+    write!(stream, "QUIT\r\n")?;
+    stream.flush()?;
+    let resp = read_response(&mut stream, &mut buf)?;
     debug!("[filter] QUIT response: {}", resp.trim());
 
     info!("[filter] SMTP reinjection completed for sender={}", sender);
+    Ok(())
 }
 
-fn read_response(stream: &mut std::net::TcpStream, buf: &mut [u8]) -> String {
+fn read_response(stream: &mut std::net::TcpStream, buf: &mut [u8]) -> io::Result<String> {
     use std::io::Read;
-    let n = stream.read(buf).unwrap_or(0);
-    String::from_utf8_lossy(&buf[..n]).to_string()
+    let n = stream.read(buf)?;
+    Ok(String::from_utf8_lossy(&buf[..n]).to_string())
 }

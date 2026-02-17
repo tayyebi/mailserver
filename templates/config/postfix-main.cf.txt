@@ -11,14 +11,14 @@ alias_maps =
 alias_database =
 
 # Virtual mailbox delivery via Dovecot LMTP
-virtual_transport = lmtp:inet:localhost:24
+virtual_transport = lmtp:inet:127.0.0.1:24
 virtual_mailbox_domains = lmdb:/etc/postfix/virtual_domains
 virtual_mailbox_maps = lmdb:/etc/postfix/vmailbox
 virtual_alias_maps = lmdb:/etc/postfix/virtual_aliases
 
 # SASL auth via Dovecot
 smtpd_sasl_type = dovecot
-smtpd_sasl_path = inet:localhost:12345
+smtpd_sasl_path = inet:127.0.0.1:12345
 smtpd_sasl_auth_enable = yes
 smtpd_sasl_security_options = noanonymous
 
@@ -58,8 +58,8 @@ smtpd_timeout = 120s
 smtpd_tls_handshake_timeout = 60s
 
 # Milters
-smtpd_milters = inet:localhost:8891
-non_smtpd_milters = inet:localhost:8891
+smtpd_milters = inet:127.0.0.1:8891
+non_smtpd_milters = inet:127.0.0.1:8891
 milter_default_action = accept
 
 # Content filter for pixel injection

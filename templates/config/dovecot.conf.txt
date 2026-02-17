@@ -47,21 +47,25 @@ auth_mechanisms = plain login
 
 service auth {
   inet_listener sasl {
+    address = 127.0.0.1
     port = 12345
   }
 }
 
 service lmtp {
   inet_listener lmtp {
+    address = 127.0.0.1
     port = 24
   }
 }
 
 service imap-login {
   inet_listener imap {
+    address = 0.0.0.0
     port = 143
   }
   inet_listener imaps {
+    address = 0.0.0.0
     port = 993
     ssl = yes
   }
@@ -69,9 +73,11 @@ service imap-login {
 
 service pop3-login {
   inet_listener pop3 {
+    address = 0.0.0.0
     port = 110
   }
   inet_listener pop3s {
+    address = 0.0.0.0
     port = 995
     ssl = yes
   }
