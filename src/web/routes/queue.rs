@@ -1,6 +1,10 @@
 use askama::Template;
-use axum::{extract::State, response::Html};
-use log::{debug, error};
+use axum::{
+    extract::State,
+    http::{header, HeaderMap, StatusCode},
+    response::{Html, IntoResponse, Redirect, Response},
+};
+use log::{debug, error, warn};
 use std::path::Path;
 use std::process::Command;
 
@@ -8,6 +12,36 @@ use crate::web::AppState;
 use crate::web::auth::AuthAdmin;
 
 const POSTQUEUE_PATHS: [&str; 2] = ["/usr/sbin/postqueue", "/usr/bin/postqueue"];
+
+fn find_postqueue_bin() -> Option<&'static str> {
+    POSTQUEUE_PATHS
+        .into_iter()
+        .find(|path| Path::new(path).exists())
+}
+
+fn same_origin(headers: &HeaderMap) -> bool {
+    let host = match headers.get(header::HOST).and_then(|v| v.to_str().ok()) {
+        Some(v) => v,
+        None => return false,
+    };
+    let matches_host = |value: &str| {
+        let rest = match value.split_once("://") {
+            Some((_, rest)) => rest,
+            None => return false,
+        };
+        let authority = rest.split('/').next().unwrap_or(rest);
+        let authority = authority.rsplit('@').next().unwrap_or(authority);
+        authority.eq_ignore_ascii_case(host)
+    };
+
+    if let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) {
+        return matches_host(origin);
+    }
+    if let Some(referer) = headers.get(header::REFERER).and_then(|v| v.to_str().ok()) {
+        return matches_host(referer);
+    }
+    false
+}
 
 #[derive(Template)]
 #[template(path = "queue/list.html")]
@@ -24,9 +58,7 @@ pub async fn list(auth: AuthAdmin, State(_state): State<AppState>) -> Html<Strin
         auth.admin.username
     );
 
-    let postqueue_bin = POSTQUEUE_PATHS
-        .into_iter()
-        .find(|path| Path::new(path).exists());
+    let postqueue_bin = find_postqueue_bin();
 
     let (queue_output, error) = match postqueue_bin {
         Some(postqueue_bin) => match Command::new(postqueue_bin).arg("-p").output() {
@@ -77,5 +109,77 @@ pub async fn list(auth: AuthAdmin, State(_state): State<AppState>) -> Html<Strin
                 "Dashboard",
             )
         }
+    }
+}
+
+pub async fn flush(auth: AuthAdmin, headers: HeaderMap) -> Response {
+    debug!(
+        "[web] POST /queue/flush — flush queue for username={}",
+        auth.admin.username
+    );
+
+    if !same_origin(&headers) {
+        warn!("[web] queue flush blocked due to non same-origin request");
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    match find_postqueue_bin() {
+        Some(postqueue_bin) => match Command::new(postqueue_bin).arg("-f").output() {
+            Ok(output) if output.status.success() => {
+                debug!("[web] queue flush command completed successfully");
+            }
+            Ok(output) => {
+                error!(
+                    "[web] queue flush failed with status {}: {}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            Err(e) => {
+                error!("[web] failed to run queue flush command: {}", e);
+            }
+        },
+        None => error!("[web] postqueue binary not found; queue flush unavailable"),
+    }
+
+    Redirect::to("/queue").into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::same_origin;
+    use axum::http::{header, HeaderMap, HeaderValue};
+
+    #[test]
+    fn same_origin_allows_matching_origin_and_host() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, HeaderValue::from_static("mail.example.com"));
+        headers.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://mail.example.com"),
+        );
+
+        assert!(same_origin(&headers));
+    }
+
+    #[test]
+    fn same_origin_rejects_mismatched_origin() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, HeaderValue::from_static("mail.example.com"));
+        headers.insert(header::ORIGIN, HeaderValue::from_static("https://evil.example"));
+
+        assert!(!same_origin(&headers));
+    }
+
+    #[test]
+    fn same_origin_allows_matching_referer_when_origin_missing() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, HeaderValue::from_static("mail.example.com"));
+        headers.insert(
+            header::REFERER,
+            HeaderValue::from_static("https://mail.example.com/queue"),
+        );
+
+        assert!(same_origin(&headers));
     }
 }

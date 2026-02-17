@@ -37,6 +37,7 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/tracking", get(tracking::list))
         .route("/tracking/:msg_id", get(tracking::detail))
         .route("/queue", get(queue::list))
+        .route("/queue/flush", post(queue::flush))
         .route("/settings", get(settings::page))
         .route("/settings/password", post(settings::change_password))
         .route("/settings/2fa", get(settings::setup_2fa))
