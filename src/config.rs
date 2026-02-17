@@ -53,7 +53,8 @@ fn generated_at() -> String {
 /// This is used for sensitive files like DKIM private keys and password databases
 #[cfg(unix)]
 fn write_secure_file(path: &str, content: &str) -> std::io::Result<()> {
-    use std::fs::OpenOptions;
+    use std::fs::{OpenOptions, Permissions};
+    use std::os::unix::fs::PermissionsExt;
     
     let mut file = OpenOptions::new()
         .write(true)
@@ -63,6 +64,14 @@ fn write_secure_file(path: &str, content: &str) -> std::io::Result<()> {
         .open(path)?;
     
     file.write_all(content.as_bytes())?;
+    
+    // Ensure data is flushed to disk
+    file.sync_all()?;
+    
+    // Explicitly set permissions to ensure they're correct even if file existed
+    let permissions = Permissions::from_mode(0o600);
+    std::fs::set_permissions(path, permissions)?;
+    
     Ok(())
 }
 
