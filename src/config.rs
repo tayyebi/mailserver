@@ -51,6 +51,12 @@ fn generated_at() -> String {
 
 /// Write content to a file with secure permissions (0600 - owner read/write only)
 /// This is used for sensitive files like DKIM private keys and password databases
+/// 
+/// Defense in depth approach:
+/// 1. mode(0o600) sets permissions on newly created files
+/// 2. set_permissions() ensures correct permissions even if file already existed
+/// 3. truncate(true) clears existing content before writing
+/// 4. sync_all() ensures data is flushed to disk
 #[cfg(unix)]
 fn write_secure_file(path: &str, content: &str) -> std::io::Result<()> {
     use std::fs::{OpenOptions, Permissions};
@@ -60,7 +66,7 @@ fn write_secure_file(path: &str, content: &str) -> std::io::Result<()> {
         .write(true)
         .create(true)
         .truncate(true)
-        .mode(0o600)  // rw------- (owner read/write only)
+        .mode(0o600)  // Sets permissions for newly created files
         .open(path)?;
     
     file.write_all(content.as_bytes())?;
@@ -69,6 +75,7 @@ fn write_secure_file(path: &str, content: &str) -> std::io::Result<()> {
     file.sync_all()?;
     
     // Explicitly set permissions to ensure they're correct even if file existed
+    // This is necessary because .mode() only affects newly created files
     let permissions = Permissions::from_mode(0o600);
     std::fs::set_permissions(path, permissions)?;
     
