@@ -189,15 +189,25 @@ pub fn generate_virtual_aliases(db: &Database) {
     info!("[config] generating /etc/postfix/virtual_aliases");
     let aliases = db.list_all_aliases_with_domain();
     let mut lines = generated_header();
+    
+    let mut active_count = 0;
     for a in &aliases {
         if a.active {
             lines.push_str(&format!("{} {}\n", a.source, a.destination));
+            active_count += 1;
         }
     }
-    match fs::write("/etc/postfix/virtual_aliases", lines) {
+    
+    // Add a comment if there are no active aliases to make the file more informative
+    if active_count == 0 {
+        lines.push_str("# No active aliases configured\n");
+        lines.push_str("# Add aliases in the admin dashboard to configure email forwarding\n");
+    }
+    
+    match fs::write("/etc/postfix/virtual_aliases", &lines) {
         Ok(_) => debug!(
-            "[config] wrote /etc/postfix/virtual_aliases ({} aliases)",
-            aliases.len()
+            "[config] wrote /etc/postfix/virtual_aliases ({} active aliases)",
+            active_count
         ),
         Err(e) => error!(
             "[config] failed to write /etc/postfix/virtual_aliases: {}",
