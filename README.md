@@ -70,6 +70,11 @@ sequenceDiagram
 
     Note over Sender,Recipient: Inbound Email
     Sender->>Postfix: SMTP :25
+    Postfix->>Dovecot: LMTP :24
+    Dovecot->>Recipient: store in Maildir
+
+    Note over Sender,Recipient: Outbound Email
+    Sender->>Postfix: SMTP :587 (authenticated)
     Postfix->>Filter: pipe via pixelfilter
     Filter->>Postgres: lookup tracking + footer_html
     alt Footer configured
@@ -80,11 +85,6 @@ sequenceDiagram
         Filter->>Filter: inject tracking pixel into HTML body
     end
     Filter->>Postfix: reinject via SMTP :10025
-    Postfix->>Dovecot: LMTP :24
-    Dovecot->>Recipient: store in Maildir
-
-    Note over Sender,Recipient: Outbound Email
-    Sender->>Postfix: SMTP :587 (authenticated)
     Postfix->>OpenDKIM: DKIM sign (milter :8891)
     OpenDKIM-->>Postfix: signed message
     Postfix->>Recipient: deliver to remote MTA
