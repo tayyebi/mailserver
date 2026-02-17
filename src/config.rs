@@ -204,9 +204,9 @@ pub fn generate_virtual_aliases(db: &Database) {
         lines.push_str("# Add aliases in the admin dashboard to configure email forwarding\n");
     }
     
-    match fs::write("/etc/postfix/virtual_aliases", &lines) {
+    match write_secure_file("/etc/postfix/virtual_aliases", &lines) {
         Ok(_) => debug!(
-            "[config] wrote /etc/postfix/virtual_aliases ({} active aliases)",
+            "[config] wrote /etc/postfix/virtual_aliases with secure permissions ({} active aliases)",
             active_count
         ),
         Err(e) => error!(
@@ -255,9 +255,9 @@ pub fn generate_sender_login_maps(db: &Database) {
                 .join(",")
         ));
     }
-    match fs::write("/etc/postfix/sender_login_maps", lines) {
+    match write_secure_file("/etc/postfix/sender_login_maps", &lines) {
         Ok(_) => debug!(
-            "[config] wrote /etc/postfix/sender_login_maps ({} entries)",
+            "[config] wrote /etc/postfix/sender_login_maps with secure permissions ({} entries)",
             map.len()
         ),
         Err(e) => error!(
