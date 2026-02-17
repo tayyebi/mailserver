@@ -1,9 +1,10 @@
 use askama::Template;
 use axum::{
     extract::State,
+    http::{header, HeaderMap, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
 };
-use log::{debug, error};
+use log::{debug, error, warn};
 use std::path::Path;
 use std::process::Command;
 
@@ -16,6 +17,30 @@ fn find_postqueue_bin() -> Option<&'static str> {
     POSTQUEUE_PATHS
         .into_iter()
         .find(|path| Path::new(path).exists())
+}
+
+fn same_origin(headers: &HeaderMap) -> bool {
+    let host = match headers.get(header::HOST).and_then(|v| v.to_str().ok()) {
+        Some(v) => v,
+        None => return false,
+    };
+    let matches_host = |value: &str| {
+        let rest = match value.split_once("://") {
+            Some((_, rest)) => rest,
+            None => return false,
+        };
+        let authority = rest.split('/').next().unwrap_or(rest);
+        let authority = authority.rsplit('@').next().unwrap_or(authority);
+        authority.eq_ignore_ascii_case(host)
+    };
+
+    if let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) {
+        return matches_host(origin);
+    }
+    if let Some(referer) = headers.get(header::REFERER).and_then(|v| v.to_str().ok()) {
+        return matches_host(referer);
+    }
+    false
 }
 
 #[derive(Template)]
@@ -87,11 +112,16 @@ pub async fn list(auth: AuthAdmin, State(_state): State<AppState>) -> Html<Strin
     }
 }
 
-pub async fn flush(auth: AuthAdmin, State(_state): State<AppState>) -> Response {
+pub async fn flush(auth: AuthAdmin, headers: HeaderMap, State(_state): State<AppState>) -> Response {
     debug!(
         "[web] POST /queue/flush — flush queue for username={}",
         auth.admin.username
     );
+
+    if !same_origin(&headers) {
+        warn!("[web] queue flush blocked due to non same-origin request");
+        return StatusCode::FORBIDDEN.into_response();
+    }
 
     match find_postqueue_bin() {
         Some(postqueue_bin) => match Command::new(postqueue_bin).arg("-f").output() {
@@ -113,4 +143,43 @@ pub async fn flush(auth: AuthAdmin, State(_state): State<AppState>) -> Response 
     }
 
     Redirect::to("/queue").into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::same_origin;
+    use axum::http::{header, HeaderMap, HeaderValue};
+
+    #[test]
+    fn same_origin_allows_matching_origin_and_host() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, HeaderValue::from_static("mail.example.com"));
+        headers.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://mail.example.com"),
+        );
+
+        assert!(same_origin(&headers));
+    }
+
+    #[test]
+    fn same_origin_rejects_mismatched_origin() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, HeaderValue::from_static("mail.example.com"));
+        headers.insert(header::ORIGIN, HeaderValue::from_static("https://evil.example"));
+
+        assert!(!same_origin(&headers));
+    }
+
+    #[test]
+    fn same_origin_allows_matching_referer_when_origin_missing() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, HeaderValue::from_static("mail.example.com"));
+        headers.insert(
+            header::REFERER,
+            HeaderValue::from_static("https://mail.example.com/queue"),
+        );
+
+        assert!(same_origin(&headers));
+    }
 }
