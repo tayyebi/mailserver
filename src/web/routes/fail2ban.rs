@@ -93,19 +93,6 @@ struct EditSettingTemplate<'a> {
     setting: crate::db::Fail2banSetting,
 }
 
-#[derive(Template)]
-#[template(path = "error.html")]
-struct ErrorTemplate<'a> {
-    nav_active: &'a str,
-    flash: Option<&'a str>,
-    status_code: u16,
-    status_text: &'a str,
-    title: &'a str,
-    message: &'a str,
-    back_url: &'a str,
-    back_label: &'a str,
-}
-
 // ── Handlers ──
 
 pub async fn overview(auth: AuthAdmin, State(state): State<AppState>) -> Html<String> {
@@ -171,21 +158,27 @@ pub async fn edit_setting_form(
                 flash: None,
                 setting,
             };
-            Html(tmpl.render().unwrap()).into_response()
+            match tmpl.render() {
+                Ok(html) => Html(html).into_response(),
+                Err(e) => {
+                    error!("[web] failed to render edit setting template: {}", e);
+                    crate::web::errors::status_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Template Error",
+                        "Failed to render page.",
+                        "/fail2ban",
+                        "Back to Fail2ban",
+                    )
+                }
+            }
         }
-        None => {
-            let tmpl = ErrorTemplate {
-                nav_active: "Fail2ban",
-                flash: None,
-                status_code: 404,
-                status_text: "Not Found",
-                title: "Setting Not Found",
-                message: "The requested fail2ban setting was not found.",
-                back_url: "/fail2ban",
-                back_label: "Back to Fail2ban",
-            };
-            (StatusCode::NOT_FOUND, Html(tmpl.render().unwrap())).into_response()
-        }
+        None => crate::web::errors::status_response(
+            StatusCode::NOT_FOUND,
+            "Setting Not Found",
+            "The requested fail2ban setting was not found.",
+            "/fail2ban",
+            "Back to Fail2ban",
+        ),
     }
 }
 
@@ -207,17 +200,13 @@ pub async fn update_setting(
     }
 
     if form.max_attempts < 1 || form.ban_duration_minutes < 1 || form.find_time_minutes < 1 {
-        let tmpl = ErrorTemplate {
-            nav_active: "Fail2ban",
-            flash: None,
-            status_code: 400,
-            status_text: "Bad Request",
-            title: "Invalid Values",
-            message: "All threshold values must be at least 1.",
-            back_url: &format!("/fail2ban/settings/{}/edit", id),
-            back_label: "Back",
-        };
-        return Html(tmpl.render().unwrap()).into_response();
+        return crate::web::errors::status_response(
+            StatusCode::BAD_REQUEST,
+            "Invalid Values",
+            "All threshold values must be at least 1.",
+            &format!("/fail2ban/settings/{}/edit", id),
+            "Back",
+        );
     }
 
     let enabled = form.enabled.as_deref() == Some("on");
@@ -248,17 +237,13 @@ pub async fn ban_ip(
 
     let ip = form.ip_address.trim().to_string();
     if !is_valid_ip_or_cidr(&ip) {
-        let tmpl = ErrorTemplate {
-            nav_active: "Fail2ban",
-            flash: None,
-            status_code: 400,
-            status_text: "Bad Request",
-            title: "Invalid IP Address",
-            message: "Please enter a valid IP address or CIDR range.",
-            back_url: "/fail2ban",
-            back_label: "Back",
-        };
-        return Html(tmpl.render().unwrap()).into_response();
+        return crate::web::errors::status_response(
+            StatusCode::BAD_REQUEST,
+            "Invalid IP Address",
+            "Please enter a valid IP address or CIDR range.",
+            "/fail2ban",
+            "Back",
+        );
     }
 
     let service = if form.service.trim().is_empty() {
@@ -316,17 +301,13 @@ pub async fn add_whitelist(
 
     let ip = form.ip_address.trim().to_string();
     if !is_valid_ip_or_cidr(&ip) {
-        let tmpl = ErrorTemplate {
-            nav_active: "Fail2ban",
-            flash: None,
-            status_code: 400,
-            status_text: "Bad Request",
-            title: "Invalid IP Address",
-            message: "Please enter a valid IP address or CIDR range.",
-            back_url: "/fail2ban",
-            back_label: "Back",
-        };
-        return Html(tmpl.render().unwrap()).into_response();
+        return crate::web::errors::status_response(
+            StatusCode::BAD_REQUEST,
+            "Invalid IP Address",
+            "Please enter a valid IP address or CIDR range.",
+            "/fail2ban",
+            "Back",
+        );
     }
 
     let description = form.description.trim().to_string();
@@ -376,17 +357,13 @@ pub async fn add_blacklist(
 
     let ip = form.ip_address.trim().to_string();
     if !is_valid_ip_or_cidr(&ip) {
-        let tmpl = ErrorTemplate {
-            nav_active: "Fail2ban",
-            flash: None,
-            status_code: 400,
-            status_text: "Bad Request",
-            title: "Invalid IP Address",
-            message: "Please enter a valid IP address or CIDR range.",
-            back_url: "/fail2ban",
-            back_label: "Back",
-        };
-        return Html(tmpl.render().unwrap()).into_response();
+        return crate::web::errors::status_response(
+            StatusCode::BAD_REQUEST,
+            "Invalid IP Address",
+            "Please enter a valid IP address or CIDR range.",
+            "/fail2ban",
+            "Back",
+        );
     }
 
     let description = form.description.trim().to_string();
