@@ -327,8 +327,16 @@ pub fn generate_dovecot_passwd(db: &Database) {
         Ok(_) => {
             #[cfg(unix)]
             if let Err(e) = set_dovecot_passwd_permissions(passwd_path) {
-                error!("[config] failed to set /etc/dovecot/passwd ownership/permissions: {}", e);
-                return;
+                use std::fs::Permissions;
+                use std::os::unix::fs::PermissionsExt;
+
+                warn!(
+                    "[config] failed to set /etc/dovecot/passwd ownership/permissions ({}), falling back to mode 0644",
+                    e
+                );
+                if let Err(e2) = std::fs::set_permissions(passwd_path, Permissions::from_mode(0o644)) {
+                    error!("[config] failed to apply fallback permissions for /etc/dovecot/passwd: {}", e2);
+                }
             }
             debug!(
                 "[config] wrote /etc/dovecot/passwd with secure permissions ({} accounts)",
