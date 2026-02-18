@@ -271,6 +271,9 @@ pub async fn update_features(
         filter_enabled, milter_enabled, auth.admin.username
     );
 
+    // Regenerate Postfix configs to apply feature toggle changes
+    crate::web::regen_configs(&state).await;
+
     let tmpl = ErrorTemplate {
         nav_active: "Settings",
         flash: None,
