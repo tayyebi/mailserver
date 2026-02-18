@@ -39,7 +39,21 @@ pub struct WebmailQuery {
 pub struct ComposeForm {
     pub account_id: i64,
     pub to: String,
+    #[serde(default)]
+    pub cc: String,
+    #[serde(default)]
+    pub bcc: String,
     pub subject: String,
+    #[serde(default)]
+    pub reply_to: String,
+    #[serde(default)]
+    pub in_reply_to: String,
+    #[serde(default)]
+    pub priority: String,
+    #[serde(default)]
+    pub sender_name: String,
+    #[serde(default)]
+    pub custom_headers: String,
     pub body: String,
 }
 
@@ -452,14 +466,34 @@ pub async fn send_email(
     match acct {
         Some(ref acct) => {
             let domain = acct.domain_name.as_deref().unwrap_or("unknown");
-            let from_addr = format!("{}@{}", acct.username, domain);
+            let email_addr = format!("{}@{}", acct.username, domain);
+            let from_addr = if form.sender_name.trim().is_empty() {
+                email_addr.clone()
+            } else {
+                format!("{} <{}>", form.sender_name.trim(), email_addr)
+            };
             send_log.push(format!("From address: {}", from_addr));
             send_log.push(format!("To: {}", form.to));
+            if !form.cc.trim().is_empty() {
+                send_log.push(format!("CC: {}", form.cc));
+            }
+            if !form.bcc.trim().is_empty() {
+                send_log.push(format!("BCC: {}", form.bcc));
+            }
+            if !form.reply_to.trim().is_empty() {
+                send_log.push(format!("Reply-To: {}", form.reply_to));
+            }
+            if !form.in_reply_to.trim().is_empty() {
+                send_log.push(format!("In-Reply-To: {}", form.in_reply_to));
+            }
+            if !form.priority.is_empty() && form.priority != "normal" {
+                send_log.push(format!("Priority: {}", form.priority));
+            }
             send_log.push(format!("Subject: {}", form.subject));
             send_log.push(format!("Body length: {} chars", form.body.len()));
 
             send_log.push("Building email message...".to_string());
-            let email = match lettre::Message::builder()
+            let mut builder = lettre::Message::builder()
                 .from(from_addr.parse().unwrap_or_else(|e| {
                     send_log.push(format!("Warning: could not parse from address '{}': {}, using fallback", from_addr, e));
                     "noreply@localhost".parse().unwrap()
@@ -480,8 +514,81 @@ pub async fn send_email(
                         return Html(tmpl.render().unwrap());
                     }
                 })
-                .subject(&form.subject)
-                .body(form.body.clone())
+                .subject(&form.subject);
+
+            // Add CC recipients
+            for addr in form.cc.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+                match addr.parse() {
+                    Ok(a) => builder = builder.cc(a),
+                    Err(e) => send_log.push(format!("Warning: skipping invalid CC address '{}': {}", addr, e)),
+                }
+            }
+
+            // Add BCC recipients
+            for addr in form.bcc.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+                match addr.parse() {
+                    Ok(a) => builder = builder.bcc(a),
+                    Err(e) => send_log.push(format!("Warning: skipping invalid BCC address '{}': {}", addr, e)),
+                }
+            }
+
+            // Set Reply-To
+            if !form.reply_to.trim().is_empty() {
+                match form.reply_to.trim().parse() {
+                    Ok(a) => builder = builder.reply_to(a),
+                    Err(e) => send_log.push(format!("Warning: invalid Reply-To address '{}': {}", form.reply_to, e)),
+                }
+            }
+
+            // Set In-Reply-To
+            if !form.in_reply_to.trim().is_empty() {
+                builder = builder.in_reply_to(form.in_reply_to.trim().to_string());
+            }
+
+            // Set priority via X-Priority header
+            {
+                use lettre::message::header::{HeaderName, HeaderValue};
+                let priority_value = match form.priority.as_str() {
+                    "lowest" => Some("5 (Lowest)"),
+                    "low" => Some("4 (Low)"),
+                    "high" => Some("2 (High)"),
+                    "highest" => Some("1 (Highest)"),
+                    _ => None, // "normal" or empty — no header needed
+                };
+                if let Some(val) = priority_value {
+                    builder = builder.raw_header(HeaderValue::new(
+                        HeaderName::new_from_ascii_str("X-Priority"),
+                        val.to_string(),
+                    ));
+                }
+            }
+
+            // Add custom headers (one per line, format: "Header-Name: value")
+            {
+                use lettre::message::header::{HeaderName, HeaderValue};
+                for line in form.custom_headers.lines().map(str::trim).filter(|l| !l.is_empty()) {
+                    if let Some((name, value)) = line.split_once(':') {
+                        let name = name.trim();
+                        let value = value.trim();
+                        if !name.is_empty() && !value.is_empty() {
+                            match HeaderName::new_from_ascii(name.to_string()) {
+                                Ok(header_name) => {
+                                    builder = builder.raw_header(HeaderValue::new(
+                                        header_name,
+                                        value.to_string(),
+                                    ));
+                                    send_log.push(format!("Custom header: {}: {}", name, value));
+                                }
+                                Err(e) => {
+                                    send_log.push(format!("Warning: invalid header name '{}': {}", name, e));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            let email = match builder.body(form.body.clone())
             {
                 Ok(email) => {
                     send_log.push("Email message built successfully".to_string());
