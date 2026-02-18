@@ -56,3 +56,7 @@ VALUES
     ('pop3', 5, 60, 10, true, NOW()::TEXT, NOW()::TEXT),
     ('admin', 3, 120, 5, true, NOW()::TEXT, NOW()::TEXT)
 ON CONFLICT (service) DO NOTHING;
+
+-- Global fail2ban toggle: default is off
+INSERT INTO settings (key, value) VALUES ('fail2ban_enabled', 'false')
+ON CONFLICT (key) DO NOTHING;

@@ -51,6 +51,7 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/settings/tls/key.pem", get(settings::download_key))
         .route("/configs", get(configs::page))
         .route("/fail2ban", get(fail2ban::overview))
+        .route("/fail2ban/toggle", post(fail2ban::toggle_system))
         .route("/fail2ban/ban", post(fail2ban::ban_ip))
         .route("/fail2ban/unban/:id", post(fail2ban::unban_ip))
         .route("/fail2ban/settings/:id/edit", get(fail2ban::edit_setting_form))

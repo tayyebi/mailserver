@@ -250,6 +250,11 @@ fn tail_log_file(db: &Database) -> Result<(), std::io::Error> {
                 let trimmed = line.trim();
                 if !trimmed.is_empty() {
                     if let Some(failure) = parse_log_line(trimmed) {
+                        // Check global fail2ban toggle before processing
+                        if !db.is_fail2ban_enabled() {
+                            debug!("[fail2ban] system disabled globally, skipping");
+                            continue;
+                        }
                         info!(
                             "[fail2ban] detected auth failure: ip={} service={}",
                             failure.ip, failure.service

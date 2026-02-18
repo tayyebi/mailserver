@@ -9,7 +9,7 @@ use log::{debug, error, info, warn};
 
 use crate::web::AppState;
 use crate::web::auth::AuthAdmin;
-use crate::web::forms::{Fail2banBanForm, Fail2banListForm, Fail2banSettingForm};
+use crate::web::forms::{Fail2banBanForm, Fail2banGlobalToggleForm, Fail2banListForm, Fail2banSettingForm};
 
 fn same_origin(headers: &HeaderMap) -> bool {
     let host = match headers.get(header::HOST).and_then(|v| v.to_str().ok()) {
@@ -75,6 +75,7 @@ fn is_valid_ip_or_cidr(input: &str) -> bool {
 struct Fail2banOverviewTemplate<'a> {
     nav_active: &'a str,
     flash: Option<&'a str>,
+    fail2ban_enabled: bool,
     settings: Vec<crate::db::Fail2banSetting>,
     banned: Vec<crate::db::Fail2banBanned>,
     whitelist: Vec<crate::db::Fail2banWhitelist>,
@@ -106,9 +107,10 @@ pub async fn overview(auth: AuthAdmin, State(state): State<AppState>) -> Html<St
     let whitelist_fut = state.blocking_db(|db| db.list_fail2ban_whitelist());
     let blacklist_fut = state.blocking_db(|db| db.list_fail2ban_blacklist());
     let log_fut = state.blocking_db(|db| db.list_fail2ban_log(50));
+    let enabled_fut = state.blocking_db(|db| db.is_fail2ban_enabled());
 
-    let (settings, banned, whitelist, blacklist, log_entries) =
-        tokio::join!(settings_fut, banned_fut, whitelist_fut, blacklist_fut, log_fut);
+    let (settings, banned, whitelist, blacklist, log_entries, fail2ban_enabled) =
+        tokio::join!(settings_fut, banned_fut, whitelist_fut, blacklist_fut, log_fut, enabled_fut);
 
     let banned_count = banned.len() as i64;
     let whitelist_count = whitelist.len();
@@ -117,6 +119,7 @@ pub async fn overview(auth: AuthAdmin, State(state): State<AppState>) -> Html<St
     let tmpl = Fail2banOverviewTemplate {
         nav_active: "Fail2ban",
         flash: None,
+        fail2ban_enabled,
         settings,
         banned,
         whitelist,
@@ -139,6 +142,32 @@ pub async fn overview(auth: AuthAdmin, State(state): State<AppState>) -> Html<St
             )
         }
     }
+}
+
+pub async fn toggle_system(
+    auth: AuthAdmin,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<Fail2banGlobalToggleForm>,
+) -> Response {
+    info!(
+        "[web] POST /fail2ban/toggle — toggle fail2ban system for username={}",
+        auth.admin.username
+    );
+
+    if !same_origin(&headers) {
+        warn!("[web] fail2ban toggle blocked: non same-origin request");
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    let enabled = form.enabled.as_deref() == Some("on");
+    let value = if enabled { "true" } else { "false" };
+    state
+        .blocking_db(move |db| db.set_setting("fail2ban_enabled", value))
+        .await;
+
+    info!("[web] fail2ban system toggled to: {}", value);
+    Redirect::to("/fail2ban").into_response()
 }
 
 pub async fn edit_setting_form(

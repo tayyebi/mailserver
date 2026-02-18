@@ -7,10 +7,24 @@
         <h1>Fail2ban</h1>
     </hgroup>
     <p>Monitor and manage IP banning rules. Configure thresholds per service, maintain whitelist and blacklist, and review banned IPs.</p>
-    <aside>
-        <h2>Automatic Log Monitoring</h2>
-        <p>The fail2ban watcher automatically monitors <code>/var/log/mail.log</code> for Postfix SASL and Dovecot authentication failures. IPs that exceed the configured thresholds are banned automatically.</p>
-    </aside>
+
+    <article>
+        <header>
+            <h2>System Status</h2>
+        </header>
+        <form method="post" action="/fail2ban/toggle">
+            <fieldset role="group">
+                <label><input type="checkbox" name="enabled" {% if fail2ban_enabled %}checked{% endif %}> Enable fail2ban system</label>
+                <button type="submit">Save</button>
+            </fieldset>
+        </form>
+        {% if fail2ban_enabled %}
+        <p><mark>Active</mark> — The fail2ban watcher is monitoring <code>/var/log/mail.log</code> for Postfix SASL and Dovecot authentication failures. IPs that exceed the configured thresholds are banned automatically.</p>
+        {% else %}
+        <p><mark>Disabled</mark> — Fail2ban is currently disabled. Automatic log monitoring and IP banning are inactive. Enable it above to start protecting your mail services.</p>
+        {% endif %}
+    </article>
+
     <div>
         <article><data value="{{ banned_count }}">{{ banned_count }}</data><strong>Banned IPs</strong><small>Currently active bans</small></article>
         <article><data value="{{ whitelist_count }}">{{ whitelist_count }}</data><strong>Whitelisted</strong><small>Always allowed</small></article>

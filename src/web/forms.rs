@@ -115,6 +115,15 @@ pub struct Fail2banListForm {
     pub ip_address: String,
     #[serde(default)]
     pub description: String,
+}
+
+#[derive(Deserialize)]
+pub struct Fail2banGlobalToggleForm {
+    #[serde(default)]
+    pub enabled: Option<String>,
+}
+
+#[derive(Deserialize)]
 pub struct FeatureToggleForm {
     #[serde(default)]
     pub filter_enabled: Option<String>,

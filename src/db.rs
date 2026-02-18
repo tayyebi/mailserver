@@ -928,6 +928,12 @@ impl Database {
             .map(|row| row.get(0))
     }
 
+    pub fn is_fail2ban_enabled(&self) -> bool {
+        self.get_setting("fail2ban_enabled")
+            .map(|v| v == "true")
+            .unwrap_or(false)
+    }
+
     pub fn get_stats(&self) -> Stats {
         debug!("[db] fetching aggregate stats");
         let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
