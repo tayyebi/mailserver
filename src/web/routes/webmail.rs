@@ -12,6 +12,12 @@ use crate::db::Account;
 use crate::web::auth::AuthAdmin;
 use crate::web::AppState;
 
+// ── Helpers ──
+
+fn is_safe_path_component(s: &str) -> bool {
+    !s.is_empty() && !s.contains('/') && !s.contains('\\') && s != "." && s != ".."
+}
+
 // ── Structures ──
 
 pub struct WebmailEmail {
@@ -97,6 +103,11 @@ pub async fn inbox(
             .await;
         if let Some(acct) = acct {
             let domain = acct.domain_name.as_deref().unwrap_or("unknown");
+            if !is_safe_path_component(domain) || !is_safe_path_component(&acct.username) {
+                logs.push("Invalid domain or username for path construction".to_string());
+                warn!("[web] unsafe path component: domain={}, username={}", domain, acct.username);
+                selected_account = Some(acct);
+            } else {
             let maildir_base = format!(
                 "/var/mail/vhosts/{}/{}/Maildir",
                 domain, acct.username
@@ -192,6 +203,7 @@ pub async fn inbox(
 
             logs.push(format!("Total emails found: {}", emails.len()));
             selected_account = Some(acct);
+            } // end safe path else
         } else {
             logs.push(format!("Account ID {} not found in database", account_id));
             warn!("[web] account id={} not found for webmail", account_id);
@@ -255,6 +267,10 @@ pub async fn view_email(
     debug!("[web] decoded filename: {}", filename);
 
     let domain = acct.domain_name.as_deref().unwrap_or("unknown");
+    if !is_safe_path_component(domain) || !is_safe_path_component(&acct.username) || !is_safe_path_component(&filename) {
+        warn!("[web] unsafe path component in view_email");
+        return Html("Invalid path component".to_string()).into_response();
+    }
     let maildir_base = format!(
         "/var/mail/vhosts/{}/{}/Maildir",
         domain, acct.username
@@ -434,8 +450,8 @@ pub async fn send_email(
 
             send_log.push("Building email message...".to_string());
             let email = match lettre::Message::builder()
-                .from(from_addr.parse().unwrap_or_else(|_| {
-                    send_log.push(format!("Warning: could not parse from address, using fallback"));
+                .from(from_addr.parse().unwrap_or_else(|e| {
+                    send_log.push(format!("Warning: could not parse from address '{}': {}, using fallback", from_addr, e));
                     "noreply@localhost".parse().unwrap()
                 }))
                 .to(match form.to.parse() {
