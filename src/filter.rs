@@ -22,72 +22,88 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
         email_data.len()
     );
 
-    // 2. Open database and check if tracking is enabled for sender
+    // 2. Check if the content filter feature is enabled
     let mut modified = email_data.clone();
     match std::panic::catch_unwind(|| {
         debug!("[filter] opening database at {}", db_url);
         let db = Database::open(db_url);
+
+        // Check feature toggle — if disabled, bypass all filter logic
+        let filter_enabled = db
+            .get_setting("feature_filter_enabled")
+            .map(|v| v != "false")
+            .unwrap_or(true);
+
+        if !filter_enabled {
+            info!("[filter] content filter feature is disabled, bypassing");
+            return (db, false, None, false);
+        }
+
         let tracking = db.is_tracking_enabled_for_sender(sender);
         let footer_html = db.get_footer_for_sender(sender);
-        (db, tracking, footer_html)
+        (db, tracking, footer_html, true)
     }) {
-        Ok((db, tracking, footer_html)) => {
-            info!(
-                "[filter] tracking enabled for sender={}: {}",
-                sender, tracking
-            );
-            if let Some(footer) = footer_html {
-                debug!("[filter] injecting footer for sender={}", sender);
-                modified = inject_footer(&modified, &footer);
-            }
-
-            if tracking {
-                let message_id = uuid::Uuid::new_v4().to_string();
-                let pixel_url = format!("{}{}", pixel_base_url, message_id);
-                let pixel_tag = format!(
-                    r#"<img src="{}" width="1" height="1" style="display:none" alt="" />"#,
-                    pixel_url
+        Ok((db, tracking, footer_html, enabled)) => {
+            if !enabled {
+                // Feature disabled — pass through unmodified
+            } else {
+                info!(
+                    "[filter] tracking enabled for sender={}: {}",
+                    sender, tracking
                 );
-                debug!(
-                    "[filter] generated tracking pixel message_id={}",
-                    message_id
-                );
+                if let Some(footer) = footer_html {
+                    debug!("[filter] injecting footer for sender={}", sender);
+                    modified = inject_footer(&modified, &footer);
+                }
 
-                // Try to inject before </body>
-                if let Some(pos) = modified.to_lowercase().rfind("</body>") {
-                    modified.insert_str(pos, &pixel_tag);
-                    info!(
-                        "[filter] injected tracking pixel before </body> for message_id={}",
+                if tracking {
+                    let message_id = uuid::Uuid::new_v4().to_string();
+                    let pixel_url = format!("{}{}", pixel_base_url, message_id);
+                    let pixel_tag = format!(
+                        r#"<img src="{}" width="1" height="1" style="display:none" alt="" />"#,
+                        pixel_url
+                    );
+                    debug!(
+                        "[filter] generated tracking pixel message_id={}",
                         message_id
                     );
-                } else if modified.contains("<html") || modified.contains("<HTML") {
-                    // Append to end if HTML but no </body>
-                    modified.push_str(&pixel_tag);
+
+                    // Try to inject before </body>
+                    if let Some(pos) = modified.to_lowercase().rfind("</body>") {
+                        modified.insert_str(pos, &pixel_tag);
+                        info!(
+                            "[filter] injected tracking pixel before </body> for message_id={}",
+                            message_id
+                        );
+                    } else if modified.contains("<html") || modified.contains("<HTML") {
+                        // Append to end if HTML but no </body>
+                        modified.push_str(&pixel_tag);
+                        info!(
+                            "[filter] appended tracking pixel to HTML email for message_id={}",
+                            message_id
+                        );
+                    } else {
+                        debug!(
+                            "[filter] email is not HTML — skipping pixel injection for message_id={}",
+                            message_id
+                        );
+                    }
+
+                    // Record tracked message
+                    let subject = extract_header(&email_data, "Subject").unwrap_or_default();
+                    let recipient = recipients.first().map(|s| s.as_str()).unwrap_or("");
+                    debug!(
+                        "[filter] recording tracked message: message_id={}, subject={}",
+                        message_id, subject
+                    );
+                    db.create_tracked_message(&message_id, sender, recipient, &subject, None);
                     info!(
-                        "[filter] appended tracking pixel to HTML email for message_id={}",
+                        "[filter] tracked message recorded: message_id={}",
                         message_id
                     );
                 } else {
-                    debug!(
-                        "[filter] email is not HTML — skipping pixel injection for message_id={}",
-                        message_id
-                    );
+                    debug!("[filter] no tracking — passing email through unmodified");
                 }
-
-                // Record tracked message
-                let subject = extract_header(&email_data, "Subject").unwrap_or_default();
-                let recipient = recipients.first().map(|s| s.as_str()).unwrap_or("");
-                debug!(
-                    "[filter] recording tracked message: message_id={}, subject={}",
-                    message_id, subject
-                );
-                db.create_tracked_message(&message_id, sender, recipient, &subject, None);
-                info!(
-                    "[filter] tracked message recorded: message_id={}",
-                    message_id
-                );
-            } else {
-                debug!("[filter] no tracking — passing email through unmodified");
             }
         }
         Err(_) => {
