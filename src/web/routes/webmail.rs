@@ -115,6 +115,15 @@ pub async fn inbox(
             );
             logs.push(format!("Maildir path: {}", maildir_base));
 
+            // Create Maildir directories if they don't exist
+            for subdir in &["new", "cur", "tmp"] {
+                let dir_path = format!("{}/{}", maildir_base, subdir);
+                if let Err(e) = std::fs::create_dir_all(&dir_path) {
+                    logs.push(format!("Failed to create directory {}: {}", dir_path, e));
+                    warn!("[web] failed to create maildir directory {}: {}", dir_path, e);
+                }
+            }
+
             for (subdir, is_new) in &[("new", true), ("cur", false)] {
                 let dir_path = format!("{}/{}", maildir_base, subdir);
                 logs.push(format!("Scanning directory: {}", dir_path));
