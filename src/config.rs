@@ -216,7 +216,11 @@ pub fn generate_virtual_aliases(db: &Database) {
     let mut active_count = 0;
     for a in &aliases {
         if a.active {
-            lines.push_str(&format!("{} {}\n", a.source, a.destination));
+            lines.push_str(&format!(
+                "{} {}\n",
+                normalize_virtual_alias_source(&a.source, a.domain_name.as_deref()),
+                a.destination
+            ));
             active_count += 1;
         }
     }
@@ -237,6 +241,19 @@ pub fn generate_virtual_aliases(db: &Database) {
             e
         ),
     }
+}
+
+fn normalize_virtual_alias_source(source: &str, domain: Option<&str>) -> String {
+    let trimmed = source.trim();
+    if let Some(rest) = trimmed.strip_prefix("*@") {
+        return format!("@{}", rest);
+    }
+    if trimmed == "*" {
+        if let Some(domain) = domain {
+            return format!("@{}", domain);
+        }
+    }
+    trimmed.to_string()
 }
 
 pub fn generate_sender_login_maps(db: &Database) {
@@ -501,6 +518,27 @@ pub fn reload_services() {
     }
 
     info!("[config] service reload complete");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_virtual_alias_source;
+
+    #[test]
+    fn normalize_virtual_alias_source_rewrites_catch_all_patterns() {
+        assert_eq!(
+            normalize_virtual_alias_source("*@example.com", Some("example.com")),
+            "@example.com"
+        );
+        assert_eq!(
+            normalize_virtual_alias_source("*", Some("example.com")),
+            "@example.com"
+        );
+        assert_eq!(
+            normalize_virtual_alias_source("info@example.com", Some("example.com")),
+            "info@example.com"
+        );
+    }
 }
 
 // ── Certificate and DH parameter generation ──
