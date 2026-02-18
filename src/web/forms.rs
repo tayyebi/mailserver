@@ -89,6 +89,41 @@ pub struct PixelSettingsForm {
 }
 
 #[derive(Deserialize)]
+pub struct Fail2banSettingForm {
+    pub max_attempts: i32,
+    pub ban_duration_minutes: i32,
+    pub find_time_minutes: i32,
+    #[serde(default)]
+    pub enabled: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct Fail2banBanForm {
+    pub ip_address: String,
+    #[serde(default)]
+    pub service: String,
+    #[serde(default)]
+    pub reason: String,
+    #[serde(default)]
+    pub duration_minutes: Option<i32>,
+    #[serde(default)]
+    pub permanent: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct Fail2banListForm {
+    pub ip_address: String,
+    #[serde(default)]
+    pub description: String,
+}
+
+#[derive(Deserialize)]
+pub struct Fail2banGlobalToggleForm {
+    #[serde(default)]
+    pub enabled: Option<String>,
+}
+
+#[derive(Deserialize)]
 pub struct FeatureToggleForm {
     #[serde(default)]
     pub filter_enabled: Option<String>,

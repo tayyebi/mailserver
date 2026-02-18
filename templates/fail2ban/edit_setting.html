@@ -1,0 +1,37 @@
+{% extends "layout.html" %}
+{% block title %}Edit {{ setting.service }} — Fail2ban{% endblock %}
+{% block content %}
+<section>
+    <hgroup>
+        <small>Fail2ban settings</small>
+        <h1>Edit {{ setting.service }} Thresholds</h1>
+    </hgroup>
+    <p>Configure the ban thresholds for the <strong>{{ setting.service }}</strong> service.</p>
+
+    <form method="post" action="/fail2ban/settings/{{ setting.id }}">
+        <label>Max Attempts
+            <input type="number" name="max_attempts" value="{{ setting.max_attempts }}" min="1" required>
+        </label>
+        <small>Number of failed attempts before banning. Lower values are stricter.</small>
+
+        <label>Find Time (minutes)
+            <input type="number" name="find_time_minutes" value="{{ setting.find_time_minutes }}" min="1" required>
+        </label>
+        <small>Time window in which failed attempts are counted. Older attempts are ignored.</small>
+
+        <label>Ban Duration (minutes)
+            <input type="number" name="ban_duration_minutes" value="{{ setting.ban_duration_minutes }}" min="1" required>
+        </label>
+        <small>How long an IP stays banned after exceeding the threshold.</small>
+
+        <label><input type="checkbox" name="enabled" {% if setting.enabled %}checked{% endif %}> Enabled</label>
+        <small>Disable to stop monitoring this service without deleting the configuration.</small>
+
+        <button type="submit">Save Changes</button>
+    </form>
+
+    <nav>
+        <a href="/fail2ban">← Back to Fail2ban</a>
+    </nav>
+</section>
+{% endblock %}

@@ -1,0 +1,239 @@
+{% extends "layout.html" %}
+{% block title %}Fail2ban{% endblock %}
+{% block content %}
+<section>
+    <hgroup>
+        <small>Security</small>
+        <h1>Fail2ban</h1>
+    </hgroup>
+    <p>Monitor and manage IP banning rules. Configure thresholds per service, maintain whitelist and blacklist, and review banned IPs.</p>
+
+    <article>
+        <header>
+            <h2>System Status</h2>
+        </header>
+        <form method="post" action="/fail2ban/toggle">
+            <fieldset role="group">
+                <label><input type="checkbox" name="enabled" {% if fail2ban_enabled %}checked{% endif %}> Enable fail2ban system</label>
+                <button type="submit">Save</button>
+            </fieldset>
+        </form>
+        {% if fail2ban_enabled %}
+        <p><mark>Active</mark> — The fail2ban watcher is monitoring <code>/var/log/mail.log</code> for Postfix SASL and Dovecot authentication failures. IPs that exceed the configured thresholds are banned automatically.</p>
+        {% else %}
+        <p><mark>Disabled</mark> — Fail2ban is currently disabled. Automatic log monitoring and IP banning are inactive. Enable it above to start protecting your mail services.</p>
+        {% endif %}
+    </article>
+
+    <div>
+        <article><data value="{{ banned_count }}">{{ banned_count }}</data><strong>Banned IPs</strong><small>Currently active bans</small></article>
+        <article><data value="{{ whitelist_count }}">{{ whitelist_count }}</data><strong>Whitelisted</strong><small>Always allowed</small></article>
+        <article><data value="{{ blacklist_count }}">{{ blacklist_count }}</data><strong>Blacklisted</strong><small>Permanently blocked</small></article>
+    </div>
+</section>
+
+<section>
+    <hgroup>
+        <small>Per-service thresholds</small>
+        <h2>Service Settings</h2>
+    </hgroup>
+    <details>
+        <summary>How thresholds work</summary>
+        <p>Each service can have its own maximum attempts, find time window, and ban duration. When an IP exceeds the max attempts within the find time, it gets banned for the configured duration.</p>
+    </details>
+    <table>
+        <thead>
+            <tr><th>Service</th><th>Max Attempts</th><th>Find Time</th><th>Ban Duration</th><th>Status</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+        {% if settings.is_empty() %}
+            <tr><td colspan="6">No service settings configured.</td></tr>
+        {% else %}
+            {% for s in settings %}
+            <tr>
+                <td><strong>{{ s.service }}</strong></td>
+                <td>{{ s.max_attempts }} attempts</td>
+                <td>{{ s.find_time_minutes }} min window</td>
+                <td>{{ s.ban_duration_minutes }} min ban</td>
+                <td><mark>{% if s.enabled %}Enabled{% else %}Disabled{% endif %}</mark></td>
+                <td><a href="/fail2ban/settings/{{ s.id }}/edit">Edit</a></td>
+            </tr>
+            {% endfor %}
+        {% endif %}
+        </tbody>
+    </table>
+</section>
+
+<section>
+    <hgroup>
+        <small>Active bans</small>
+        <h2>Currently Banned IPs</h2>
+    </hgroup>
+    <table>
+        <thead>
+            <tr><th>IP Address</th><th>Service</th><th>Reason</th><th>Banned At</th><th>Expires</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+        {% if banned.is_empty() %}
+            <tr><td colspan="6">No IPs currently banned.</td></tr>
+        {% else %}
+            {% for b in banned %}
+            <tr>
+                <td><code>{{ b.ip_address }}</code></td>
+                <td>{{ b.service }}</td>
+                <td>{{ b.reason }}</td>
+                <td>{{ b.banned_at }}</td>
+                <td>{% if b.permanent %}<mark>Permanent</mark>{% else %}{{ b.expires_at.as_deref().unwrap_or("—") }}{% endif %}</td>
+                <td>
+                    <form method="post" action="/fail2ban/unban/{{ b.id }}" style="display:inline" onsubmit="return confirm('Unban this IP?')">
+                        <button type="submit">Unban</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        {% endif %}
+        </tbody>
+    </table>
+
+    <h3>Ban an IP</h3>
+    <form method="post" action="/fail2ban/ban">
+        <label>IP Address
+            <input type="text" name="ip_address" placeholder="192.168.1.100 or 10.0.0.0/24" required>
+        </label>
+        <label>Service
+            <select name="service">
+                <option value="all">All services</option>
+                <option value="smtp">SMTP</option>
+                <option value="imap">IMAP</option>
+                <option value="pop3">POP3</option>
+                <option value="admin">Admin</option>
+            </select>
+        </label>
+        <label>Reason
+            <input type="text" name="reason" placeholder="Manual ban from admin">
+        </label>
+        <label>Duration (minutes)
+            <input type="number" name="duration_minutes" value="60" min="1">
+        </label>
+        <label><input type="checkbox" name="permanent"> Permanent ban</label>
+        <button type="submit">Ban IP</button>
+    </form>
+</section>
+
+<section>
+    <hgroup>
+        <small>Trusted IPs</small>
+        <h2>Whitelist</h2>
+    </hgroup>
+    <details>
+        <summary>What is the whitelist?</summary>
+        <p>Whitelisted IPs are never banned, even if they exceed the threshold. Use this for your own server IPs, monitoring systems, or trusted networks.</p>
+    </details>
+    <table>
+        <thead>
+            <tr><th>IP Address</th><th>Description</th><th>Added</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+        {% if whitelist.is_empty() %}
+            <tr><td colspan="4">No IPs whitelisted.</td></tr>
+        {% else %}
+            {% for w in whitelist %}
+            <tr>
+                <td><code>{{ w.ip_address }}</code></td>
+                <td>{{ w.description }}</td>
+                <td>{{ w.created_at }}</td>
+                <td>
+                    <form method="post" action="/fail2ban/whitelist/{{ w.id }}/delete" style="display:inline" onsubmit="return confirm('Remove from whitelist?')">
+                        <button type="submit">Remove</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        {% endif %}
+        </tbody>
+    </table>
+
+    <h3>Add to Whitelist</h3>
+    <form method="post" action="/fail2ban/whitelist">
+        <label>IP Address
+            <input type="text" name="ip_address" placeholder="192.168.1.100 or 10.0.0.0/24" required>
+        </label>
+        <label>Description
+            <input type="text" name="description" placeholder="Office network">
+        </label>
+        <button type="submit">Add to Whitelist</button>
+    </form>
+</section>
+
+<section>
+    <hgroup>
+        <small>Blocked IPs</small>
+        <h2>Blacklist</h2>
+    </hgroup>
+    <details>
+        <summary>What is the blacklist?</summary>
+        <p>Blacklisted IPs are permanently banned across all services. Adding an IP here automatically creates a permanent ban entry.</p>
+    </details>
+    <table>
+        <thead>
+            <tr><th>IP Address</th><th>Description</th><th>Added</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+        {% if blacklist.is_empty() %}
+            <tr><td colspan="4">No IPs blacklisted.</td></tr>
+        {% else %}
+            {% for b in blacklist %}
+            <tr>
+                <td><code>{{ b.ip_address }}</code></td>
+                <td>{{ b.description }}</td>
+                <td>{{ b.created_at }}</td>
+                <td>
+                    <form method="post" action="/fail2ban/blacklist/{{ b.id }}/delete" style="display:inline" onsubmit="return confirm('Remove from blacklist?')">
+                        <button type="submit">Remove</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        {% endif %}
+        </tbody>
+    </table>
+
+    <h3>Add to Blacklist</h3>
+    <form method="post" action="/fail2ban/blacklist">
+        <label>IP Address
+            <input type="text" name="ip_address" placeholder="192.168.1.100" required>
+        </label>
+        <label>Description
+            <input type="text" name="description" placeholder="Known bad actor">
+        </label>
+        <button type="submit">Add to Blacklist</button>
+    </form>
+</section>
+
+<section>
+    <hgroup>
+        <small>Audit trail</small>
+        <h2>Recent Activity</h2>
+    </hgroup>
+    <table>
+        <thead>
+            <tr><th>Time</th><th>IP Address</th><th>Service</th><th>Action</th><th>Details</th></tr>
+        </thead>
+        <tbody>
+        {% if log_entries.is_empty() %}
+            <tr><td colspan="5">No activity logged yet.</td></tr>
+        {% else %}
+            {% for l in log_entries %}
+            <tr>
+                <td>{{ l.created_at }}</td>
+                <td><code>{{ l.ip_address }}</code></td>
+                <td>{{ l.service }}</td>
+                <td><mark>{{ l.action }}</mark></td>
+                <td>{{ l.details }}</td>
+            </tr>
+            {% endfor %}
+        {% endif %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

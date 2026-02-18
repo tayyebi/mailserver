@@ -3,6 +3,7 @@ pub mod aliases;
 pub mod configs;
 pub mod dashboard;
 pub mod domains;
+pub mod fail2ban;
 pub mod pixel;
 pub mod queue;
 pub mod settings;
@@ -49,4 +50,14 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/settings/tls/cert.pem", get(settings::download_cert))
         .route("/settings/tls/key.pem", get(settings::download_key))
         .route("/configs", get(configs::page))
+        .route("/fail2ban", get(fail2ban::overview))
+        .route("/fail2ban/toggle", post(fail2ban::toggle_system))
+        .route("/fail2ban/ban", post(fail2ban::ban_ip))
+        .route("/fail2ban/unban/:id", post(fail2ban::unban_ip))
+        .route("/fail2ban/settings/:id/edit", get(fail2ban::edit_setting_form))
+        .route("/fail2ban/settings/:id", post(fail2ban::update_setting))
+        .route("/fail2ban/whitelist", post(fail2ban::add_whitelist))
+        .route("/fail2ban/whitelist/:id/delete", post(fail2ban::remove_whitelist))
+        .route("/fail2ban/blacklist", post(fail2ban::add_blacklist))
+        .route("/fail2ban/blacklist/:id/delete", post(fail2ban::remove_blacklist))
 }
