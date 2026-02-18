@@ -5,7 +5,7 @@
 smtp      inet  n       -       n       -       -       smtpd
 submission inet  n       -       n       -       -       smtpd
   -o syslog_name=postfix/submission
-  -o content_filter=pixelfilter:dummy
+  -o content_filter=pixelfilter:local
   -o smtpd_tls_security_level=encrypt
   -o smtpd_sasl_auth_enable=yes
   -o smtpd_sasl_type=dovecot
@@ -13,7 +13,7 @@ submission inet  n       -       n       -       -       smtpd
   -o smtpd_recipient_restrictions=permit_sasl_authenticated,reject
 smtps     inet  n       -       n       -       -       smtpd
   -o syslog_name=postfix/smtps
-  -o content_filter=pixelfilter:dummy
+  -o content_filter=pixelfilter:local
   -o smtpd_tls_wrappermode=yes
   -o smtpd_sasl_auth_enable=yes
   -o smtpd_sasl_type=dovecot
@@ -48,5 +48,5 @@ anvil     unix  -       -       n       -       1       anvil
 scache    unix  -       -       n       -       1       scache
 
 # Pixel filter service
-pixelfilter unix -   n   n   -   10  pipe
+pixelfilter unix -   y   n   -   10  pipe
   flags=hq user=postfix argv=/usr/local/bin/mailserver filter -f ${sender} -- ${recipient}
