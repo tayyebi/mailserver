@@ -21,15 +21,14 @@
 </aside>
 <table>
     <thead>
-        <tr><th>Order</th><th>Domain</th><th>Source</th><th>Destination</th><th>Type</th><th>Tracking</th><th>Status</th><th>Actions</th></tr>
+        <tr><th>Domain</th><th>Source</th><th>Destination</th><th>Type</th><th>Tracking</th><th>Status</th><th>Actions</th></tr>
     </thead>
     <tbody>
     {% if alias_rows.is_empty() %}
-        <tr><td colspan="8">No aliases yet — create one to start routing mail.</td></tr>
+        <tr><td colspan="7">No aliases yet — create one to start routing mail.</td></tr>
     {% else %}
         {% for a in alias_rows %}
         <tr>
-            <td>{{ a.sort_order }}</td>
             <td>{{ a.domain_name }}</td>
             <td>{{ a.source }}</td>
             <td>{{ a.destination }}</td>

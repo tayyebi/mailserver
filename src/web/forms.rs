@@ -45,13 +45,12 @@ pub struct AccountEditForm {
 
 #[derive(Deserialize)]
 pub struct AliasForm {
-    pub domain_id: i64,
+    #[serde(default)]
+    pub domain_id: Option<i64>,
     pub source: String,
     pub destination: String,
     #[serde(default)]
     pub tracking_enabled: Option<String>,
-    #[serde(default)]
-    pub sort_order: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -62,8 +61,6 @@ pub struct AliasEditForm {
     pub active: Option<String>,
     #[serde(default)]
     pub tracking_enabled: Option<String>,
-    #[serde(default)]
-    pub sort_order: Option<i64>,
 }
 
 #[derive(Deserialize)]

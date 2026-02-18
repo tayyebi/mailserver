@@ -367,6 +367,28 @@ impl Database {
         })
     }
 
+    pub fn get_domain_by_name(&self, domain_name: &str) -> Option<Domain> {
+        debug!("[db] getting domain by name={}", domain_name);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        conn.query_opt(
+            "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html, bimi_svg
+             FROM domains WHERE LOWER(domain) = LOWER($1)",
+            &[&domain_name],
+        )
+        .ok()
+        .flatten()
+        .map(|row| Domain {
+            id: row.get(0),
+            domain: row.get(1),
+            active: row.get(2),
+            dkim_selector: row.get(3),
+            dkim_private_key: row.get(4),
+            dkim_public_key: row.get(5),
+            footer_html: row.get(6),
+            bimi_svg: row.get(7),
+        })
+    }
+
     pub fn create_domain(&self, domain: &str, footer_html: &str, bimi_svg: &str) -> Result<i64, String> {
         info!("[db] creating domain: {}", domain);
         let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
@@ -684,14 +706,17 @@ impl Database {
         source: &str,
         destination: &str,
         tracking: bool,
-        sort_order: i64,
     ) -> Result<i64, String> {
         info!(
-            "[db] creating alias source={}, destination={}, tracking={}, sort_order={}",
-            source, destination, tracking, sort_order
+            "[db] creating alias source={}, destination={}, tracking={}",
+            source, destination, tracking
         );
         let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
         let ts = now();
+        
+        // Calculate sort_order: 0 for specific addresses, 1 for catch-alls
+        let sort_order: i64 = if source.trim().starts_with('*') { 1 } else { 0 };
+        
         let row = conn
             .query_one(
                 "INSERT INTO aliases (domain_id, source, destination, tracking_enabled, sort_order, created_at, updated_at)
@@ -718,10 +743,13 @@ impl Database {
         destination: &str,
         active: bool,
         tracking: bool,
-        sort_order: i64,
     ) {
-        info!("[db] updating alias id={}, source={}, destination={}, active={}, tracking={}, sort_order={}", id, source, destination, active, tracking, sort_order);
+        info!("[db] updating alias id={}, source={}, destination={}, active={}, tracking={}", id, source, destination, active, tracking);
         let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        
+        // Calculate sort_order: 0 for specific addresses, 1 for catch-alls
+        let sort_order: i64 = if source.trim().starts_with('*') { 1 } else { 0 };
+        
         let _ = conn.execute(
             "UPDATE aliases
              SET source = $1, destination = $2, active = $3, tracking_enabled = $4, sort_order = $5, updated_at = $6
