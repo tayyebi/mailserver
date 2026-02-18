@@ -36,6 +36,9 @@
         <tr><td>CNAME</td><td>autodiscover</td><td><code>{{ hostname }}.</code></td><td>Outlook autodiscover</td></tr>
         <tr><td>SRV</td><td>_imaps._tcp</td><td><code>0 1 993 {{ hostname }}.</code></td><td>IMAP service discovery</td></tr>
         <tr><td>SRV</td><td>_submission._tcp</td><td><code>0 1 587 {{ hostname }}.</code></td><td>SMTP submission discovery</td></tr>
+        {% if has_bimi %}
+        <tr><td>TXT</td><td>default._bimi</td><td><code>v=BIMI1; l={{ bimi_logo_url }}</code></td><td>BIMI brand logo</td></tr>
+        {% endif %}
     </tbody>
 </table>
 <section>

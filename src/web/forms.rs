@@ -5,6 +5,8 @@ pub struct DomainForm {
     pub domain: String,
     #[serde(default)]
     pub footer_html: String,
+    #[serde(default)]
+    pub bimi_svg: String,
 }
 
 #[derive(Deserialize)]
@@ -14,6 +16,8 @@ pub struct DomainEditForm {
     pub active: Option<String>,
     #[serde(default)]
     pub footer_html: String,
+    #[serde(default)]
+    pub bimi_svg: String,
 }
 
 #[derive(Deserialize)]

@@ -56,6 +56,8 @@ struct DnsTemplate<'a> {
     dkim_selector: String,
     hostname: &'a str,
     dkim_record: String,
+    bimi_logo_url: String,
+    has_bimi: bool,
 }
 
 #[derive(Template)]
@@ -123,8 +125,9 @@ pub async fn create(
     info!("[web] POST /domains — creating domain={}", form.domain);
     let domain = form.domain.clone();
     let footer_html = form.footer_html.clone();
+    let bimi_svg = form.bimi_svg.clone();
     let create_result = state
-        .blocking_db(move |db| db.create_domain(&domain, &footer_html))
+        .blocking_db(move |db| db.create_domain(&domain, &footer_html, &bimi_svg))
         .await;
     match create_result {
         Ok(id) => {
@@ -186,8 +189,9 @@ pub async fn update(
     );
     let domain = form.domain.clone();
     let footer_html = form.footer_html.clone();
+    let bimi_svg = form.bimi_svg.clone();
     state
-        .blocking_db(move |db| db.update_domain(id, &domain, active, &footer_html))
+        .blocking_db(move |db| db.update_domain(id, &domain, active, &footer_html, &bimi_svg))
         .await;
     regen_configs(&state).await;
     Redirect::to("/domains").into_response()
@@ -367,6 +371,13 @@ pub async fn dns_info(
         })
         .unwrap_or_default();
 
+    let has_bimi = domain
+        .bimi_svg
+        .as_ref()
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false);
+    let bimi_logo_url = format!("https://{}/bimi/{}/logo.svg", state.hostname, domain.domain);
+
     let tmpl = DnsTemplate {
         nav_active: "Domains",
         flash: None,
@@ -375,6 +386,8 @@ pub async fn dns_info(
         dkim_selector: domain.dkim_selector.clone(),
         hostname: &state.hostname,
         dkim_record,
+        bimi_logo_url,
+        has_bimi,
     };
     Html(tmpl.render().unwrap()).into_response()
 }
