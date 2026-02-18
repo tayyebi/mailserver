@@ -32,6 +32,7 @@ pub struct Domain {
     pub dkim_private_key: Option<String>,
     pub dkim_public_key: Option<String>,
     pub footer_html: Option<String>,
+    pub bimi_svg: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -320,7 +321,7 @@ impl Database {
         let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
         let rows = conn
             .query(
-                "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html
+                "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html, bimi_svg
                  FROM domains ORDER BY domain",
                 &[],
             )
@@ -339,6 +340,7 @@ impl Database {
                 dkim_private_key: row.get(4),
                 dkim_public_key: row.get(5),
                 footer_html: row.get(6),
+                bimi_svg: row.get(7),
             })
             .collect()
     }
@@ -347,7 +349,7 @@ impl Database {
         debug!("[db] getting domain id={}", id);
         let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
         conn.query_opt(
-            "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html
+            "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html, bimi_svg
              FROM domains WHERE id = $1",
             &[&id],
         )
@@ -361,19 +363,20 @@ impl Database {
             dkim_private_key: row.get(4),
             dkim_public_key: row.get(5),
             footer_html: row.get(6),
+            bimi_svg: row.get(7),
         })
     }
 
-    pub fn create_domain(&self, domain: &str, footer_html: &str) -> Result<i64, String> {
+    pub fn create_domain(&self, domain: &str, footer_html: &str, bimi_svg: &str) -> Result<i64, String> {
         info!("[db] creating domain: {}", domain);
         let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
         let ts = now();
         let row = conn
             .query_one(
-                "INSERT INTO domains (domain, footer_html, created_at, updated_at)
-                 VALUES ($1, $2, $3, $4)
+                "INSERT INTO domains (domain, footer_html, bimi_svg, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5)
                  RETURNING id",
-                &[&domain, &footer_html, &ts, &ts],
+                &[&domain, &footer_html, &bimi_svg, &ts, &ts],
             )
             .map_err(|e| {
                 error!("[db] failed to create domain {}: {}", domain, e);
@@ -384,7 +387,7 @@ impl Database {
         Ok(id)
     }
 
-    pub fn update_domain(&self, id: i64, domain: &str, active: bool, footer_html: &str) {
+    pub fn update_domain(&self, id: i64, domain: &str, active: bool, footer_html: &str, bimi_svg: &str) {
         info!(
             "[db] updating domain id={}, domain={}, active={}, footer_present={}",
             id,
@@ -395,9 +398,9 @@ impl Database {
         let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
         let _ = conn.execute(
             "UPDATE domains
-             SET domain = $1, active = $2, footer_html = $3, updated_at = $4
-             WHERE id = $5",
-            &[&domain, &active, &footer_html, &now(), &id],
+             SET domain = $1, active = $2, footer_html = $3, bimi_svg = $4, updated_at = $5
+             WHERE id = $6",
+            &[&domain, &active, &footer_html, &bimi_svg, &now(), &id],
         );
     }
 
@@ -419,6 +422,21 @@ impl Database {
              WHERE id = $5",
             &[&selector, &private_key, &public_key, &now(), &id],
         );
+    }
+
+    pub fn get_bimi_svg_for_domain(&self, domain: &str) -> Option<String> {
+        debug!("[db] looking up BIMI SVG for domain={}", domain);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        conn.query_opt(
+            "SELECT bimi_svg FROM domains
+             WHERE lower(domain) = lower($1)
+               AND bimi_svg IS NOT NULL
+               AND bimi_svg <> ''",
+            &[&domain],
+        )
+        .ok()
+        .flatten()
+        .map(|row| row.get(0))
     }
 
     pub fn get_footer_for_sender(&self, sender: &str) -> Option<String> {

@@ -1,5 +1,6 @@
 pub mod accounts;
 pub mod aliases;
+pub mod bimi;
 pub mod configs;
 pub mod dashboard;
 pub mod domains;
