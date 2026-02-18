@@ -18,6 +18,10 @@ fn is_safe_path_component(s: &str) -> bool {
     !s.is_empty() && !s.contains('/') && !s.contains('\\') && s != "." && s != ".."
 }
 
+fn sanitize_header_value(s: &str) -> String {
+    s.chars().filter(|c| !c.is_control()).collect()
+}
+
 // ── Structures ──
 
 #[allow(dead_code)]
@@ -467,10 +471,11 @@ pub async fn send_email(
         Some(ref acct) => {
             let domain = acct.domain_name.as_deref().unwrap_or("unknown");
             let email_addr = format!("{}@{}", acct.username, domain);
-            let from_addr = if form.sender_name.trim().is_empty() {
+            let sender_name = sanitize_header_value(form.sender_name.trim());
+            let from_addr = if sender_name.is_empty() {
                 email_addr.clone()
             } else {
-                format!("{} <{}>", form.sender_name.trim(), email_addr)
+                format!("{} <{}>", sender_name, email_addr)
             };
             send_log.push(format!("From address: {}", from_addr));
             send_log.push(format!("To: {}", form.to));
@@ -542,7 +547,8 @@ pub async fn send_email(
 
             // Set In-Reply-To
             if !form.in_reply_to.trim().is_empty() {
-                builder = builder.in_reply_to(form.in_reply_to.trim().to_string());
+                let in_reply_to = sanitize_header_value(form.in_reply_to.trim());
+                builder = builder.in_reply_to(in_reply_to);
             }
 
             // Set priority via X-Priority header
@@ -556,10 +562,12 @@ pub async fn send_email(
                     _ => None, // "normal" or empty — no header needed
                 };
                 if let Some(val) = priority_value {
-                    builder = builder.raw_header(HeaderValue::new(
-                        HeaderName::new_from_ascii_str("X-Priority"),
-                        val.to_string(),
-                    ));
+                    if let Ok(header_name) = HeaderName::new_from_ascii("X-Priority".to_string()) {
+                        builder = builder.raw_header(HeaderValue::new(
+                            header_name,
+                            val.to_string(),
+                        ));
+                    }
                 }
             }
 
@@ -569,7 +577,7 @@ pub async fn send_email(
                 for line in form.custom_headers.lines().map(str::trim).filter(|l| !l.is_empty()) {
                     if let Some((name, value)) = line.split_once(':') {
                         let name = name.trim();
-                        let value = value.trim();
+                        let value = sanitize_header_value(value.trim());
                         if !name.is_empty() && !value.is_empty() {
                             match HeaderName::new_from_ascii(name.to_string()) {
                                 Ok(header_name) => {
