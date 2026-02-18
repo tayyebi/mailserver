@@ -18,6 +18,21 @@ fn is_safe_path_component(s: &str) -> bool {
     !s.is_empty() && !s.contains('/') && !s.contains('\\') && s != "." && s != ".."
 }
 
+const MAILDIR_ROOT: &str = "/data/mail";
+
+fn maildir_path(domain: &str, username: &str) -> String {
+    format!("{}/{}/{}/Maildir", MAILDIR_ROOT, domain, username)
+}
+
+fn sanitize_header_value(s: &str) -> String {
+    s.replace(['\r', '\n'], " ")
+        .chars()
+        .filter(|c| !c.is_control())
+        .collect()
+fn sanitize_header_value(s: &str) -> String {
+    s.chars().filter(|c| !c.is_control()).collect()
+}
+
 // ── Structures ──
 
 #[allow(dead_code)]
@@ -39,7 +54,21 @@ pub struct WebmailQuery {
 pub struct ComposeForm {
     pub account_id: i64,
     pub to: String,
+    #[serde(default)]
+    pub cc: String,
+    #[serde(default)]
+    pub bcc: String,
     pub subject: String,
+    #[serde(default)]
+    pub reply_to: String,
+    #[serde(default)]
+    pub in_reply_to: String,
+    #[serde(default)]
+    pub priority: String,
+    #[serde(default)]
+    pub sender_name: String,
+    #[serde(default)]
+    pub custom_headers: String,
     pub body: String,
 }
 
@@ -109,10 +138,7 @@ pub async fn inbox(
                 warn!("[web] unsafe path component: domain={}, username={}", domain, acct.username);
                 selected_account = Some(acct);
             } else {
-            let maildir_base = format!(
-                "/var/mail/vhosts/{}/{}/Maildir",
-                domain, acct.username
-            );
+            let maildir_base = maildir_path(domain, &acct.username);
             logs.push(format!("Maildir path: {}", maildir_base));
 
             // Create Maildir directories if they don't exist
@@ -281,10 +307,7 @@ pub async fn view_email(
         warn!("[web] unsafe path component in view_email");
         return Html("Invalid path component".to_string()).into_response();
     }
-    let maildir_base = format!(
-        "/var/mail/vhosts/{}/{}/Maildir",
-        domain, acct.username
-    );
+    let maildir_base = maildir_path(domain, &acct.username);
 
     // Search in both new/ and cur/
     let mut file_path = None;
@@ -452,14 +475,35 @@ pub async fn send_email(
     match acct {
         Some(ref acct) => {
             let domain = acct.domain_name.as_deref().unwrap_or("unknown");
-            let from_addr = format!("{}@{}", acct.username, domain);
+            let email_addr = format!("{}@{}", acct.username, domain);
+            let sender_name = sanitize_header_value(form.sender_name.trim());
+            let from_addr = if sender_name.is_empty() {
+                email_addr.clone()
+            } else {
+                format!("{} <{}>", sender_name, email_addr)
+            };
             send_log.push(format!("From address: {}", from_addr));
             send_log.push(format!("To: {}", form.to));
+            if !form.cc.trim().is_empty() {
+                send_log.push(format!("CC: {}", form.cc));
+            }
+            if !form.bcc.trim().is_empty() {
+                send_log.push(format!("BCC: {}", form.bcc));
+            }
+            if !form.reply_to.trim().is_empty() {
+                send_log.push(format!("Reply-To: {}", form.reply_to));
+            }
+            if !form.in_reply_to.trim().is_empty() {
+                send_log.push(format!("In-Reply-To: {}", form.in_reply_to));
+            }
+            if !form.priority.is_empty() && form.priority != "normal" {
+                send_log.push(format!("Priority: {}", form.priority));
+            }
             send_log.push(format!("Subject: {}", form.subject));
             send_log.push(format!("Body length: {} chars", form.body.len()));
 
             send_log.push("Building email message...".to_string());
-            let email = match lettre::Message::builder()
+            let mut builder = lettre::Message::builder()
                 .from(from_addr.parse().unwrap_or_else(|e| {
                     send_log.push(format!("Warning: could not parse from address '{}': {}, using fallback", from_addr, e));
                     "noreply@localhost".parse().unwrap()
@@ -480,8 +524,84 @@ pub async fn send_email(
                         return Html(tmpl.render().unwrap());
                     }
                 })
-                .subject(&form.subject)
-                .body(form.body.clone())
+                .subject(&form.subject);
+
+            // Add CC recipients
+            for addr in form.cc.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+                match addr.parse() {
+                    Ok(a) => builder = builder.cc(a),
+                    Err(e) => send_log.push(format!("Warning: skipping invalid CC address '{}': {}", addr, e)),
+                }
+            }
+
+            // Add BCC recipients
+            for addr in form.bcc.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+                match addr.parse() {
+                    Ok(a) => builder = builder.bcc(a),
+                    Err(e) => send_log.push(format!("Warning: skipping invalid BCC address '{}': {}", addr, e)),
+                }
+            }
+
+            // Set Reply-To
+            if !form.reply_to.trim().is_empty() {
+                match form.reply_to.trim().parse() {
+                    Ok(a) => builder = builder.reply_to(a),
+                    Err(e) => send_log.push(format!("Warning: invalid Reply-To address '{}': {}", form.reply_to, e)),
+                }
+            }
+
+            // Set In-Reply-To
+            if !form.in_reply_to.trim().is_empty() {
+                let in_reply_to = sanitize_header_value(form.in_reply_to.trim());
+                builder = builder.in_reply_to(in_reply_to);
+            }
+
+            // Set priority via X-Priority header
+            {
+                use lettre::message::header::{HeaderName, HeaderValue};
+                let priority_value = match form.priority.as_str() {
+                    "lowest" => Some("5 (Lowest)"),
+                    "low" => Some("4 (Low)"),
+                    "high" => Some("2 (High)"),
+                    "highest" => Some("1 (Highest)"),
+                    _ => None, // "normal" or empty — no header needed
+                };
+                if let Some(val) = priority_value {
+                    if let Ok(header_name) = HeaderName::new_from_ascii("X-Priority".to_string()) {
+                        builder = builder.raw_header(HeaderValue::new(
+                            header_name,
+                            val.to_string(),
+                        ));
+                    }
+                }
+            }
+
+            // Add custom headers (one per line, format: "Header-Name: value")
+            {
+                use lettre::message::header::{HeaderName, HeaderValue};
+                for line in form.custom_headers.lines().map(str::trim).filter(|l| !l.is_empty()) {
+                    if let Some((name, value)) = line.split_once(':') {
+                        let name = name.trim();
+                        let value = sanitize_header_value(value.trim());
+                        if !name.is_empty() && !value.is_empty() {
+                            match HeaderName::new_from_ascii(name.to_string()) {
+                                Ok(header_name) => {
+                                    builder = builder.raw_header(HeaderValue::new(
+                                        header_name,
+                                        value.to_string(),
+                                    ));
+                                    send_log.push(format!("Custom header: {}: {}", name, value));
+                                }
+                                Err(e) => {
+                                    send_log.push(format!("Warning: invalid header name '{}': {}", name, e));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            let email = match builder.body(form.body.clone())
             {
                 Ok(email) => {
                     send_log.push("Email message built successfully".to_string());
@@ -549,5 +669,16 @@ pub async fn send_email(
             };
             Html(tmpl.render().unwrap())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::maildir_path;
+
+    #[test]
+    fn maildir_path_uses_data_mail_root() {
+        let path = maildir_path("example.com", "alice");
+        assert_eq!(path, "/data/mail/example.com/alice/Maildir");
     }
 }
