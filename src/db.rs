@@ -367,6 +367,28 @@ impl Database {
         })
     }
 
+    pub fn get_domain_by_name(&self, domain_name: &str) -> Option<Domain> {
+        debug!("[db] getting domain by name={}", domain_name);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        conn.query_opt(
+            "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html, bimi_svg
+             FROM domains WHERE domain = $1",
+            &[&domain_name],
+        )
+        .ok()
+        .flatten()
+        .map(|row| Domain {
+            id: row.get(0),
+            domain: row.get(1),
+            active: row.get(2),
+            dkim_selector: row.get(3),
+            dkim_private_key: row.get(4),
+            dkim_public_key: row.get(5),
+            footer_html: row.get(6),
+            bimi_svg: row.get(7),
+        })
+    }
+
     pub fn create_domain(&self, domain: &str, footer_html: &str, bimi_svg: &str) -> Result<i64, String> {
         info!("[db] creating domain: {}", domain);
         let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });

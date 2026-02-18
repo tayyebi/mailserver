@@ -45,7 +45,8 @@ pub struct AccountEditForm {
 
 #[derive(Deserialize)]
 pub struct AliasForm {
-    pub domain_id: i64,
+    #[serde(default)]
+    pub domain_id: Option<i64>,
     pub source: String,
     pub destination: String,
     #[serde(default)]

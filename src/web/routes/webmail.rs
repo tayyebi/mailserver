@@ -29,8 +29,6 @@ fn sanitize_header_value(s: &str) -> String {
         .chars()
         .filter(|c| !c.is_control())
         .collect()
-fn sanitize_header_value(s: &str) -> String {
-    s.chars().filter(|c| !c.is_control()).collect()
 }
 
 // ── Structures ──

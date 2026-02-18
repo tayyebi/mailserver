@@ -56,7 +56,6 @@ struct ListTemplate<'a> {
 struct NewTemplate<'a> {
     nav_active: &'a str,
     flash: Option<&'a str>,
-    domains: Vec<crate::db::Domain>,
 }
 
 #[derive(Template)]
@@ -152,13 +151,11 @@ pub async fn list(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Strin
     Html(tmpl.render().unwrap())
 }
 
-pub async fn new_form(_auth: AuthAdmin, State(state): State<AppState>) -> Html<String> {
+pub async fn new_form(_auth: AuthAdmin, State(_state): State<AppState>) -> Html<String> {
     debug!("[web] GET /aliases/new — new alias form");
-    let domains = state.blocking_db(|db| db.list_domains()).await;
     let tmpl = NewTemplate {
         nav_active: "Aliases",
         flash: None,
-        domains,
     };
     Html(tmpl.render().unwrap())
 }
@@ -172,6 +169,63 @@ pub async fn create(
     let sort_order = form.sort_order.unwrap_or(0);
     info!("[web] POST /aliases — creating alias source={}, destination={}, tracking={}, sort_order={}",
         form.source, form.destination, tracking, sort_order);
+    
+    // Extract domain from source email
+    let source_parts: Vec<&str> = form.source.split('@').collect();
+    if source_parts.len() != 2 {
+        warn!(
+            "[web] invalid source email format (no @ or multiple @): {}",
+            form.source
+        );
+        let tmpl = ErrorTemplate {
+            nav_active: "Aliases",
+            flash: None,
+            status_code: 400,
+            status_text: "Invalid Source Email",
+            title: "Invalid Source Email",
+            message: &format!(
+                "The source email '{}' is not in a valid format. It must be in the format 'user@domain.com' or '*@domain.com'.",
+                form.source
+            ),
+            back_url: "/aliases/new",
+            back_label: "Back",
+        };
+        return Html(tmpl.render().unwrap()).into_response();
+    }
+    
+    let source_domain = source_parts[1].to_ascii_lowercase();
+    
+    // Validate that the domain exists in registered domains
+    let domain_name_check = source_domain.clone();
+    let domain_opt = state
+        .blocking_db(move |db| db.get_domain_by_name(&domain_name_check))
+        .await;
+    
+    let domain = match domain_opt {
+        Some(d) => d,
+        None => {
+            warn!(
+                "[web] attempted to create alias with unregistered domain: {}",
+                source_domain
+            );
+            let tmpl = ErrorTemplate {
+                nav_active: "Aliases",
+                flash: None,
+                status_code: 400,
+                status_text: "Unregistered Domain",
+                title: "Unregistered Domain",
+                message: &format!(
+                    "The domain '{}' extracted from the source email '{}' is not registered. Please add the domain first in the Domains section.",
+                    source_domain, form.source
+                ),
+                back_url: "/aliases/new",
+                back_label: "Back",
+            };
+            return Html(tmpl.render().unwrap()).into_response();
+        }
+    };
+    
+    let domain_id = domain.id;
     
     // Validate that destination account exists
     let destination_check = form.destination.clone();
@@ -200,7 +254,6 @@ pub async fn create(
         return Html(tmpl.render().unwrap()).into_response();
     }
     
-    let domain_id = form.domain_id;
     let source = form.source.clone();
     let destination = form.destination.clone();
     let create_result = state
@@ -211,8 +264,8 @@ pub async fn create(
     match create_result {
         Ok(id) => {
             info!(
-                "[web] alias created successfully: {} -> {} (id={})",
-                form.source, form.destination, id
+                "[web] alias created successfully: {} -> {} (id={}, domain_id={})",
+                form.source, form.destination, id, domain_id
             );
             regen_configs(&state).await;
             Redirect::to("/aliases").into_response()
