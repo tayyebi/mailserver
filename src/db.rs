@@ -1313,10 +1313,12 @@ impl Database {
     pub fn record_fail2ban_attempt(&self, ip_address: &str, service: &str, details: &str) {
         info!("[db] recording fail2ban attempt ip={} service={}", ip_address, service);
         let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute(
+        if let Err(e) = conn.execute(
             "INSERT INTO fail2ban_log (ip_address, service, action, details, created_at) VALUES ($1, $2, 'attempt', $3, $4)",
             &[&ip_address, &service, &details, &now()],
-        );
+        ) {
+            error!("[db] failed to record fail2ban attempt for ip={}: {}", ip_address, e);
+        }
     }
 
     pub fn count_recent_attempts(&self, ip_address: &str, service: &str, minutes: i32) -> i64 {

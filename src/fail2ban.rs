@@ -161,8 +161,8 @@ fn handle_auth_failure(db: &Database, failure: &AuthFailure) {
 
     if recent_count >= setting.max_attempts as i64 {
         let reason = format!(
-            "Auto-banned: {} failed {} attempts in {} min",
-            recent_count, failure.service, setting.find_time_minutes
+            "Auto-banned: {}: {} failed attempts in {} min",
+            failure.service, recent_count, setting.find_time_minutes
         );
         match db.ban_ip(
             &failure.ip,
