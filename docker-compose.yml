@@ -27,6 +27,9 @@ services:
       - "${HTTP_PORT:-8080}:${HTTP_PORT:-8080}"
     volumes:
       - maildata:/data
+      # Optional: mount Docker socket to enable "Restart Container" from the admin UI.
+      # WARNING: This grants the container full access to the Docker daemon.
+      # Remove this line if you do not need container restart functionality.
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - HOSTNAME=${HOSTNAME:-mail.example.com}

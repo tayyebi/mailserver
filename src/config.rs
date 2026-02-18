@@ -600,9 +600,9 @@ pub fn restart_container() -> Result<(), String> {
         return Err("Docker socket not found. Ensure /var/run/docker.sock is mounted into the container.".to_string());
     }
 
-    // Read our own container ID from cgroup
+    // Read our own container ID from /proc/self/mountinfo or hostname
     let container_id = read_container_id().ok_or_else(|| {
-        "Could not determine container ID. Ensure the container is running in Docker.".to_string()
+        "Could not determine container ID from /proc/self/mountinfo or hostname. This feature requires running in a standard Docker environment.".to_string()
     })?;
 
     info!("[config] sending restart request for container {}", container_id);
@@ -628,7 +628,7 @@ pub fn restart_container() -> Result<(), String> {
                 "[config] container restart failed: stdout={}, stderr={}",
                 stdout, stderr
             );
-            Err(format!("Container restart failed: {}", stdout))
+            Err(format!("Container restart failed: {} {}", stdout, stderr))
         }
         Err(e) => {
             error!("[config] failed to send container restart request: {}", e);
@@ -649,7 +649,8 @@ fn read_container_id() -> Option<String> {
         }
     }
 
-    // Try hostname as fallback (Docker sets hostname to short container ID by default)
+    // Try hostname as fallback (Docker sets hostname to the short 12-char container ID by default;
+    // the Docker API accepts short ID prefixes for container identification)
     if let Ok(hostname) = fs::read_to_string("/etc/hostname") {
         let hostname = hostname.trim().to_string();
         if hostname.len() == 12 && hostname.chars().all(|c| c.is_ascii_hexdigit()) {
