@@ -87,3 +87,11 @@ pub struct PixelSettingsForm {
     #[serde(default)]
     pub pixel_port: Option<i64>,
 }
+
+#[derive(Deserialize)]
+pub struct FeatureToggleForm {
+    #[serde(default)]
+    pub filter_enabled: Option<String>,
+    #[serde(default)]
+    pub milter_enabled: Option<String>,
+}
