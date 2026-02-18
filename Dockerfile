@@ -22,7 +22,8 @@ RUN --mount=type=cache,target=/var/cache/apk \
     opendkim \
     opendkim-utils \
     supervisor \
-    openssl
+    openssl \
+    curl
 COPY --from=builder /output /usr/local/bin/mailserver
 COPY templates/config/ /app/templates/config/
 COPY migrations/ /app/migrations/
