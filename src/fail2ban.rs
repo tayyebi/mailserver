@@ -4,12 +4,13 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::Path;
 use std::sync::OnceLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::db::Database;
 
 const MAIL_LOG_PATH: &str = "/var/log/mail.log";
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
+const ENABLED_CACHE_TTL: Duration = Duration::from_secs(30);
 
 /// A parsed authentication failure from a mail service log line.
 #[derive(Debug, Clone, PartialEq)]
@@ -226,6 +227,10 @@ fn tail_log_file(db: &Database) -> Result<(), std::io::Error> {
     let mut reader = BufReader::new(file);
     let mut line = String::new();
 
+    // Cache the global enabled state to avoid querying the DB on every log line
+    let mut enabled_cache = db.is_fail2ban_enabled();
+    let mut cache_refreshed = Instant::now();
+
     info!("[fail2ban] tailing {} from end of file", MAIL_LOG_PATH);
 
     loop {
@@ -244,14 +249,23 @@ fn tail_log_file(db: &Database) -> Result<(), std::io::Error> {
                     info!("[fail2ban] log file was rotated, re-opening");
                     return Ok(());
                 }
+                // Refresh cache during idle periods
+                if cache_refreshed.elapsed() >= ENABLED_CACHE_TTL {
+                    enabled_cache = db.is_fail2ban_enabled();
+                    cache_refreshed = Instant::now();
+                }
                 std::thread::sleep(POLL_INTERVAL);
             }
             Ok(_) => {
                 let trimmed = line.trim();
                 if !trimmed.is_empty() {
                     if let Some(failure) = parse_log_line(trimmed) {
-                        // Check global fail2ban toggle before processing
-                        if !db.is_fail2ban_enabled() {
+                        // Refresh the cached enabled state periodically
+                        if cache_refreshed.elapsed() >= ENABLED_CACHE_TTL {
+                            enabled_cache = db.is_fail2ban_enabled();
+                            cache_refreshed = Instant::now();
+                        }
+                        if !enabled_cache {
                             debug!("[fail2ban] system disabled globally, skipping");
                             continue;
                         }
