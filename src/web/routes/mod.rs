@@ -45,6 +45,7 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/settings/2fa/enable", post(settings::enable_2fa))
         .route("/settings/2fa/disable", post(settings::disable_2fa))
         .route("/settings/pixel", post(settings::update_pixel))
+        .route("/settings/features", post(settings::update_features))
         .route("/settings/tls/regenerate", post(settings::regenerate_tls))
         .route("/settings/tls/cert.pem", get(settings::download_cert))
         .route("/settings/tls/key.pem", get(settings::download_key))

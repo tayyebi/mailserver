@@ -2,6 +2,28 @@
 {% block title %}Settings{% endblock %}
 {% block content %}
 <h1>Settings</h1>
+
+<h2>Features</h2>
+<dl>
+<dt>Content Filter</dt>
+<dd>
+  {% if filter_enabled %}<mark style="color:var(--success)">Enabled</mark>{% else %}<mark style="color:var(--gray-400)">Disabled</mark>{% endif %}
+  —
+  {% if filter_healthy %}<mark style="color:var(--success)">● Healthy</mark>{% else %}<mark style="color:var(--danger)">● Unavailable</mark>{% endif %}
+</dd>
+<dt>Milter (OpenDKIM)</dt>
+<dd>
+  {% if milter_enabled %}<mark style="color:var(--success)">Enabled</mark>{% else %}<mark style="color:var(--gray-400)">Disabled</mark>{% endif %}
+  —
+  {% if milter_healthy %}<mark style="color:var(--success)">● Healthy</mark>{% else %}<mark style="color:var(--danger)">● Unavailable</mark>{% endif %}
+</dd>
+</dl>
+<form method="post" action="/settings/features">
+  <label><input type="checkbox" name="filter_enabled" value="on"{% if filter_enabled %} checked{% endif %}> Enable Content Filter (footer injection, tracking pixels)</label>
+  <label><input type="checkbox" name="milter_enabled" value="on"{% if milter_enabled %} checked{% endif %}> Enable Milter / OpenDKIM (DKIM signing)</label>
+  <button type="submit">Save Feature Settings</button>
+</form>
+
 <h2>Admin Account</h2>
 <dl>
 <dt>Username</dt><dd>{{ admin.username }}</dd>

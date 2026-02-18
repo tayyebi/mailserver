@@ -116,8 +116,8 @@ pub fn generate_all_configs(db: &Database, hostname: &str) {
         "[config] generating all configuration files for hostname={}",
         hostname
     );
-    generate_postfix_main_cf(hostname);
-    generate_postfix_master_cf();
+    generate_postfix_main_cf(db, hostname);
+    generate_postfix_master_cf(db);
     generate_virtual_domains(db);
     generate_virtual_mailboxes(db);
     generate_virtual_aliases(db);
@@ -131,7 +131,7 @@ pub fn generate_all_configs(db: &Database, hostname: &str) {
     info!("[config] all configuration files generated successfully");
 }
 
-pub fn generate_postfix_main_cf(hostname: &str) {
+pub fn generate_postfix_main_cf(db: &Database, hostname: &str) {
     info!(
         "[config] generating /etc/postfix/main.cf for hostname={}",
         hostname
@@ -141,10 +141,22 @@ pub fn generate_postfix_main_cf(hostname: &str) {
     let template = load_template("postfix-main.cf.txt").expect("postfix-main.cf.txt template not found");
     let generated_at = generated_at();
 
+    let milter_enabled = db
+        .get_setting("feature_milter_enabled")
+        .map(|v| v != "false")
+        .unwrap_or(true);
+
+    let milter_config = if milter_enabled {
+        "smtpd_milters = inet:127.0.0.1:8891\nnon_smtpd_milters = inet:127.0.0.1:8891\nmilter_default_action = accept".to_string()
+    } else {
+        "# milter disabled via feature settings".to_string()
+    };
+
     let config = template
         .replace("{{ generated_at }}", &generated_at)
         .replace("{{ hostname }}", hostname)
-        .replace("{{ mydomain }}", mydomain);
+        .replace("{{ mydomain }}", mydomain)
+        .replace("{{ milter_config }}", &milter_config);
 
     match fs::write("/etc/postfix/main.cf", config) {
         Ok(_) => debug!("[config] wrote /etc/postfix/main.cf"),
@@ -152,10 +164,32 @@ pub fn generate_postfix_main_cf(hostname: &str) {
     }
 }
 
-pub fn generate_postfix_master_cf() {
+pub fn generate_postfix_master_cf(db: &Database) {
     info!("[config] generating /etc/postfix/master.cf");
     let template = load_template("postfix-master.cf.txt").expect("postfix-master.cf.txt template not found");
-    let config = template.replace("{{ generated_at }}", &generated_at());
+
+    let filter_enabled = db
+        .get_setting("feature_filter_enabled")
+        .map(|v| v != "false")
+        .unwrap_or(true);
+
+    let filter_line = if filter_enabled {
+        "  -o content_filter=pixelfilter:local\n"
+    } else {
+        ""
+    };
+
+    let filter_service = if filter_enabled {
+        "# Pixel filter service\npixelfilter unix -   y   n   -   10  pipe\n  flags=hq user=postfix argv=/usr/local/bin/mailserver filter -f ${sender} -- ${recipient}\n"
+    } else {
+        "# Pixel filter service disabled via feature settings\n"
+    };
+
+    let config = template
+        .replace("{{ generated_at }}", &generated_at())
+        .replace("{{ filter_submission }}", filter_line)
+        .replace("{{ filter_smtps }}", filter_line)
+        .replace("{{ filter_service }}", filter_service);
 
     match fs::write("/etc/postfix/master.cf", config) {
         Ok(_) => debug!("[config] wrote /etc/postfix/master.cf"),
@@ -216,7 +250,11 @@ pub fn generate_virtual_aliases(db: &Database) {
     let mut active_count = 0;
     for a in &aliases {
         if a.active {
-            lines.push_str(&format!("{} {}\n", a.source, a.destination));
+            lines.push_str(&format!(
+                "{} {}\n",
+                normalize_virtual_alias_source(&a.source, a.domain_name.as_deref()),
+                a.destination
+            ));
             active_count += 1;
         }
     }
@@ -237,6 +275,22 @@ pub fn generate_virtual_aliases(db: &Database) {
             e
         ),
     }
+}
+
+fn normalize_virtual_alias_source(source: &str, domain: Option<&str>) -> String {
+    let trimmed = source.trim();
+    if let Some(rest) = trimmed.strip_prefix("*@") {
+        return format!("@{}", rest);
+    }
+    if trimmed == "*" {
+        if let Some(domain) = domain {
+            return format!("@{}", domain);
+        } else {
+            warn!("[config] alias source '*' has no domain context; keeping source as-is");
+            return trimmed.to_string();
+        }
+    }
+    trimmed.to_string()
 }
 
 pub fn generate_sender_login_maps(db: &Database) {
@@ -501,6 +555,28 @@ pub fn reload_services() {
     }
 
     info!("[config] service reload complete");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_virtual_alias_source;
+
+    #[test]
+    fn normalize_virtual_alias_source_rewrites_catch_all_patterns() {
+        assert_eq!(
+            normalize_virtual_alias_source("*@example.com", Some("example.com")),
+            "@example.com"
+        );
+        assert_eq!(
+            normalize_virtual_alias_source("*", Some("example.com")),
+            "@example.com"
+        );
+        assert_eq!(
+            normalize_virtual_alias_source("info@example.com", Some("example.com")),
+            "info@example.com"
+        );
+        assert_eq!(normalize_virtual_alias_source("*", None), "*");
+    }
 }
 
 // ── Certificate and DH parameter generation ──

@@ -10,7 +10,7 @@ use log::{debug, error, info, warn};
 use crate::db::Admin;
 use crate::web::AppState;
 use crate::web::auth::AuthAdmin;
-use crate::web::forms::{PasswordForm, TotpEnableForm};
+use crate::web::forms::{FeatureToggleForm, PasswordForm, TotpEnableForm};
 
 // ── Templates ──
 
@@ -27,6 +27,10 @@ struct SettingsTemplate<'a> {
     cert_not_before: String,
     cert_not_after: String,
     cert_serial: String,
+    filter_enabled: bool,
+    milter_enabled: bool,
+    filter_healthy: bool,
+    milter_healthy: bool,
 }
 
 #[derive(Template)]
@@ -52,6 +56,23 @@ struct ErrorTemplate<'a> {
 }
 
 // ── Handlers ──
+
+fn check_filter_health() -> bool {
+    // The content filter is a pipe transport invoked by Postfix on demand.
+    // It is healthy if the mailserver binary exists and is executable.
+    let paths = ["/usr/local/bin/mailserver", "./target/release/mailserver", "./target/debug/mailserver"];
+    paths.iter().any(|p| std::path::Path::new(p).exists())
+}
+
+fn check_milter_health() -> bool {
+    // OpenDKIM milter listens on 127.0.0.1:8891.
+    // Check connectivity by attempting a TCP connection.
+    std::net::TcpStream::connect_timeout(
+        &"127.0.0.1:8891".parse().unwrap(),
+        std::time::Duration::from_secs(1),
+    )
+    .is_ok()
+}
 
 fn read_cert_info() -> (String, String, String, String, String) {
     let cert_path = "/data/ssl/cert.pem";
@@ -140,6 +161,21 @@ pub async fn page(auth: AuthAdmin, State(state): State<AppState>) -> Html<String
 
     let (cert_subject, cert_issuer, cert_not_before, cert_not_after, cert_serial) = read_cert_info();
 
+    // Load feature toggle states from DB (default: enabled)
+    let filter_enabled = state
+        .blocking_db(|db| db.get_setting("feature_filter_enabled"))
+        .await
+        .map(|v| v != "false")
+        .unwrap_or(true);
+    let milter_enabled = state
+        .blocking_db(|db| db.get_setting("feature_milter_enabled"))
+        .await
+        .map(|v| v != "false")
+        .unwrap_or(true);
+
+    let filter_healthy = check_filter_health();
+    let milter_healthy = check_milter_health();
+
     let tmpl = SettingsTemplate {
         nav_active: "Settings",
         flash: None,
@@ -151,6 +187,10 @@ pub async fn page(auth: AuthAdmin, State(state): State<AppState>) -> Html<String
         cert_not_before,
         cert_not_after,
         cert_serial,
+        filter_enabled,
+        milter_enabled,
+        filter_healthy,
+        milter_healthy,
     };
     Html(tmpl.render().unwrap())
 }
@@ -197,6 +237,50 @@ pub async fn update_pixel(
         status_text: "OK",
         title: "Success",
         message: "Pixel tracker base URL updated.",
+        back_url: "/settings",
+        back_label: "Back to Settings",
+    };
+    Html(tmpl.render().unwrap()).into_response()
+}
+
+pub async fn update_features(
+    auth: AuthAdmin,
+    State(state): State<AppState>,
+    Form(form): Form<FeatureToggleForm>,
+) -> Response {
+    info!(
+        "[web] POST /settings/features — update feature toggles by username={}",
+        auth.admin.username
+    );
+
+    let filter_enabled = form.filter_enabled.is_some();
+    let milter_enabled = form.milter_enabled.is_some();
+
+    let filter_val = if filter_enabled { "true" } else { "false" }.to_string();
+    let milter_val = if milter_enabled { "true" } else { "false" }.to_string();
+
+    state
+        .blocking_db(move |db| {
+            db.set_setting("feature_filter_enabled", &filter_val);
+            db.set_setting("feature_milter_enabled", &milter_val);
+        })
+        .await;
+
+    info!(
+        "[web] features updated: filter={}, milter={} by user={}",
+        filter_enabled, milter_enabled, auth.admin.username
+    );
+
+    // Regenerate Postfix configs to apply feature toggle changes
+    crate::web::regen_configs(&state).await;
+
+    let tmpl = ErrorTemplate {
+        nav_active: "Settings",
+        flash: None,
+        status_code: 200,
+        status_text: "OK",
+        title: "Success",
+        message: "Feature settings updated successfully.",
         back_url: "/settings",
         back_label: "Back to Settings",
     };

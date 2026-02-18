@@ -115,4 +115,9 @@ pub struct Fail2banListForm {
     pub ip_address: String,
     #[serde(default)]
     pub description: String,
+pub struct FeatureToggleForm {
+    #[serde(default)]
+    pub filter_enabled: Option<String>,
+    #[serde(default)]
+    pub milter_enabled: Option<String>,
 }
