@@ -93,6 +93,23 @@ fn write_secure_file(path: &str, content: &str) -> std::io::Result<()> {
     fs::write(path, content)
 }
 
+#[cfg(unix)]
+fn set_dovecot_passwd_permissions(path: &str) -> std::io::Result<()> {
+    use std::fs::Permissions;
+    use std::os::unix::fs::PermissionsExt;
+    
+    std::fs::set_permissions(path, Permissions::from_mode(0o640))?;
+    let output = Command::new("chown").args(["root:dovecot", path]).output()?;
+    if !output.status.success() {
+        return Err(std::io::Error::other(format!(
+            "chown root:dovecot {} failed with status {}",
+            path, output.status
+        )));
+    }
+    
+    Ok(())
+}
+
 pub fn generate_all_configs(db: &Database, hostname: &str) {
     info!(
         "[config] generating all configuration files for hostname={}",
@@ -305,10 +322,17 @@ pub fn generate_dovecot_passwd(db: &Database) {
         }
     }
     match write_secure_file("/etc/dovecot/passwd", &lines) {
-        Ok(_) => debug!(
-            "[config] wrote /etc/dovecot/passwd with secure permissions ({} accounts)",
-            accounts.len()
-        ),
+        Ok(_) => {
+            #[cfg(unix)]
+            if let Err(e) = set_dovecot_passwd_permissions("/etc/dovecot/passwd") {
+                error!("[config] failed to set /etc/dovecot/passwd ownership/permissions: {}", e);
+                return;
+            }
+            debug!(
+                "[config] wrote /etc/dovecot/passwd with secure permissions ({} accounts)",
+                accounts.len()
+            )
+        }
         Err(e) => error!("[config] failed to write /etc/dovecot/passwd: {}", e),
     }
 }
