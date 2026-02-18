@@ -26,7 +26,7 @@
     <thead><tr><th>Type</th><th>Name</th><th>Value</th><th>Purpose</th></tr></thead>
     <tbody>
         <tr><td>MX</td><td>@</td><td><code>10 {{ hostname }}.</code></td><td>Primary mail exchanger</td></tr>
-        <tr><td>TXT</td><td>@</td><td><code>v=spf1 a mx ~all</code></td><td>Baseline SPF policy</td></tr>
+        <tr><td>TXT</td><td>@</td><td><code>v=spf1 mx a:{{ hostname }} -all</code></td><td>Strict SPF policy: only MX and mail server</td></tr>
         {% if !dkim_record.is_empty() %}
         <tr><td>TXT</td><td><code>{{ dkim_selector }}._domainkey</code></td><td><code>v=DKIM1; k=rsa; p={{ dkim_record }}</code></td><td>DKIM signing key</td></tr>
         {% endif %}
