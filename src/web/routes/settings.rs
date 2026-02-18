@@ -60,20 +60,18 @@ struct ErrorTemplate<'a> {
 fn check_filter_health() -> bool {
     // The content filter is a pipe transport invoked by Postfix on demand.
     // It is healthy if the mailserver binary exists and is executable.
-    let paths = ["/usr/local/bin/mailserver", "./target/release/mailserver"];
+    let paths = ["/usr/local/bin/mailserver", "./target/release/mailserver", "./target/debug/mailserver"];
     paths.iter().any(|p| std::path::Path::new(p).exists())
 }
 
 fn check_milter_health() -> bool {
     // OpenDKIM milter listens on 127.0.0.1:8891.
-    // Check if the opendkim process is running.
-    match std::process::Command::new("pgrep").arg("opendkim").output() {
-        Ok(output) => {
-            let pids = String::from_utf8_lossy(&output.stdout);
-            !pids.trim().is_empty()
-        }
-        Err(_) => false,
-    }
+    // Check connectivity by attempting a TCP connection.
+    std::net::TcpStream::connect_timeout(
+        &"127.0.0.1:8891".parse().unwrap(),
+        std::time::Duration::from_secs(1),
+    )
+    .is_ok()
 }
 
 fn read_cert_info() -> (String, String, String, String, String) {
