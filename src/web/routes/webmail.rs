@@ -18,6 +18,17 @@ fn is_safe_path_component(s: &str) -> bool {
     !s.is_empty() && !s.contains('/') && !s.contains('\\') && s != "." && s != ".."
 }
 
+const MAILDIR_ROOT: &str = "/data/mail";
+
+fn maildir_path(domain: &str, username: &str) -> String {
+    format!("{}/{}/{}/Maildir", MAILDIR_ROOT, domain, username)
+}
+
+fn sanitize_header_value(s: &str) -> String {
+    s.replace(['\r', '\n'], " ")
+        .chars()
+        .filter(|c| !c.is_control())
+        .collect()
 fn sanitize_header_value(s: &str) -> String {
     s.chars().filter(|c| !c.is_control()).collect()
 }
@@ -127,10 +138,7 @@ pub async fn inbox(
                 warn!("[web] unsafe path component: domain={}, username={}", domain, acct.username);
                 selected_account = Some(acct);
             } else {
-            let maildir_base = format!(
-                "/var/mail/vhosts/{}/{}/Maildir",
-                domain, acct.username
-            );
+            let maildir_base = maildir_path(domain, &acct.username);
             logs.push(format!("Maildir path: {}", maildir_base));
 
             // Create Maildir directories if they don't exist
@@ -299,10 +307,7 @@ pub async fn view_email(
         warn!("[web] unsafe path component in view_email");
         return Html("Invalid path component".to_string()).into_response();
     }
-    let maildir_base = format!(
-        "/var/mail/vhosts/{}/{}/Maildir",
-        domain, acct.username
-    );
+    let maildir_base = maildir_path(domain, &acct.username);
 
     // Search in both new/ and cur/
     let mut file_path = None;
@@ -664,5 +669,16 @@ pub async fn send_email(
             };
             Html(tmpl.render().unwrap())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::maildir_path;
+
+    #[test]
+    fn maildir_path_uses_data_mail_root() {
+        let path = maildir_path("example.com", "alice");
+        assert_eq!(path, "/data/mail/example.com/alice/Maildir");
     }
 }
