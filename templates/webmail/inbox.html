@@ -1,0 +1,47 @@
+{% extends "layout.html" %}
+{% block title %}Webmail{% endblock %}
+{% block content %}
+<h1>Webmail</h1>
+<form method="get" action="/webmail" style="margin-bottom: 1rem;">
+  <label for="account_id">Account:</label>
+  <select name="account_id" id="account_id">
+    <option value="">— Select account —</option>
+    {% for a in accounts %}
+    <option value="{{ a.id }}"{% if let Some(sel) = selected_account %}{% if sel.id == a.id %} selected{% endif %}{% endif %}>{{ a.username }}@{{ a.domain_name.as_deref().unwrap_or("?") }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Select</button>
+  <a href="/webmail/compose{% if let Some(sel) = selected_account %}?account_id={{ sel.id }}{% endif %}" style="margin-left: 1rem;">Compose</a>
+</form>
+
+{% if let Some(sel) = selected_account %}
+<h2>Inbox for {{ sel.username }}@{{ sel.domain_name.as_deref().unwrap_or("?") }}</h2>
+{% if emails.is_empty() %}
+<p>No emails found.</p>
+{% else %}
+<table>
+  <thead>
+    <tr><th>Date</th><th>From</th><th>Subject</th><th>Status</th></tr>
+  </thead>
+  <tbody>
+    {% for email in emails %}
+    <tr>
+      <td>{{ email.date }}</td>
+      <td>{{ email.from }}</td>
+      <td><a href="/webmail/view/{{ email.filename }}?account_id={{ sel.id }}">{{ email.subject }}</a></td>
+      <td>{% if email.is_new %}<strong>New</strong>{% else %}Read{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endif %}
+
+{% if !logs.is_empty() %}
+<details>
+  <summary>Verbose Log</summary>
+  <pre>{% for line in logs %}{{ line }}
+{% endfor %}</pre>
+</details>
+{% endif %}
+{% endblock %}

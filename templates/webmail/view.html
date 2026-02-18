@@ -1,0 +1,13 @@
+{% extends "layout.html" %}
+{% block title %}View Email{% endblock %}
+{% block content %}
+<h1>Email</h1>
+<p><a href="/webmail?account_id={{ account.id }}">← Back to Inbox</a></p>
+<dl>
+  <dt>From</dt><dd>{{ from }}</dd>
+  <dt>To</dt><dd>{{ to }}</dd>
+  <dt>Date</dt><dd>{{ date }}</dd>
+  <dt>Subject</dt><dd>{{ subject }}</dd>
+</dl>
+<pre style="background: #f5f5f5; padding: 1rem; overflow-x: auto; border: 1px solid #ddd; border-radius: 4px;">{{ body }}</pre>
+{% endblock %}
