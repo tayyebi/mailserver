@@ -49,6 +49,8 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/settings/tls/regenerate", post(settings::regenerate_tls))
         .route("/settings/tls/cert.pem", get(settings::download_cert))
         .route("/settings/tls/key.pem", get(settings::download_key))
+        .route("/settings/restart-services", post(settings::restart_services))
+        .route("/settings/restart-container", post(settings::restart_container))
         .route("/configs", get(configs::page))
         .route("/fail2ban", get(fail2ban::overview))
         .route("/fail2ban/toggle", post(fail2ban::toggle_system))

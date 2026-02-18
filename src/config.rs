@@ -557,9 +557,134 @@ pub fn reload_services() {
     info!("[config] service reload complete");
 }
 
+pub fn restart_services() -> Result<String, String> {
+    info!("[config] restarting all mail services via supervisorctl");
+
+    let programs = ["postfix", "dovecot", "opendkim"];
+    let mut results = Vec::new();
+
+    for program in &programs {
+        match Command::new("supervisorctl")
+            .args(["restart", program])
+            .output()
+        {
+            Ok(output) if output.status.success() => {
+                info!("[config] {} restarted successfully", program);
+                results.push(format!("{}: restarted", program));
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                warn!(
+                    "[config] supervisorctl restart {} exited with status {}: {}",
+                    program, output.status, stderr
+                );
+                results.push(format!("{}: failed ({})", program, stderr.trim()));
+            }
+            Err(e) => {
+                warn!("[config] failed to restart {}: {}", program, e);
+                results.push(format!("{}: error ({})", program, e));
+            }
+        }
+    }
+
+    info!("[config] service restart complete");
+    Ok(results.join("; "))
+}
+
+pub fn restart_container() -> Result<(), String> {
+    info!("[config] restarting Docker container via socket");
+
+    let socket_path = "/var/run/docker.sock";
+    if !Path::new(socket_path).exists() {
+        error!("[config] Docker socket not found at {}", socket_path);
+        return Err("Docker socket not found. Ensure /var/run/docker.sock is mounted into the container.".to_string());
+    }
+
+    // Read our own container ID from cgroup
+    let container_id = read_container_id().ok_or_else(|| {
+        "Could not determine container ID. Ensure the container is running in Docker.".to_string()
+    })?;
+
+    info!("[config] sending restart request for container {}", container_id);
+
+    // Use curl to talk to the Docker socket
+    let result = Command::new("curl")
+        .args([
+            "--unix-socket", socket_path,
+            "-X", "POST",
+            &format!("http://localhost/containers/{}/restart", container_id),
+        ])
+        .output();
+
+    match result {
+        Ok(output) if output.status.success() => {
+            info!("[config] container restart request sent successfully");
+            Ok(())
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            error!(
+                "[config] container restart failed: stdout={}, stderr={}",
+                stdout, stderr
+            );
+            Err(format!("Container restart failed: {}", stdout))
+        }
+        Err(e) => {
+            error!("[config] failed to send container restart request: {}", e);
+            Err(format!("Failed to send restart request: {}", e))
+        }
+    }
+}
+
+fn read_container_id() -> Option<String> {
+    // Try /proc/self/mountinfo (works in most Docker environments)
+    if let Ok(content) = fs::read_to_string("/proc/self/mountinfo") {
+        for line in content.lines() {
+            // Look for docker container ID pattern in mount paths
+            if let Some(id) = extract_container_id_from_path(line) {
+                debug!("[config] found container ID from mountinfo: {}", id);
+                return Some(id);
+            }
+        }
+    }
+
+    // Try hostname as fallback (Docker sets hostname to short container ID by default)
+    if let Ok(hostname) = fs::read_to_string("/etc/hostname") {
+        let hostname = hostname.trim().to_string();
+        if hostname.len() == 12 && hostname.chars().all(|c| c.is_ascii_hexdigit()) {
+            debug!("[config] using hostname as container ID: {}", hostname);
+            return Some(hostname);
+        }
+    }
+
+    // Try HOSTNAME env var
+    if let Ok(hostname) = std::env::var("HOSTNAME") {
+        let hostname = hostname.trim().to_string();
+        if hostname.len() == 12 && hostname.chars().all(|c| c.is_ascii_hexdigit()) {
+            debug!("[config] using HOSTNAME env var as container ID: {}", hostname);
+            return Some(hostname);
+        }
+    }
+
+    None
+}
+
+fn extract_container_id_from_path(line: &str) -> Option<String> {
+    // Look for /docker/<container_id> pattern in mountinfo
+    for part in line.split('/') {
+        // Container IDs are 64 hex characters
+        if part.len() == 64 && part.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Some(part.to_string());
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::normalize_virtual_alias_source;
+    use super::extract_container_id_from_path;
 
     #[test]
     fn normalize_virtual_alias_source_rewrites_catch_all_patterns() {
@@ -576,6 +701,28 @@ mod tests {
             "info@example.com"
         );
         assert_eq!(normalize_virtual_alias_source("*", None), "*");
+    }
+
+    #[test]
+    fn extract_container_id_from_mountinfo_line() {
+        let line = "1234 5678 0:123 / /sys/fs/cgroup rw - cgroup2 /docker/abc123def456abc123def456abc123def456abc123def456abc123def456abcd";
+        let result = extract_container_id_from_path(line);
+        assert_eq!(
+            result,
+            Some("abc123def456abc123def456abc123def456abc123def456abc123def456abcd".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_container_id_returns_none_for_no_id() {
+        let line = "some random text without container ids";
+        assert_eq!(extract_container_id_from_path(line), None);
+    }
+
+    #[test]
+    fn extract_container_id_ignores_short_hex() {
+        let line = "/docker/abc123 something";
+        assert_eq!(extract_container_id_from_path(line), None);
     }
 }
 

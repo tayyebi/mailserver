@@ -27,6 +27,7 @@ services:
       - "${HTTP_PORT:-8080}:${HTTP_PORT:-8080}"
     volumes:
       - maildata:/data
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - HOSTNAME=${HOSTNAME:-mail.example.com}
       - ADMIN_PORT=${HTTP_PORT:-8080}

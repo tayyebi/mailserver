@@ -83,4 +83,13 @@
   <button type="submit">Save Pixel Settings</button>
 </form>
 
+<h2>Service Management</h2>
+<form method="post" action="/settings/restart-services" onsubmit="return confirm('This will restart Postfix, Dovecot, and OpenDKIM. Mail delivery will be briefly interrupted. Continue?')">
+  <button type="submit">Restart Mail Services</button>
+</form>
+<form method="post" action="/settings/restart-container" onsubmit="return confirm('This will restart the entire Docker container. All services will be temporarily unavailable. Continue?')">
+  <button type="submit">Restart Container</button>
+</form>
+<p><em>Note: Restarting the container requires the Docker socket to be mounted (<code>/var/run/docker.sock</code>).</em></p>
+
 {% endblock %}
