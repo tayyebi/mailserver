@@ -389,11 +389,12 @@ impl Database {
 
     pub fn update_domain(&self, id: i64, domain: &str, active: bool, footer_html: &str, bimi_svg: &str) {
         info!(
-            "[db] updating domain id={}, domain={}, active={}, footer_present={}",
+            "[db] updating domain id={}, domain={}, active={}, footer_present={}, bimi_present={}",
             id,
             domain,
             active,
-            !footer_html.trim().is_empty()
+            !footer_html.trim().is_empty(),
+            !bimi_svg.trim().is_empty()
         );
         let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
         let _ = conn.execute(

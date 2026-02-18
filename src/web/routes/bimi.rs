@@ -19,13 +19,14 @@ async fn bimi_logo_handler(
 ) -> Response {
     debug!("[web] GET /bimi/{}/logo.svg — BIMI logo requested", domain);
 
+    let domain_log = domain.clone();
     let svg = state
         .blocking_db(move |db| db.get_bimi_svg_for_domain(&domain))
         .await;
 
     match svg {
         Some(svg_content) => {
-            info!("[web] serving BIMI SVG for domain");
+            info!("[web] serving BIMI SVG for domain={}", domain_log);
             (
                 StatusCode::OK,
                 [
@@ -37,7 +38,7 @@ async fn bimi_logo_handler(
                 .into_response()
         }
         None => {
-            warn!("[web] no BIMI SVG found for requested domain");
+            warn!("[web] no BIMI SVG found for domain={}", domain_log);
             StatusCode::NOT_FOUND.into_response()
         }
     }
