@@ -12,14 +12,41 @@
       {% endfor %}
     </select>
 
+    <label for="sender_name">Sender Name (optional):</label>
+    <input type="text" name="sender_name" id="sender_name" placeholder="Display Name">
+
     <label for="to">To:</label>
     <input type="text" name="to" id="to" required placeholder="recipient@example.com">
+
+    <label for="cc">CC (optional):</label>
+    <input type="text" name="cc" id="cc" placeholder="cc1@example.com, cc2@example.com">
+
+    <label for="bcc">BCC (optional):</label>
+    <input type="text" name="bcc" id="bcc" placeholder="bcc@example.com">
+
+    <label for="reply_to">Reply-To (optional):</label>
+    <input type="text" name="reply_to" id="reply_to" placeholder="reply@example.com">
 
     <label for="subject">Subject:</label>
     <input type="text" name="subject" id="subject" required>
 
+    <label for="in_reply_to">In-Reply-To (optional):</label>
+    <input type="text" name="in_reply_to" id="in_reply_to" placeholder="&lt;message-id@example.com&gt;">
+
+    <label for="priority">Priority:</label>
+    <select name="priority" id="priority">
+      <option value="normal" selected>Normal</option>
+      <option value="lowest">Lowest</option>
+      <option value="low">Low</option>
+      <option value="high">High</option>
+      <option value="highest">Highest</option>
+    </select>
+
     <label for="body">Body:</label>
     <textarea name="body" id="body" rows="12" style="width: 100%;"></textarea>
+
+    <label for="custom_headers">Custom Headers (optional, one per line, format: Name: value):</label>
+    <textarea name="custom_headers" id="custom_headers" rows="3" style="width: 100%;" placeholder="X-Custom-Header: value"></textarea>
 
     <button type="submit">Send</button>
   </fieldset>
