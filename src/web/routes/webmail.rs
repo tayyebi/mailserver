@@ -25,7 +25,10 @@ fn maildir_path(domain: &str, username: &str) -> String {
 }
 
 fn sanitize_header_value(s: &str) -> String {
-    s.chars().filter(|c| !c.is_control()).collect()
+    s.replace(['\r', '\n'], " ")
+        .chars()
+        .filter(|c| !c.is_control())
+        .collect()
 }
 
 // ── Structures ──
