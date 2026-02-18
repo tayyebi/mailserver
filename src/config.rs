@@ -686,6 +686,7 @@ fn extract_container_id_from_path(line: &str) -> Option<String> {
 mod tests {
     use super::normalize_virtual_alias_source;
     use super::extract_container_id_from_path;
+    use super::load_template;
 
     #[test]
     fn normalize_virtual_alias_source_rewrites_catch_all_patterns() {
@@ -724,6 +725,16 @@ mod tests {
     fn extract_container_id_ignores_short_hex() {
         let line = "/docker/abc123 something";
         assert_eq!(extract_container_id_from_path(line), None);
+    }
+
+    #[test]
+    fn master_cf_template_includes_smtp_unix_transport() {
+        let template = load_template("postfix-master.cf.txt")
+            .expect("postfix-master.cf.txt template should be loadable");
+        assert!(
+            template.contains("smtp      unix  -       -       n       -       -       smtp"),
+            "master.cf template must include the smtp unix transport for outbound mail delivery"
+        );
     }
 }
 
