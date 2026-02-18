@@ -252,7 +252,7 @@ fn normalize_virtual_alias_source(source: &str, domain: Option<&str>) -> String 
         if let Some(domain) = domain {
             return format!("@{}", domain);
         } else {
-            warn!("[config] alias source '*' has no domain context; keeping source as-is (ensure alias domain exists and is active)");
+            warn!("[config] alias source '*' has no domain context; keeping source as-is");
             return trimmed.to_string();
         }
     }
@@ -541,6 +541,7 @@ mod tests {
             normalize_virtual_alias_source("info@example.com", Some("example.com")),
             "info@example.com"
         );
+        assert_eq!(normalize_virtual_alias_source("*", None), "*");
     }
 }
 

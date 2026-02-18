@@ -48,5 +48,5 @@ anvil     unix  -       -       n       -       1       anvil
 scache    unix  -       -       n       -       1       scache
 
 # Pixel filter service
-pixelfilter unix -   n   n   -   10  pipe
+pixelfilter unix -   y   n   -   10  pipe
   flags=hq user=postfix argv=/usr/local/bin/mailserver filter -f ${sender} -- ${recipient}
