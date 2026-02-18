@@ -196,9 +196,9 @@ pub async fn create(
     let source_domain = source_parts[1].to_ascii_lowercase();
     
     // Validate that the domain exists in registered domains
-    let domain_name_check = source_domain.clone();
+    let domain_check = source_domain.clone();
     let domain_opt = state
-        .blocking_db(move |db| db.get_domain_by_name(&domain_name_check))
+        .blocking_db(move |db| db.get_domain_by_name(&domain_check))
         .await;
     
     let domain = match domain_opt {

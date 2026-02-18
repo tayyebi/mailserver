@@ -372,7 +372,7 @@ impl Database {
         let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
         conn.query_opt(
             "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html, bimi_svg
-             FROM domains WHERE domain = $1",
+             FROM domains WHERE LOWER(domain) = LOWER($1)",
             &[&domain_name],
         )
         .ok()
