@@ -336,6 +336,7 @@ pub fn generate_dovecot_passwd(db: &Database) {
                 );
                 if let Err(e2) = std::fs::set_permissions(passwd_path, Permissions::from_mode(0o644)) {
                     error!("[config] failed to apply fallback permissions for /etc/dovecot/passwd: {}", e2);
+                    return;
                 }
             }
             debug!(
