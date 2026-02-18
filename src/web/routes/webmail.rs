@@ -20,6 +20,7 @@ fn is_safe_path_component(s: &str) -> bool {
 
 // ── Structures ──
 
+#[allow(dead_code)]
 pub struct WebmailEmail {
     pub filename: String,
     pub subject: String,
@@ -427,7 +428,7 @@ pub async fn send_email(
 ) -> Html<String> {
     info!("[web] POST /webmail/send — sending email");
     let mut send_log: Vec<String> = Vec::new();
-    let mut flash: Option<String> = None;
+    let flash: Option<String>;
 
     send_log.push(format!("Looking up account ID {}", form.account_id));
     let account_id = form.account_id;
@@ -494,6 +495,8 @@ pub async fn send_email(
 
             send_log.push("Connecting to SMTP server at 127.0.0.1:25...".to_string());
             use lettre::{SmtpTransport, Transport};
+            // builder_dangerous disables TLS — safe here because we connect to the
+            // local Postfix instance on the loopback interface (same as filter.rs).
             match SmtpTransport::builder_dangerous("127.0.0.1")
                 .port(25)
                 .build()
