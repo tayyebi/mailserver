@@ -492,6 +492,30 @@ impl Database {
         })
     }
 
+    pub fn get_account_with_domain(&self, id: i64) -> Option<Account> {
+        debug!("[db] getting account with domain info id={}", id);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        conn.query_opt(
+            "SELECT a.id, a.domain_id, a.username, a.password_hash, a.name, a.active, a.quota, d.domain
+             FROM accounts a
+             LEFT JOIN domains d ON a.domain_id = d.id
+             WHERE a.id = $1",
+            &[&id],
+        )
+        .ok()
+        .flatten()
+        .map(|row| Account {
+            id: row.get(0),
+            domain_id: row.get(1),
+            username: row.get(2),
+            password_hash: row.get(3),
+            name: row.get(4),
+            active: row.get(5),
+            quota: row.get(6),
+            domain_name: row.get(7),
+        })
+    }
+
     pub fn create_account(
         &self,
         domain_id: i64,

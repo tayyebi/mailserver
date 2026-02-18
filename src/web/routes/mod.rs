@@ -8,6 +8,7 @@ pub mod pixel;
 pub mod queue;
 pub mod settings;
 pub mod tracking;
+pub mod webmail;
 
 use super::AppState;
 use axum::{
@@ -39,6 +40,10 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/tracking/:msg_id", get(tracking::detail))
         .route("/queue", get(queue::list))
         .route("/queue/flush", post(queue::flush))
+        .route("/webmail", get(webmail::inbox))
+        .route("/webmail/view/:filename", get(webmail::view_email))
+        .route("/webmail/compose", get(webmail::compose))
+        .route("/webmail/send", post(webmail::send_email))
         .route("/settings", get(settings::page))
         .route("/settings/password", post(settings::change_password))
         .route("/settings/2fa", get(settings::setup_2fa))
