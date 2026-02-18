@@ -119,7 +119,7 @@ pub async fn inbox(
             for subdir in &["new", "cur", "tmp"] {
                 let dir_path = format!("{}/{}", maildir_base, subdir);
                 if let Err(e) = std::fs::create_dir_all(&dir_path) {
-                    logs.push(format!("Failed to create directory {}: {}", dir_path, e));
+                    logs.push(format!("Warning: Failed to create directory {}: {} (subsequent operations may fail)", dir_path, e));
                     warn!("[web] failed to create maildir directory {}: {}", dir_path, e);
                 }
             }
