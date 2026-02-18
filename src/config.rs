@@ -93,6 +93,24 @@ fn write_secure_file(path: &str, content: &str) -> std::io::Result<()> {
     fs::write(path, content)
 }
 
+#[cfg(unix)]
+fn set_dovecot_passwd_permissions(path: &str) -> std::io::Result<()> {
+    use std::fs::Permissions;
+    use std::os::unix::fs::PermissionsExt;
+    
+    std::fs::set_permissions(path, Permissions::from_mode(0o640))?;
+    let output = Command::new("chown").args(["root:dovecot", path]).output()?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(std::io::Error::other(format!(
+            "chown root:dovecot {} failed with status {}: {}",
+            path, output.status, stderr
+        )));
+    }
+    
+    Ok(())
+}
+
 pub fn generate_all_configs(db: &Database, hostname: &str) {
     info!(
         "[config] generating all configuration files for hostname={}",
@@ -290,7 +308,8 @@ pub fn generate_dovecot_conf(hostname: &str) {
 }
 
 pub fn generate_dovecot_passwd(db: &Database) {
-    info!("[config] generating /etc/dovecot/passwd");
+    let passwd_path = "/etc/dovecot/passwd";
+    info!("[config] generating {}", passwd_path);
     let accounts = db.list_all_accounts_with_domain();
     let mut lines = String::new();
     for a in &accounts {
@@ -304,11 +323,27 @@ pub fn generate_dovecot_passwd(db: &Database) {
             ));
         }
     }
-    match write_secure_file("/etc/dovecot/passwd", &lines) {
-        Ok(_) => debug!(
-            "[config] wrote /etc/dovecot/passwd with secure permissions ({} accounts)",
-            accounts.len()
-        ),
+    match write_secure_file(passwd_path, &lines) {
+        Ok(_) => {
+            #[cfg(unix)]
+            if let Err(e) = set_dovecot_passwd_permissions(passwd_path) {
+                use std::fs::Permissions;
+                use std::os::unix::fs::PermissionsExt;
+
+                warn!(
+                    "[config] failed to set /etc/dovecot/passwd ownership/permissions ({}), falling back to mode 0644",
+                    e
+                );
+                if let Err(e2) = std::fs::set_permissions(passwd_path, Permissions::from_mode(0o644)) {
+                    error!("[config] failed to apply fallback permissions for /etc/dovecot/passwd: {}", e2);
+                    return;
+                }
+            }
+            debug!(
+                "[config] wrote /etc/dovecot/passwd with secure permissions ({} accounts)",
+                accounts.len()
+            )
+        }
         Err(e) => error!("[config] failed to write /etc/dovecot/passwd: {}", e),
     }
 }
