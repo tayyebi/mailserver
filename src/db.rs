@@ -85,6 +85,55 @@ pub struct Stats {
     pub alias_count: i64,
     pub tracked_count: i64,
     pub open_count: i64,
+    pub banned_count: i64,
+}
+
+#[derive(Clone, Serialize)]
+pub struct Fail2banSetting {
+    pub id: i64,
+    pub service: String,
+    pub max_attempts: i32,
+    pub ban_duration_minutes: i32,
+    pub find_time_minutes: i32,
+    pub enabled: bool,
+}
+
+#[derive(Clone, Serialize)]
+pub struct Fail2banBanned {
+    pub id: i64,
+    pub ip_address: String,
+    pub service: String,
+    pub reason: String,
+    pub attempts: i32,
+    pub banned_at: String,
+    pub expires_at: Option<String>,
+    pub permanent: bool,
+}
+
+#[derive(Clone, Serialize)]
+pub struct Fail2banWhitelist {
+    pub id: i64,
+    pub ip_address: String,
+    pub description: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct Fail2banBlacklist {
+    pub id: i64,
+    pub ip_address: String,
+    pub description: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct Fail2banLogEntry {
+    pub id: i64,
+    pub ip_address: String,
+    pub service: String,
+    pub action: String,
+    pub details: String,
+    pub created_at: String,
 }
 
 
@@ -904,12 +953,340 @@ impl Database {
             .map(|row| row.get(0))
             .unwrap_or(0);
 
+        let banned_count: i64 = conn
+            .query_one(
+                "SELECT COUNT(*) FROM fail2ban_banned WHERE permanent = TRUE OR expires_at > $1",
+                &[&now()],
+            )
+            .map(|row| row.get(0))
+            .unwrap_or(0);
+
         Stats {
             domain_count,
             account_count,
             alias_count,
             tracked_count,
             open_count,
+            banned_count,
         }
+    }
+
+    // ── Fail2ban methods ──
+
+    pub fn list_fail2ban_settings(&self) -> Vec<Fail2banSetting> {
+        debug!("[db] listing fail2ban settings");
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let rows = conn
+            .query(
+                "SELECT id, service, max_attempts, ban_duration_minutes, find_time_minutes, enabled
+                 FROM fail2ban_settings ORDER BY service",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list fail2ban settings: {}", e);
+                Vec::new()
+            });
+
+        rows.into_iter()
+            .map(|row| Fail2banSetting {
+                id: row.get(0),
+                service: row.get(1),
+                max_attempts: row.get(2),
+                ban_duration_minutes: row.get(3),
+                find_time_minutes: row.get(4),
+                enabled: row.get(5),
+            })
+            .collect()
+    }
+
+    pub fn get_fail2ban_setting(&self, id: i64) -> Option<Fail2banSetting> {
+        debug!("[db] getting fail2ban setting id={}", id);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        conn.query_opt(
+            "SELECT id, service, max_attempts, ban_duration_minutes, find_time_minutes, enabled
+             FROM fail2ban_settings WHERE id = $1",
+            &[&id],
+        )
+        .ok()
+        .flatten()
+        .map(|row| Fail2banSetting {
+            id: row.get(0),
+            service: row.get(1),
+            max_attempts: row.get(2),
+            ban_duration_minutes: row.get(3),
+            find_time_minutes: row.get(4),
+            enabled: row.get(5),
+        })
+    }
+
+    pub fn update_fail2ban_setting(
+        &self,
+        id: i64,
+        max_attempts: i32,
+        ban_duration_minutes: i32,
+        find_time_minutes: i32,
+        enabled: bool,
+    ) {
+        info!(
+            "[db] updating fail2ban setting id={}, max_attempts={}, ban_duration={}, find_time={}, enabled={}",
+            id, max_attempts, ban_duration_minutes, find_time_minutes, enabled
+        );
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let _ = conn.execute(
+            "UPDATE fail2ban_settings SET max_attempts = $1, ban_duration_minutes = $2, find_time_minutes = $3, enabled = $4, updated_at = $5 WHERE id = $6",
+            &[&max_attempts, &ban_duration_minutes, &find_time_minutes, &enabled, &now(), &id],
+        );
+    }
+
+    pub fn list_fail2ban_banned(&self) -> Vec<Fail2banBanned> {
+        debug!("[db] listing banned IPs");
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let rows = conn
+            .query(
+                "SELECT id, ip_address, service, reason, attempts, banned_at, expires_at, permanent
+                 FROM fail2ban_banned
+                 WHERE permanent = TRUE OR expires_at > $1
+                 ORDER BY banned_at DESC",
+                &[&now()],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list banned IPs: {}", e);
+                Vec::new()
+            });
+
+        rows.into_iter()
+            .map(|row| Fail2banBanned {
+                id: row.get(0),
+                ip_address: row.get(1),
+                service: row.get(2),
+                reason: row.get::<_, Option<String>>(3).unwrap_or_default(),
+                attempts: row.get(4),
+                banned_at: row.get(5),
+                expires_at: row.get(6),
+                permanent: row.get(7),
+            })
+            .collect()
+    }
+
+    pub fn ban_ip(&self, ip_address: &str, service: &str, reason: &str, duration_minutes: i32, permanent: bool) -> Result<i64, String> {
+        info!("[db] banning IP={} service={} permanent={}", ip_address, service, permanent);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let ts = now();
+        let expires = if permanent {
+            None
+        } else {
+            Some(
+                (chrono::Utc::now() + chrono::Duration::minutes(duration_minutes as i64))
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+            )
+        };
+        let row = conn
+            .query_one(
+                "INSERT INTO fail2ban_banned (ip_address, service, reason, attempts, banned_at, expires_at, permanent, created_at)
+                 VALUES ($1, $2, $3, 0, $4, $5, $6, $7)
+                 ON CONFLICT (ip_address, service) DO UPDATE SET reason = EXCLUDED.reason, banned_at = EXCLUDED.banned_at, expires_at = EXCLUDED.expires_at, permanent = EXCLUDED.permanent
+                 RETURNING id",
+                &[&ip_address, &service, &reason, &ts, &expires, &permanent, &ts],
+            )
+            .map_err(|e| {
+                error!("[db] failed to ban IP {}: {}", ip_address, e);
+                e.to_string()
+            })?;
+        let id: i64 = row.get(0);
+
+        // Log the action
+        let _ = conn.execute(
+            "INSERT INTO fail2ban_log (ip_address, service, action, details, created_at) VALUES ($1, $2, 'ban', $3, $4)",
+            &[&ip_address, &service, &reason, &ts],
+        );
+
+        info!("[db] IP banned: {} (id={})", ip_address, id);
+        Ok(id)
+    }
+
+    pub fn unban_ip(&self, id: i64) {
+        info!("[db] unbanning IP id={}", id);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        // Get IP for logging before delete
+        let ip_info = conn
+            .query_opt("SELECT ip_address, service FROM fail2ban_banned WHERE id = $1", &[&id])
+            .ok()
+            .flatten();
+        let _ = conn.execute("DELETE FROM fail2ban_banned WHERE id = $1", &[&id]);
+        if let Some(row) = ip_info {
+            let ip: String = row.get(0);
+            let service: String = row.get(1);
+            let _ = conn.execute(
+                "INSERT INTO fail2ban_log (ip_address, service, action, details, created_at) VALUES ($1, $2, 'unban', 'Manual unban from admin', $3)",
+                &[&ip, &service, &now()],
+            );
+        }
+    }
+
+    pub fn list_fail2ban_whitelist(&self) -> Vec<Fail2banWhitelist> {
+        debug!("[db] listing fail2ban whitelist");
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let rows = conn
+            .query(
+                "SELECT id, ip_address, description, created_at FROM fail2ban_whitelist ORDER BY created_at DESC",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list whitelist: {}", e);
+                Vec::new()
+            });
+
+        rows.into_iter()
+            .map(|row| Fail2banWhitelist {
+                id: row.get(0),
+                ip_address: row.get(1),
+                description: row.get::<_, Option<String>>(2).unwrap_or_default(),
+                created_at: row.get::<_, Option<String>>(3).unwrap_or_default(),
+            })
+            .collect()
+    }
+
+    pub fn add_to_whitelist(&self, ip_address: &str, description: &str) -> Result<i64, String> {
+        info!("[db] adding IP to whitelist: {}", ip_address);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let ts = now();
+        let row = conn
+            .query_one(
+                "INSERT INTO fail2ban_whitelist (ip_address, description, created_at) VALUES ($1, $2, $3)
+                 ON CONFLICT (ip_address) DO UPDATE SET description = EXCLUDED.description
+                 RETURNING id",
+                &[&ip_address, &description, &ts],
+            )
+            .map_err(|e| {
+                error!("[db] failed to add to whitelist {}: {}", ip_address, e);
+                e.to_string()
+            })?;
+        let id: i64 = row.get(0);
+
+        // Also unban if currently banned
+        let _ = conn.execute("DELETE FROM fail2ban_banned WHERE ip_address = $1", &[&ip_address]);
+
+        let _ = conn.execute(
+            "INSERT INTO fail2ban_log (ip_address, service, action, details, created_at) VALUES ($1, 'all', 'whitelist', $2, $3)",
+            &[&ip_address, &description, &ts],
+        );
+
+        Ok(id)
+    }
+
+    pub fn remove_from_whitelist(&self, id: i64) {
+        info!("[db] removing from whitelist id={}", id);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let _ = conn.execute("DELETE FROM fail2ban_whitelist WHERE id = $1", &[&id]);
+    }
+
+    pub fn list_fail2ban_blacklist(&self) -> Vec<Fail2banBlacklist> {
+        debug!("[db] listing fail2ban blacklist");
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let rows = conn
+            .query(
+                "SELECT id, ip_address, description, created_at FROM fail2ban_blacklist ORDER BY created_at DESC",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list blacklist: {}", e);
+                Vec::new()
+            });
+
+        rows.into_iter()
+            .map(|row| Fail2banBlacklist {
+                id: row.get(0),
+                ip_address: row.get(1),
+                description: row.get::<_, Option<String>>(2).unwrap_or_default(),
+                created_at: row.get::<_, Option<String>>(3).unwrap_or_default(),
+            })
+            .collect()
+    }
+
+    pub fn add_to_blacklist(&self, ip_address: &str, description: &str) -> Result<i64, String> {
+        info!("[db] adding IP to blacklist: {}", ip_address);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let ts = now();
+        let row = conn
+            .query_one(
+                "INSERT INTO fail2ban_blacklist (ip_address, description, created_at) VALUES ($1, $2, $3)
+                 ON CONFLICT (ip_address) DO UPDATE SET description = EXCLUDED.description
+                 RETURNING id",
+                &[&ip_address, &description, &ts],
+            )
+            .map_err(|e| {
+                error!("[db] failed to add to blacklist {}: {}", ip_address, e);
+                e.to_string()
+            })?;
+        let id: i64 = row.get(0);
+
+        // Also permanently ban this IP
+        let _ = conn.execute(
+            "INSERT INTO fail2ban_banned (ip_address, service, reason, attempts, banned_at, expires_at, permanent, created_at)
+             VALUES ($1, 'all', 'Blacklisted', 0, $2, NULL, TRUE, $2)
+             ON CONFLICT (ip_address, service) DO UPDATE SET permanent = TRUE, reason = 'Blacklisted', expires_at = NULL",
+            &[&ip_address, &ts],
+        );
+
+        let _ = conn.execute(
+            "INSERT INTO fail2ban_log (ip_address, service, action, details, created_at) VALUES ($1, 'all', 'blacklist', $2, $3)",
+            &[&ip_address, &description, &ts],
+        );
+
+        Ok(id)
+    }
+
+    pub fn remove_from_blacklist(&self, id: i64) {
+        info!("[db] removing from blacklist id={}", id);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let _ = conn.execute("DELETE FROM fail2ban_blacklist WHERE id = $1", &[&id]);
+    }
+
+    pub fn list_fail2ban_log(&self, limit: i64) -> Vec<Fail2banLogEntry> {
+        debug!("[db] listing fail2ban log limit={}", limit);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let rows = conn
+            .query(
+                "SELECT id, ip_address, service, action, details, created_at
+                 FROM fail2ban_log ORDER BY created_at DESC LIMIT $1",
+                &[&limit],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list fail2ban log: {}", e);
+                Vec::new()
+            });
+
+        rows.into_iter()
+            .map(|row| Fail2banLogEntry {
+                id: row.get(0),
+                ip_address: row.get(1),
+                service: row.get(2),
+                action: row.get(3),
+                details: row.get::<_, Option<String>>(4).unwrap_or_default(),
+                created_at: row.get::<_, Option<String>>(5).unwrap_or_default(),
+            })
+            .collect()
+    }
+
+    pub fn is_ip_whitelisted(&self, ip_address: &str) -> bool {
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let count: i64 = conn
+            .query_one("SELECT COUNT(*) FROM fail2ban_whitelist WHERE ip_address = $1", &[&ip_address])
+            .map(|row| row.get(0))
+            .unwrap_or(0);
+        count > 0
+    }
+
+    pub fn is_ip_banned(&self, ip_address: &str) -> bool {
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let count: i64 = conn
+            .query_one(
+                "SELECT COUNT(*) FROM fail2ban_banned WHERE ip_address = $1 AND (permanent = TRUE OR expires_at > $2)",
+                &[&ip_address, &now()],
+            )
+            .map(|row| row.get(0))
+            .unwrap_or(0);
+        count > 0
     }
 }
