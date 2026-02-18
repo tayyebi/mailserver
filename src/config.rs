@@ -251,6 +251,9 @@ fn normalize_virtual_alias_source(source: &str, domain: Option<&str>) -> String 
     if trimmed == "*" {
         if let Some(domain) = domain {
             return format!("@{}", domain);
+        } else {
+            warn!("[config] alias source '*' has no domain context; keeping source as-is (ensure alias domain exists and is active)");
+            return trimmed.to_string();
         }
     }
     trimmed.to_string()
