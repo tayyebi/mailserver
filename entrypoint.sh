@@ -26,8 +26,9 @@ echo "[entrypoint] INFO: setting directory ownership"
 chown -R vmail:vmail /data/mail
 chown -R opendkim:opendkim /data/dkim
 
-echo "[entrypoint] INFO: starting syslogd for Postfix/Dovecot logging to stdout"
-syslogd -n -O- &
+echo "[entrypoint] INFO: starting syslogd for Postfix/Dovecot logging"
+# Write mail logs to a file for fail2ban monitoring, and also mirror to stdout
+syslogd -n -O /var/log/mail.log -S &
 
 echo "[entrypoint] INFO: starting supervisord and all services"
 exec supervisord -c /etc/supervisord.conf

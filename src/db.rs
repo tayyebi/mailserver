@@ -1289,4 +1289,49 @@ impl Database {
             .unwrap_or(0);
         count > 0
     }
+
+    pub fn get_fail2ban_setting_by_service(&self, service: &str) -> Option<Fail2banSetting> {
+        debug!("[db] getting fail2ban setting for service={}", service);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        conn.query_opt(
+            "SELECT id, service, max_attempts, ban_duration_minutes, find_time_minutes, enabled
+             FROM fail2ban_settings WHERE service = $1",
+            &[&service],
+        )
+        .ok()
+        .flatten()
+        .map(|row| Fail2banSetting {
+            id: row.get(0),
+            service: row.get(1),
+            max_attempts: row.get(2),
+            ban_duration_minutes: row.get(3),
+            find_time_minutes: row.get(4),
+            enabled: row.get(5),
+        })
+    }
+
+    pub fn record_fail2ban_attempt(&self, ip_address: &str, service: &str, details: &str) {
+        info!("[db] recording fail2ban attempt ip={} service={}", ip_address, service);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let _ = conn.execute(
+            "INSERT INTO fail2ban_log (ip_address, service, action, details, created_at) VALUES ($1, $2, 'attempt', $3, $4)",
+            &[&ip_address, &service, &details, &now()],
+        );
+    }
+
+    pub fn count_recent_attempts(&self, ip_address: &str, service: &str, minutes: i32) -> i64 {
+        debug!("[db] counting recent attempts ip={} service={} window={}min", ip_address, service, minutes);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let cutoff = (chrono::Utc::now() - chrono::Duration::minutes(minutes as i64))
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
+        let count: i64 = conn
+            .query_one(
+                "SELECT COUNT(*) FROM fail2ban_log WHERE ip_address = $1 AND service = $2 AND action = 'attempt' AND created_at > $3",
+                &[&ip_address, &service, &cutoff],
+            )
+            .map(|row| row.get(0))
+            .unwrap_or(0);
+        count
+    }
 }

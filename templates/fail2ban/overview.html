@@ -7,6 +7,10 @@
         <h1>Fail2ban</h1>
     </hgroup>
     <p>Monitor and manage IP banning rules. Configure thresholds per service, maintain whitelist and blacklist, and review banned IPs.</p>
+    <aside>
+        <h2>Automatic Log Monitoring</h2>
+        <p>The fail2ban watcher automatically monitors <code>/var/log/mail.log</code> for Postfix SASL and Dovecot authentication failures. IPs that exceed the configured thresholds are banned automatically.</p>
+    </aside>
     <div>
         <article><data value="{{ banned_count }}">{{ banned_count }}</data><strong>Banned IPs</strong><small>Currently active bans</small></article>
         <article><data value="{{ whitelist_count }}">{{ whitelist_count }}</data><strong>Whitelisted</strong><small>Always allowed</small></article>

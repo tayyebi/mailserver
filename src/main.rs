@@ -1,6 +1,7 @@
 mod auth;
 mod config;
 mod db;
+mod fail2ban;
 mod filter;
 mod web;
 
@@ -48,10 +49,14 @@ fn main() {
             info!("[main] starting mailserver admin on port {}", port);
 
             let state = web::AppState {
-                db: database,
+                db: database.clone(),
                 hostname,
                 admin_port: port,
             };
+
+            // Start fail2ban log watcher in a background thread
+            info!("[main] starting fail2ban log watcher");
+            fail2ban::start_watcher(database);
 
             // Start Tokio runtime only for the HTTP server
             let rt = tokio::runtime::Builder::new_multi_thread()
