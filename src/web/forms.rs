@@ -51,8 +51,6 @@ pub struct AliasForm {
     pub destination: String,
     #[serde(default)]
     pub tracking_enabled: Option<String>,
-    #[serde(default)]
-    pub sort_order: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -63,8 +61,6 @@ pub struct AliasEditForm {
     pub active: Option<String>,
     #[serde(default)]
     pub tracking_enabled: Option<String>,
-    #[serde(default)]
-    pub sort_order: Option<i64>,
 }
 
 #[derive(Deserialize)]

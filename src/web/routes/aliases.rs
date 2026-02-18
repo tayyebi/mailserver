@@ -30,7 +30,6 @@ fn is_catch_all(source: &str, domain: Option<&str>) -> bool {
 
 struct AliasRow {
     id: i64,
-    sort_order: i64,
     domain_name: String,
     source: String,
     destination: String,
@@ -118,7 +117,6 @@ pub async fn list(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Strin
             let is_catch = is_catch_all(&a.source, a.domain_name.as_deref());
             AliasRow {
                 id: a.id,
-                sort_order: a.sort_order,
                 domain_name: a.domain_name.as_deref().unwrap_or("-").to_string(),
                 source: a.source.clone(),
                 destination: a.destination.clone(),
@@ -166,9 +164,8 @@ pub async fn create(
     Form(form): Form<AliasForm>,
 ) -> Response {
     let tracking = form.tracking_enabled.is_some();
-    let sort_order = form.sort_order.unwrap_or(0);
-    info!("[web] POST /aliases — creating alias source={}, destination={}, tracking={}, sort_order={}",
-        form.source, form.destination, tracking, sort_order);
+    info!("[web] POST /aliases — creating alias source={}, destination={}, tracking={}",
+        form.source, form.destination, tracking);
     
     // Extract domain from source email
     let source_parts: Vec<&str> = form.source.split('@').collect();
@@ -258,7 +255,7 @@ pub async fn create(
     let destination = form.destination.clone();
     let create_result = state
         .blocking_db(move |db| {
-            db.create_alias(domain_id, &source, &destination, tracking, sort_order)
+            db.create_alias(domain_id, &source, &destination, tracking)
         })
         .await;
     match create_result {
@@ -319,14 +316,13 @@ pub async fn update(
 ) -> Response {
     let active = form.active.is_some();
     let tracking = form.tracking_enabled.is_some();
-    let sort_order = form.sort_order.unwrap_or(0);
-    info!("[web] POST /aliases/{} — updating alias source={}, destination={}, active={}, tracking={}, sort_order={}",
-        id, form.source, form.destination, active, tracking, sort_order);
+    info!("[web] POST /aliases/{} — updating alias source={}, destination={}, active={}, tracking={}",
+        id, form.source, form.destination, active, tracking);
     let source = form.source.clone();
     let destination = form.destination.clone();
     state
         .blocking_db(move |db| {
-            db.update_alias(id, &source, &destination, active, tracking, sort_order)
+            db.update_alias(id, &source, &destination, active, tracking)
         })
         .await;
     regen_configs(&state).await;

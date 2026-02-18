@@ -706,14 +706,17 @@ impl Database {
         source: &str,
         destination: &str,
         tracking: bool,
-        sort_order: i64,
     ) -> Result<i64, String> {
         info!(
-            "[db] creating alias source={}, destination={}, tracking={}, sort_order={}",
-            source, destination, tracking, sort_order
+            "[db] creating alias source={}, destination={}, tracking={}",
+            source, destination, tracking
         );
         let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
         let ts = now();
+        
+        // Calculate sort_order: 0 for specific addresses, 1 for catch-alls
+        let sort_order: i64 = if source.trim().starts_with('*') { 1 } else { 0 };
+        
         let row = conn
             .query_one(
                 "INSERT INTO aliases (domain_id, source, destination, tracking_enabled, sort_order, created_at, updated_at)
@@ -740,10 +743,13 @@ impl Database {
         destination: &str,
         active: bool,
         tracking: bool,
-        sort_order: i64,
     ) {
-        info!("[db] updating alias id={}, source={}, destination={}, active={}, tracking={}, sort_order={}", id, source, destination, active, tracking, sort_order);
+        info!("[db] updating alias id={}, source={}, destination={}, active={}, tracking={}", id, source, destination, active, tracking);
         let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        
+        // Calculate sort_order: 0 for specific addresses, 1 for catch-alls
+        let sort_order: i64 = if source.trim().starts_with('*') { 1 } else { 0 };
+        
         let _ = conn.execute(
             "UPDATE aliases
              SET source = $1, destination = $2, active = $3, tracking_enabled = $4, sort_order = $5, updated_at = $6
