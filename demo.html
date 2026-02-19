@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design System Demo - Mailserver</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/desktop.css" media="(min-width: 768px)">
+</head>
+<body>
+
+<header>
+  <strong>Design System</strong>
+  <small>Component Library</small>
+  <nav>
+    <a href="#typography" aria-current="page">Typography</a>
+    <a href="#forms">Forms</a>
+    <a href="#buttons">Buttons</a>
+    <a href="#components">Components</a>
+    <a href="#tables">Tables</a>
+  </nav>
+  <mark>Live</mark>
+</header>
+
+<main>
+
+  <!-- Theme Toggle -->
+  <section>
+    <h1>Design System Components</h1>
+    <p>This page demonstrates all components of the mobile-first design system with dark mode and RTL support.</p>
+    
+    <nav>
+      <button type="button" onclick="document.documentElement.setAttribute('data-theme', 'light')">☀️ Light</button>
+      <button type="button" onclick="document.documentElement.setAttribute('data-theme', 'dark')">🌙 Dark</button>
+      <button type="button" onclick="document.documentElement.removeAttribute('data-theme')">🔄 Auto</button>
+      <button type="button" onclick="const html = document.documentElement; html.setAttribute('dir', html.getAttribute('dir') === 'rtl' ? 'ltr' : 'rtl')">↔️ Toggle RTL</button>
+    </nav>
+  </section>
+
+  <!-- Typography -->
+  <section id="typography">
+    <hgroup>
+      <small>Foundations</small>
+      <h1>Typography Scale</h1>
+    </hgroup>
+    
+    <h1>Heading 1 - Main Page Title</h1>
+    <h2>Heading 2 - Section Title</h2>
+    <h3>Heading 3 - Subsection Title</h3>
+    <h4>Heading 4 - Minor Heading</h4>
+    <h5>Heading 5 - Small Heading</h5>
+    <h6>Heading 6 - Smallest Heading</h6>
+    
+    <p>This is a paragraph with <strong>bold text</strong>, <em>emphasized text</em>, and a <a href="#">link to somewhere</a>. The typography uses a system font stack for optimal performance and native feel across platforms.</p>
+    
+    <p><small>This is small text, typically used for secondary information or captions.</small></p>
+    
+    <p>Inline <code>code snippet</code> with monospace font.</p>
+    
+    <pre>function example() {
+  console.log("Pre-formatted code block");
+  return true;
+}</pre>
+
+    <blockquote>
+      This is a blockquote. It can be used for quotes or callouts.
+    </blockquote>
+
+    <hr>
+  </section>
+
+  <!-- Forms -->
+  <section id="forms">
+    <hgroup>
+      <small>User Input</small>
+      <h2>Form Elements</h2>
+    </hgroup>
+    
+    <form>
+      <fieldset>
+        <legend>Text Inputs</legend>
+        
+        <label>
+          Text Input
+          <input type="text" placeholder="Enter text...">
+        </label>
+        
+        <label>
+          Email Input
+          <input type="email" placeholder="email@example.com" required>
+        </label>
+        
+        <label>
+          Password Input
+          <input type="password" placeholder="Enter password...">
+        </label>
+        
+        <label>
+          Number Input
+          <input type="number" placeholder="42" min="0" max="100">
+        </label>
+        
+        <label>
+          Telephone Input
+          <input type="tel" placeholder="+1 (555) 123-4567">
+        </label>
+        
+        <label>
+          URL Input
+          <input type="url" placeholder="https://example.com">
+        </label>
+        
+        <label>
+          Search Input
+          <input type="search" placeholder="Search...">
+        </label>
+        
+        <label>
+          Date Input
+          <input type="date">
+        </label>
+        
+        <label>
+          Disabled Input
+          <input type="text" value="Disabled field" disabled>
+        </label>
+        
+        <label>
+          Read-only Input
+          <input type="text" value="Read-only field" readonly>
+        </label>
+      </fieldset>
+      
+      <fieldset>
+        <legend>Select & Textarea</legend>
+        
+        <label>
+          Select Dropdown
+          <select>
+            <option>Option 1</option>
+            <option>Option 2</option>
+            <option>Option 3</option>
+          </select>
+        </label>
+        
+        <label>
+          Multiple Select
+          <select multiple>
+            <option>Option 1</option>
+            <option>Option 2</option>
+            <option>Option 3</option>
+          </select>
+        </label>
+        
+        <label>
+          Textarea
+          <textarea placeholder="Enter multiple lines of text..."></textarea>
+        </label>
+      </fieldset>
+      
+      <fieldset>
+        <legend>Checkboxes & Radio Buttons</legend>
+        
+        <label>
+          <input type="checkbox">
+          Checkbox Option 1
+        </label>
+        
+        <label>
+          <input type="checkbox" checked>
+          Checkbox Option 2 (checked)
+        </label>
+        
+        <label>
+          <input type="checkbox" disabled>
+          Checkbox Option 3 (disabled)
+        </label>
+        
+        <label>
+          <input type="radio" name="radio-group">
+          Radio Option 1
+        </label>
+        
+        <label>
+          <input type="radio" name="radio-group" checked>
+          Radio Option 2 (checked)
+        </label>
+        
+        <label>
+          <input type="radio" name="radio-group" disabled>
+          Radio Option 3 (disabled)
+        </label>
+      </fieldset>
+      
+      <fieldset>
+        <legend>Other Input Types</legend>
+        
+        <label>
+          Range Slider
+          <input type="range" min="0" max="100" value="50">
+        </label>
+        
+        <label>
+          File Input
+          <input type="file">
+        </label>
+        
+        <label>
+          Color Picker
+          <input type="color" value="#ec7211">
+        </label>
+      </fieldset>
+      
+      <button type="submit">Submit Form</button>
+      <button type="reset">Reset Form</button>
+    </form>
+  </section>
+
+  <!-- Buttons -->
+  <section id="buttons">
+    <hgroup>
+      <small>Actions</small>
+      <h2>Button Variants</h2>
+    </hgroup>
+    
+    <article>
+      <h3>Standard Buttons</h3>
+      <nav>
+        <button type="button">Default</button>
+        <button type="submit">Primary (Submit)</button>
+        <button class="button-primary">Primary</button>
+        <button class="button-secondary">Secondary</button>
+        <button class="button-danger">Danger</button>
+        <button class="button-success">Success</button>
+        <button class="button-ghost">Ghost</button>
+      </nav>
+    </article>
+    
+    <article>
+      <h3>Button Sizes</h3>
+      <nav>
+        <button class="button-small">Small Button</button>
+        <button type="button">Default Button</button>
+        <button class="button-large">Large Button</button>
+      </nav>
+    </article>
+    
+    <article>
+      <h3>Button States</h3>
+      <nav>
+        <button type="button">Normal</button>
+        <button type="button" disabled>Disabled</button>
+      </nav>
+    </article>
+    
+    <article>
+      <h3>Block Button</h3>
+      <button class="button-primary button-block">Full Width Button</button>
+    </article>
+  </section>
+
+  <!-- Components -->
+  <section id="components">
+    <hgroup>
+      <small>Patterns</small>
+      <h2>Component Library</h2>
+    </hgroup>
+    
+    <!-- Cards -->
+    <h3>Cards (Article)</h3>
+    <article>
+      <header>
+        <h4>Card with Header</h4>
+        <mark>Active</mark>
+      </header>
+      <p>This is an article element used as a card component. It has a subtle border and can contain various content types.</p>
+      <dl>
+        <dt>Status</dt><dd>Online</dd>
+        <dt>Type</dt><dd>Component</dd>
+      </dl>
+      <nav>
+        <a href="#">Action 1</a>
+        <a href="#">Action 2</a>
+      </nav>
+    </article>
+    
+    <article>
+      <data value="247">247</data>
+      <strong>Statistics Card</strong>
+      <small>Total items in database</small>
+    </article>
+    
+    <!-- Info Panel -->
+    <h3>Info Panel (Aside)</h3>
+    <aside>
+      <h2>Important Information</h2>
+      <p>This is an aside element styled as an info panel with an accent border.</p>
+      <ul>
+        <li>Feature one</li>
+        <li>Feature two</li>
+        <li>Feature three</li>
+      </ul>
+    </aside>
+    
+    <!-- Output -->
+    <h3>Success Message (Output)</h3>
+    <output>Your changes have been saved successfully!</output>
+    
+    <!-- Details/Summary -->
+    <h3>CSS-Only Dropdown (Details/Summary)</h3>
+    <details>
+      <summary>Click to expand/collapse</summary>
+      <p>This content is revealed when you click the summary. It uses the native details/summary elements for CSS-only interaction.</p>
+      <p>No JavaScript required!</p>
+    </details>
+    
+    <details open>
+      <summary>This one starts expanded</summary>
+      <p>You can close it by clicking the summary again.</p>
+    </details>
+    
+    <!-- Figure -->
+    <h3>Figure with Caption</h3>
+    <figure>
+      <figcaption>Code Example</figcaption>
+      <pre>v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC...</pre>
+    </figure>
+    
+    <!-- Progress -->
+    <h3>Progress Bar</h3>
+    <progress value="70" max="100"></progress>
+    <progress value="30" max="100"></progress>
+    
+    <!-- Description List -->
+    <h3>Description List</h3>
+    <dl>
+      <dt>Name</dt><dd>John Doe</dd>
+      <dt>Email</dt><dd>john@example.com</dd>
+      <dt>Role</dt><dd>Administrator</dd>
+      <dt>Status</dt><dd>Active</dd>
+    </dl>
+  </section>
+
+  <!-- Tables -->
+  <section id="tables">
+    <hgroup>
+      <small>Data Display</small>
+      <h2>Responsive Tables</h2>
+    </hgroup>
+    
+    <p>Tables automatically stack on mobile and display properly on desktop.</p>
+    
+    <table>
+      <thead>
+        <tr>
+          <th>Domain</th>
+          <th>Status</th>
+          <th>DKIM</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>example.com</td>
+          <td><mark>Active</mark></td>
+          <td>Configured</td>
+          <td>
+            <a href="#">Edit</a>
+            <a href="#">DNS</a>
+          </td>
+        </tr>
+        <tr>
+          <td>test.org</td>
+          <td><mark>Active</mark></td>
+          <td>Configured</td>
+          <td>
+            <a href="#">Edit</a>
+            <a href="#">DNS</a>
+          </td>
+        </tr>
+        <tr>
+          <td>demo.net</td>
+          <td><mark>Pending</mark></td>
+          <td>Not configured</td>
+          <td>
+            <a href="#">Edit</a>
+            <a href="#">DNS</a>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Lists -->
+  <section>
+    <hgroup>
+      <small>Content</small>
+      <h2>Lists</h2>
+    </hgroup>
+    
+    <h3>Unordered List</h3>
+    <ul>
+      <li>First item in unordered list</li>
+      <li>Second item with <a href="#">a link</a></li>
+      <li>Third item with nested content</li>
+    </ul>
+    
+    <h3>Ordered List</h3>
+    <ol>
+      <li>First step in the process</li>
+      <li>Second step with details</li>
+      <li>Third and final step</li>
+    </ol>
+  </section>
+
+  <!-- Utilities -->
+  <section>
+    <hgroup>
+      <small>Helpers</small>
+      <h2>Utility Classes</h2>
+    </hgroup>
+    
+    <article>
+      <h3>Text Alignment</h3>
+      <p class="text-start">Text aligned to start (left in LTR, right in RTL)</p>
+      <p class="text-center">Text aligned to center</p>
+      <p class="text-end">Text aligned to end (right in LTR, left in RTL)</p>
+    </article>
+    
+    <article>
+      <h3>Flex Layout</h3>
+      <div class="flex items-center justify-between gap-2">
+        <span>Item 1</span>
+        <span>Item 2</span>
+        <span>Item 3</span>
+      </div>
+    </article>
+    
+    <article>
+      <h3>Grid Layout</h3>
+      <div class="grid grid-cols-3 gap-2">
+        <div style="padding: var(--space-md); background: var(--color-bg-subtle); border-radius: var(--radius);">Grid 1</div>
+        <div style="padding: var(--space-md); background: var(--color-bg-subtle); border-radius: var(--radius);">Grid 2</div>
+        <div style="padding: var(--space-md); background: var(--color-bg-subtle); border-radius: var(--radius);">Grid 3</div>
+      </div>
+    </article>
+  </section>
+
+  <!-- Accessibility -->
+  <section>
+    <hgroup>
+      <small>A11y</small>
+      <h2>Accessibility Features</h2>
+    </hgroup>
+    
+    <p>This design system includes:</p>
+    <ul>
+      <li>WCAG AA compliant color contrast ratios</li>
+      <li>Visible focus indicators on all interactive elements</li>
+      <li>Keyboard navigation support (try pressing Tab)</li>
+      <li>Semantic HTML structure</li>
+      <li>Screen reader utilities (<code>.sr-only</code>, <code>.visually-hidden</code>)</li>
+      <li>Reduced motion support for users with vestibular disorders</li>
+      <li>Logical properties for full RTL compatibility</li>
+    </ul>
+    
+    <p><span class="sr-only">This text is only visible to screen readers.</span></p>
+  </section>
+
+</main>
+
+<footer>
+  <small>Design System Demo · <a href="/">Back to Dashboard</a></small>
+</footer>
+
+</body>
+</html>
