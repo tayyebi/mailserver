@@ -5,18 +5,19 @@
 header {
   flex-direction: row;
   align-items: center;
-  padding: 0 var(--space-lg);
+  padding-block: 0;
+  padding-inline: var(--space-lg);
   gap: var(--space-md);
-  min-height: 3rem;
+  min-block-size: 3rem;
 }
 
 header > strong {
-  margin-right: var(--space-xs);
+  margin-inline-end: var(--space-xs);
 }
 
 header > small {
-  margin-right: auto;
-  margin-bottom: 0;
+  margin-inline-end: auto;
+  margin-block-end: 0;
 }
 
 header nav {
@@ -24,15 +25,16 @@ header nav {
 }
 
 header mark {
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 
 /* ── Main: constrained width ── */
 
 main {
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: var(--space-xl) var(--space-lg);
+  max-inline-size: 1120px;
+  margin-inline: auto;
+  padding-block: var(--space-xl);
+  padding-inline: var(--space-lg);
 }
 
 /* ── Article grid for stat cards ── */
@@ -67,42 +69,43 @@ tr {
 
 th, td {
   display: table-cell;
-  padding: var(--space-sm) var(--space-md);
-  border-bottom: 1px solid var(--gray-100);
-  text-align: left;
+  padding-block: var(--space-sm);
+  padding-inline: var(--space-md);
+  border-block-end: var(--border-width) solid var(--color-border-subtle);
+  text-align: start;
   vertical-align: top;
 }
 
 th {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--gray-500);
-  background: var(--gray-50);
+  color: var(--color-text-subtle);
+  background: var(--color-bg-subtle);
   white-space: nowrap;
 }
 
 tbody tr:hover {
-  background: var(--gray-50);
+  background: var(--color-bg-subtle);
 }
 
 td:last-child {
-  border-top: none;
-  margin-top: 0;
-  padding-top: var(--space-sm);
+  border-block-start: none;
+  margin-block-start: 0;
+  padding-block-start: var(--space-sm);
 }
 
 /* ── Forms: constrain width ── */
 
 form {
-  max-width: 640px;
+  max-inline-size: 640px;
 }
 
 /* ── Description lists: side-by-side ── */
 
 dl {
-  max-width: 640px;
+  max-inline-size: 640px;
 }
 
 /* ── Section headings with actions ── */
@@ -110,4 +113,12 @@ dl {
 section > hgroup + p + a,
 section > hgroup + a {
   display: inline-block;
+}
+
+/* ── Container queries (where supported) ── */
+
+@container (min-width: 768px) {
+  article {
+    padding: var(--space-lg);
+  }
 }
