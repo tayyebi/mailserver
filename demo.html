@@ -33,7 +33,7 @@
       <button type="button" onclick="document.documentElement.setAttribute('data-theme', 'light')">☀️ Light</button>
       <button type="button" onclick="document.documentElement.setAttribute('data-theme', 'dark')">🌙 Dark</button>
       <button type="button" onclick="document.documentElement.removeAttribute('data-theme')">🔄 Auto</button>
-      <button type="button" onclick="document.documentElement.toggleAttribute('dir'); document.documentElement.setAttribute('dir', document.documentElement.getAttribute('dir') === 'rtl' ? 'ltr' : 'rtl')">↔️ Toggle RTL</button>
+      <button type="button" onclick="const html = document.documentElement; html.setAttribute('dir', html.getAttribute('dir') === 'rtl' ? 'ltr' : 'rtl')">↔️ Toggle RTL</button>
     </nav>
   </section>
 
