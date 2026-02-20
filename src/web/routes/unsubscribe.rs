@@ -27,6 +27,7 @@ struct ListTemplate<'a> {
 struct ConfirmTemplate<'a> {
     token: &'a str,
     success: bool,
+    requires_confirmation: bool,
     message: &'a str,
 }
 
@@ -47,6 +48,7 @@ async fn unsubscribe_confirm_page(
         let tmpl = ConfirmTemplate {
             token: "",
             success: false,
+            requires_confirmation: false,
             message: "No unsubscribe token provided.",
         };
         return (StatusCode::BAD_REQUEST, Html(tmpl.render().unwrap())).into_response();
@@ -62,7 +64,8 @@ async fn unsubscribe_confirm_page(
                 .await;
             let tmpl = ConfirmTemplate {
                 token: &params.token,
-                success: true,
+                success: !already,
+                requires_confirmation: !already,
                 message: if already {
                     "You are already unsubscribed."
                 } else {
@@ -76,6 +79,7 @@ async fn unsubscribe_confirm_page(
             let tmpl = ConfirmTemplate {
                 token: &params.token,
                 success: false,
+                requires_confirmation: false,
                 message: "Invalid or expired unsubscribe token.",
             };
             (StatusCode::NOT_FOUND, Html(tmpl.render().unwrap())).into_response()
@@ -95,6 +99,7 @@ async fn unsubscribe_one_click(
         let tmpl = ConfirmTemplate {
             token: "",
             success: false,
+            requires_confirmation: false,
             message: "No unsubscribe token provided.",
         };
         return (StatusCode::BAD_REQUEST, Html(tmpl.render().unwrap())).into_response();
@@ -114,6 +119,7 @@ async fn unsubscribe_one_click(
             let tmpl = ConfirmTemplate {
                 token: &params.token,
                 success: true,
+                requires_confirmation: false,
                 message: "You have been successfully unsubscribed.",
             };
             Html(tmpl.render().unwrap()).into_response()
@@ -123,6 +129,7 @@ async fn unsubscribe_one_click(
             let tmpl = ConfirmTemplate {
                 token: &params.token,
                 success: false,
+                requires_confirmation: false,
                 message: "Invalid or expired unsubscribe token.",
             };
             (StatusCode::NOT_FOUND, Html(tmpl.render().unwrap())).into_response()

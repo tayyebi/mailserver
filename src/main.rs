@@ -108,10 +108,12 @@ fn main() {
                 .get_setting("unsubscribe_base_url")
                 .or_else(|| env::var("UNSUBSCRIBE_BASE_URL").ok())
                 .unwrap_or_else(|| {
-                    if admin_port == 80 {
+                    if admin_port == 443 {
+                        format!("https://{}", hostname)
+                    } else if admin_port == 80 {
                         format!("http://{}", hostname)
                     } else {
-                        format!("http://{}:{}", hostname, admin_port)
+                        format!("https://{}:{}", hostname, admin_port)
                     }
                 });
 

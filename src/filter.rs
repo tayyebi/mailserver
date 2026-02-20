@@ -70,17 +70,18 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
                 }
 
                 if unsubscribe_domain && !unsubscribe_base_url.is_empty() {
-                    // Inject List-Unsubscribe headers for each recipient (RFC 8058 one-click)
-                    for recipient in recipients {
+                    // Inject a single List-Unsubscribe header for the primary recipient (RFC 8058).
+                    // The content filter reinjects one message, so we use the first recipient's token.
+                    if let Some(primary_recipient) = recipients.first() {
                         let token = uuid::Uuid::new_v4().to_string();
                         let unsub_url = format!("{}/unsubscribe?token={}", unsubscribe_base_url.trim_end_matches('/'), token);
-                        db.create_unsubscribe_token(&token, recipient, &sender_domain);
+                        db.create_unsubscribe_token(&token, primary_recipient, &sender_domain);
                         let headers = format!(
-                            "List-Unsubscribe: <{}>\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n",
+                            "List-Unsubscribe: <{}>\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click",
                             unsub_url
                         );
                         modified = inject_headers(&modified, &headers);
-                        info!("[filter] injected List-Unsubscribe header for recipient={} token={}", recipient, token);
+                        info!("[filter] injected List-Unsubscribe header for recipient={} token={}", primary_recipient, token);
                     }
                 }
 

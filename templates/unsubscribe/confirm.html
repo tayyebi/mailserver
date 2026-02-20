@@ -10,7 +10,7 @@
 <main>
 <h1>Unsubscribe</h1>
 {% if success %}
-  {% if message == "Click the button below to confirm your unsubscribe request." %}
+  {% if requires_confirmation %}
   <p>{{ message }}</p>
   <form method="post" action="/unsubscribe?token={{ token }}">
     <button type="submit">Confirm Unsubscribe</button>
