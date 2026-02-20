@@ -16,7 +16,7 @@
     <ol>
         <li>Update MX and SPF first to establish routing.</li>
         <li>Publish DKIM selector <code>{{ dkim_selector }}</code> and wait for propagation.</li>
-        <li>Add DMARC with <code>p=none</code> until you trust reports.</li>
+        <li>Add DMARC with <code>p=reject</code> to enforce strict policy.</li>
         <li>Verify reverse DNS points back to <code>{{ hostname }}</code>.</li>
         <li>Set up autodiscover records for mail client auto-configuration.</li>
     </ol>
@@ -30,7 +30,7 @@
         {% if !dkim_record.is_empty() %}
         <tr><td>TXT</td><td><code>{{ dkim_selector }}._domainkey</code></td><td><code>v=DKIM1; k=rsa; p={{ dkim_record }}</code></td><td>DKIM signing key</td></tr>
         {% endif %}
-        <tr><td>TXT</td><td>_dmarc</td><td><code>v=DMARC1; p=none; rua=mailto:postmaster@{{ domain_name }}</code></td><td>DMARC monitoring</td></tr>
+        <tr><td>TXT</td><td>_dmarc</td><td><code>v=DMARC1; p=reject; rua=mailto:postmaster@{{ domain_name }}</code></td><td>DMARC enforcement</td></tr>
         <tr><td>SRV</td><td>_autodiscover._tcp</td><td><code>0 0 443 {{ hostname }}.</code></td><td>Outlook autodiscover</td></tr>
         <tr><td>CNAME</td><td>autoconfig</td><td><code>{{ hostname }}.</code></td><td>Thunderbird autoconfig</td></tr>
         <tr><td>CNAME</td><td>autodiscover</td><td><code>{{ hostname }}.</code></td><td>Outlook autodiscover</td></tr>
