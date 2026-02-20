@@ -31,6 +31,7 @@ struct SettingsTemplate<'a> {
     milter_enabled: bool,
     filter_healthy: bool,
     milter_healthy: bool,
+    unsubscribe_enabled: bool,
 }
 
 #[derive(Template)]
@@ -173,6 +174,12 @@ pub async fn page(auth: AuthAdmin, State(state): State<AppState>) -> Html<String
         .map(|v| v != "false")
         .unwrap_or(true);
 
+    let unsubscribe_enabled = state
+        .blocking_db(|db| db.get_setting("feature_unsubscribe_enabled"))
+        .await
+        .map(|v| v != "false")
+        .unwrap_or(true);
+
     let filter_healthy = check_filter_health();
     let milter_healthy = check_milter_health();
 
@@ -191,6 +198,7 @@ pub async fn page(auth: AuthAdmin, State(state): State<AppState>) -> Html<String
         milter_enabled,
         filter_healthy,
         milter_healthy,
+        unsubscribe_enabled,
     };
     Html(tmpl.render().unwrap())
 }
@@ -255,20 +263,23 @@ pub async fn update_features(
 
     let filter_enabled = form.filter_enabled.is_some();
     let milter_enabled = form.milter_enabled.is_some();
+    let unsubscribe_enabled = form.unsubscribe_enabled.is_some();
 
     let filter_val = if filter_enabled { "true" } else { "false" }.to_string();
     let milter_val = if milter_enabled { "true" } else { "false" }.to_string();
+    let unsub_val = if unsubscribe_enabled { "true" } else { "false" }.to_string();
 
     state
         .blocking_db(move |db| {
             db.set_setting("feature_filter_enabled", &filter_val);
             db.set_setting("feature_milter_enabled", &milter_val);
+            db.set_setting("feature_unsubscribe_enabled", &unsub_val);
         })
         .await;
 
     info!(
-        "[web] features updated: filter={}, milter={} by user={}",
-        filter_enabled, milter_enabled, auth.admin.username
+        "[web] features updated: filter={}, milter={}, unsubscribe={} by user={}",
+        filter_enabled, milter_enabled, unsubscribe_enabled, auth.admin.username
     );
 
     // Regenerate Postfix configs to apply feature toggle changes

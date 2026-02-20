@@ -13,6 +13,8 @@
 <small>Supports inline styles. Avoid external scripts.</small>
 <label>BIMI SVG (optional)<br><textarea name="bimi_svg" rows="5" placeholder="&lt;svg ...&gt;...&lt;/svg&gt;"></textarea></label>
 <small>Paste your SVG Tiny 1.2 logo markup. It will be served and referenced in the BIMI DNS record.</small>
+<label><input type="checkbox" name="unsubscribe_enabled" value="on"> Enable List-Unsubscribe header injection for outbound emails</label>
+<small>When enabled, outbound emails from this domain will include RFC 8058 one-click unsubscribe headers.</small>
 <button type="submit">Create</button>
 </form>
 {% endblock %}

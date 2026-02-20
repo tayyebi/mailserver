@@ -7,6 +7,8 @@ pub struct DomainForm {
     pub footer_html: String,
     #[serde(default)]
     pub bimi_svg: String,
+    #[serde(default)]
+    pub unsubscribe_enabled: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -18,6 +20,8 @@ pub struct DomainEditForm {
     pub footer_html: String,
     #[serde(default)]
     pub bimi_svg: String,
+    #[serde(default)]
+    pub unsubscribe_enabled: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -123,9 +127,17 @@ pub struct Fail2banGlobalToggleForm {
 }
 
 #[derive(Deserialize)]
+pub struct UnsubscribeQuery {
+    #[serde(default)]
+    pub token: String,
+}
+
+#[derive(Deserialize)]
 pub struct FeatureToggleForm {
     #[serde(default)]
     pub filter_enabled: Option<String>,
     #[serde(default)]
     pub milter_enabled: Option<String>,
+    #[serde(default)]
+    pub unsubscribe_enabled: Option<String>,
 }

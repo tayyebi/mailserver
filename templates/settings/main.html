@@ -17,10 +17,15 @@
   —
   {% if milter_healthy %}<mark style="color:var(--success)">● Healthy</mark>{% else %}<mark style="color:var(--danger)">● Unavailable</mark>{% endif %}
 </dd>
+<dt>List-Unsubscribe Injection</dt>
+<dd>
+  {% if unsubscribe_enabled %}<mark style="color:var(--success)">Enabled</mark>{% else %}<mark style="color:var(--gray-400)">Disabled</mark>{% endif %}
+</dd>
 </dl>
 <form method="post" action="/settings/features">
   <label><input type="checkbox" name="filter_enabled" value="on"{% if filter_enabled %} checked{% endif %}> Enable Content Filter (footer injection, tracking pixels)</label>
   <label><input type="checkbox" name="milter_enabled" value="on"{% if milter_enabled %} checked{% endif %}> Enable Milter / OpenDKIM (DKIM signing)</label>
+  <label><input type="checkbox" name="unsubscribe_enabled" value="on"{% if unsubscribe_enabled %} checked{% endif %}> Enable List-Unsubscribe Header Injection (RFC 8058 one-click unsubscribe)</label>
   <button type="submit">Save Feature Settings</button>
 </form>
 

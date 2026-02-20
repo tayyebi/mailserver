@@ -9,6 +9,7 @@ pub mod pixel;
 pub mod queue;
 pub mod settings;
 pub mod tracking;
+pub mod unsubscribe;
 pub mod webmail;
 
 use super::AppState;
@@ -68,4 +69,6 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/fail2ban/whitelist/:id/delete", post(fail2ban::remove_whitelist))
         .route("/fail2ban/blacklist", post(fail2ban::add_blacklist))
         .route("/fail2ban/blacklist/:id/delete", post(fail2ban::remove_blacklist))
+        .route("/unsubscribe/list", get(unsubscribe::list))
+        .route("/unsubscribe/:id/delete", post(unsubscribe::delete))
 }
