@@ -126,8 +126,9 @@ pub async fn create(
     let domain = form.domain.clone();
     let footer_html = form.footer_html.clone();
     let bimi_svg = form.bimi_svg.clone();
+    let unsubscribe_enabled = form.unsubscribe_enabled.is_some();
     let create_result = state
-        .blocking_db(move |db| db.create_domain(&domain, &footer_html, &bimi_svg))
+        .blocking_db(move |db| db.create_domain(&domain, &footer_html, &bimi_svg, unsubscribe_enabled))
         .await;
     match create_result {
         Ok(id) => {
@@ -190,8 +191,9 @@ pub async fn update(
     let domain = form.domain.clone();
     let footer_html = form.footer_html.clone();
     let bimi_svg = form.bimi_svg.clone();
+    let unsubscribe_enabled = form.unsubscribe_enabled.is_some();
     state
-        .blocking_db(move |db| db.update_domain(id, &domain, active, &footer_html, &bimi_svg))
+        .blocking_db(move |db| db.update_domain(id, &domain, active, &footer_html, &bimi_svg, unsubscribe_enabled))
         .await;
     regen_configs(&state).await;
     Redirect::to("/domains").into_response()

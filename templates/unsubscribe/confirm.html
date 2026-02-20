@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Unsubscribe</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main>
+<h1>Unsubscribe</h1>
+{% if success %}
+  {% if message == "Click the button below to confirm your unsubscribe request." %}
+  <p>{{ message }}</p>
+  <form method="post" action="/unsubscribe?token={{ token }}">
+    <button type="submit">Confirm Unsubscribe</button>
+  </form>
+  {% else %}
+  <p><mark style="color:var(--success)">{{ message }}</mark></p>
+  {% endif %}
+{% else %}
+<p><mark style="color:var(--danger)">{{ message }}</mark></p>
+{% endif %}
+</main>
+</body>
+</html>

@@ -3,7 +3,7 @@ use std::io::{self, Read};
 
 use crate::db::Database;
 
-pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_url: &str) {
+pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_url: &str, unsubscribe_base_url: &str) {
     info!(
         "[filter] starting content filter sender={}, recipients={}",
         sender,
@@ -36,14 +36,27 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
 
         if !filter_enabled {
             info!("[filter] content filter feature is disabled, bypassing");
-            return (db, false, None, false);
+            return (db, false, None, false, false, String::new());
         }
 
         let tracking = db.is_tracking_enabled_for_sender(sender);
         let footer_html = db.get_footer_for_sender(sender);
-        (db, tracking, footer_html, true)
+
+        // Check if unsubscribe injection is enabled globally and per-domain
+        let unsubscribe_global = db
+            .get_setting("feature_unsubscribe_enabled")
+            .map(|v| v != "false")
+            .unwrap_or(true);
+        let sender_domain = sender.split('@').nth(1).unwrap_or("").to_lowercase();
+        let unsubscribe_domain = if unsubscribe_global && !sender_domain.is_empty() {
+            db.is_unsubscribe_enabled_for_domain(&sender_domain)
+        } else {
+            false
+        };
+
+        (db, tracking, footer_html, true, unsubscribe_domain, sender_domain)
     }) {
-        Ok((db, tracking, footer_html, enabled)) => {
+        Ok((db, tracking, footer_html, enabled, unsubscribe_domain, sender_domain)) => {
             if !enabled {
                 // Feature disabled — pass through unmodified
             } else {
@@ -54,6 +67,21 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
                 if let Some(footer) = footer_html {
                     debug!("[filter] injecting footer for sender={}", sender);
                     modified = inject_footer(&modified, &footer);
+                }
+
+                if unsubscribe_domain && !unsubscribe_base_url.is_empty() {
+                    // Inject List-Unsubscribe headers for each recipient (RFC 8058 one-click)
+                    for recipient in recipients {
+                        let token = uuid::Uuid::new_v4().to_string();
+                        let unsub_url = format!("{}/unsubscribe?token={}", unsubscribe_base_url.trim_end_matches('/'), token);
+                        db.create_unsubscribe_token(&token, recipient, &sender_domain);
+                        let headers = format!(
+                            "List-Unsubscribe: <{}>\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n",
+                            unsub_url
+                        );
+                        modified = inject_headers(&modified, &headers);
+                        info!("[filter] injected List-Unsubscribe header for recipient={} token={}", recipient, token);
+                    }
                 }
 
                 if tracking {
@@ -133,6 +161,26 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
         return;
     }
     info!("[filter] email reinjected successfully");
+}
+
+fn inject_headers(email: &str, headers: &str) -> String {
+    // Detect line-ending style
+    let eol = if email.contains("\r\n") { "\r\n" } else { "\n" };
+    let sep = if eol == "\r\n" { "\r\n\r\n" } else { "\n\n" };
+    // Find end of header section
+    if let Some(pos) = email.find(sep) {
+        let mut result = email[..pos].to_string();
+        // Append new headers before the blank line
+        for line in headers.lines() {
+            result.push_str(line);
+            result.push_str(eol);
+        }
+        result.push_str(eol);
+        result.push_str(&email[pos + sep.len()..]);
+        result
+    } else {
+        email.to_string()
+    }
 }
 
 fn inject_footer(email: &str, footer_html: &str) -> String {
@@ -400,5 +448,48 @@ mod tests {
         );
         let result = strip_dkim_signatures(email);
         assert_eq!(result, "From: a@b.com\r\nTo: c@d.com\r\n\r\nHello.\r\n");
+    }
+
+    #[test]
+    fn inject_headers_inserts_before_body() {
+        let email = concat!(
+            "From: sender@example.com\r\n",
+            "Subject: Test\r\n",
+            "\r\n",
+            "Body text.\r\n"
+        );
+        let headers = "List-Unsubscribe: <https://example.com/unsubscribe?token=abc>\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n";
+        let result = inject_headers(email, headers);
+        assert!(result.contains("List-Unsubscribe: <https://example.com/unsubscribe?token=abc>"));
+        assert!(result.contains("List-Unsubscribe-Post: List-Unsubscribe=One-Click"));
+        assert!(result.contains("From: sender@example.com"));
+        assert!(result.contains("Subject: Test"));
+        assert!(result.contains("Body text."));
+        // Body should come after headers
+        let header_pos = result.find("List-Unsubscribe").unwrap();
+        let body_pos = result.find("Body text.").unwrap();
+        assert!(header_pos < body_pos);
+    }
+
+    #[test]
+    fn inject_headers_works_with_lf_line_endings() {
+        let email = concat!(
+            "From: sender@example.com\n",
+            "Subject: Test\n",
+            "\n",
+            "Body.\n"
+        );
+        let headers = "List-Unsubscribe: <https://example.com/unsubscribe?token=xyz>\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n";
+        let result = inject_headers(email, headers);
+        assert!(result.contains("List-Unsubscribe: <https://example.com/unsubscribe?token=xyz>"));
+        assert!(result.contains("Body."));
+    }
+
+    #[test]
+    fn inject_headers_returns_original_if_no_header_body_separator() {
+        let email = "This is not a valid email";
+        let headers = "List-Unsubscribe: <https://example.com/unsubscribe?token=abc>\r\n";
+        let result = inject_headers(email, headers);
+        assert_eq!(result, email);
     }
 }

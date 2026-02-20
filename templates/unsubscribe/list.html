@@ -1,0 +1,34 @@
+{% extends "layout.html" %}
+{% block title %}Unsubscribe List{% endblock %}
+{% block content %}
+<h1>Unsubscribe List</h1>
+<p>Addresses that have opted out of mailing lists. Emails to these addresses from unsubscribe-enabled domains will be suppressed.</p>
+{% if entries.is_empty() %}
+<p><em>No unsubscribe entries found.</em></p>
+{% else %}
+<table>
+  <thead>
+    <tr>
+      <th>Email</th>
+      <th>Domain</th>
+      <th>Unsubscribed At</th>
+      <th>Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for entry in entries %}
+    <tr>
+      <td>{{ entry.email }}</td>
+      <td>{{ entry.domain }}</td>
+      <td>{{ entry.created_at }}</td>
+      <td>
+        <form method="post" action="/unsubscribe/{{ entry.id }}/delete" onsubmit="return confirm('Remove this unsubscribe entry? The address will be able to receive emails again.')">
+          <button type="submit">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

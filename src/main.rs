@@ -102,12 +102,25 @@ fn main() {
                 i += 1;
             }
 
+            let hostname = env::var("HOSTNAME").unwrap_or_else(|_| "localhost".to_string());
+            let admin_port = env::var("ADMIN_PORT").ok().and_then(|p| p.parse::<u16>().ok()).unwrap_or(8080);
+            let unsubscribe_base_url = database
+                .get_setting("unsubscribe_base_url")
+                .or_else(|| env::var("UNSUBSCRIBE_BASE_URL").ok())
+                .unwrap_or_else(|| {
+                    if admin_port == 80 {
+                        format!("http://{}", hostname)
+                    } else {
+                        format!("http://{}:{}", hostname, admin_port)
+                    }
+                });
+
             info!(
                 "[filter] running content filter sender={}, recipients={}",
                 sender,
                 recipients.join(", ")
             );
-            filter::run_filter(&db_url, &sender, &recipients, &pixel_base_url);
+            filter::run_filter(&db_url, &sender, &recipients, &pixel_base_url, &unsubscribe_base_url);
             info!("[filter] content filter completed");
         }
         "seed" => {

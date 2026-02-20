@@ -33,6 +33,15 @@ pub struct Domain {
     pub dkim_public_key: Option<String>,
     pub footer_html: Option<String>,
     pub bimi_svg: Option<String>,
+    pub unsubscribe_enabled: bool,
+}
+
+#[derive(Clone, Serialize)]
+pub struct UnsubscribeEntry {
+    pub id: i64,
+    pub email: String,
+    pub domain: String,
+    pub created_at: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -321,7 +330,7 @@ impl Database {
         let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
         let rows = conn
             .query(
-                "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html, bimi_svg
+                "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html, bimi_svg, unsubscribe_enabled
                  FROM domains ORDER BY domain",
                 &[],
             )
@@ -341,6 +350,7 @@ impl Database {
                 dkim_public_key: row.get(5),
                 footer_html: row.get(6),
                 bimi_svg: row.get(7),
+                unsubscribe_enabled: row.get(8),
             })
             .collect()
     }
@@ -349,7 +359,7 @@ impl Database {
         debug!("[db] getting domain id={}", id);
         let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
         conn.query_opt(
-            "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html, bimi_svg
+            "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html, bimi_svg, unsubscribe_enabled
              FROM domains WHERE id = $1",
             &[&id],
         )
@@ -364,6 +374,7 @@ impl Database {
             dkim_public_key: row.get(5),
             footer_html: row.get(6),
             bimi_svg: row.get(7),
+            unsubscribe_enabled: row.get(8),
         })
     }
 
@@ -371,7 +382,7 @@ impl Database {
         debug!("[db] getting domain by name={}", domain_name);
         let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
         conn.query_opt(
-            "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html, bimi_svg
+            "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html, bimi_svg, unsubscribe_enabled
              FROM domains WHERE LOWER(domain) = LOWER($1)",
             &[&domain_name],
         )
@@ -386,19 +397,20 @@ impl Database {
             dkim_public_key: row.get(5),
             footer_html: row.get(6),
             bimi_svg: row.get(7),
+            unsubscribe_enabled: row.get(8),
         })
     }
 
-    pub fn create_domain(&self, domain: &str, footer_html: &str, bimi_svg: &str) -> Result<i64, String> {
+    pub fn create_domain(&self, domain: &str, footer_html: &str, bimi_svg: &str, unsubscribe_enabled: bool) -> Result<i64, String> {
         info!("[db] creating domain: {}", domain);
         let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
         let ts = now();
         let row = conn
             .query_one(
-                "INSERT INTO domains (domain, footer_html, bimi_svg, created_at, updated_at)
-                 VALUES ($1, $2, $3, $4, $5)
+                "INSERT INTO domains (domain, footer_html, bimi_svg, unsubscribe_enabled, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6)
                  RETURNING id",
-                &[&domain, &footer_html, &bimi_svg, &ts, &ts],
+                &[&domain, &footer_html, &bimi_svg, &unsubscribe_enabled, &ts, &ts],
             )
             .map_err(|e| {
                 error!("[db] failed to create domain {}: {}", domain, e);
@@ -409,21 +421,22 @@ impl Database {
         Ok(id)
     }
 
-    pub fn update_domain(&self, id: i64, domain: &str, active: bool, footer_html: &str, bimi_svg: &str) {
+    pub fn update_domain(&self, id: i64, domain: &str, active: bool, footer_html: &str, bimi_svg: &str, unsubscribe_enabled: bool) {
         info!(
-            "[db] updating domain id={}, domain={}, active={}, footer_present={}, bimi_present={}",
+            "[db] updating domain id={}, domain={}, active={}, footer_present={}, bimi_present={}, unsubscribe_enabled={}",
             id,
             domain,
             active,
             !footer_html.trim().is_empty(),
-            !bimi_svg.trim().is_empty()
+            !bimi_svg.trim().is_empty(),
+            unsubscribe_enabled
         );
         let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
         let _ = conn.execute(
             "UPDATE domains
-             SET domain = $1, active = $2, footer_html = $3, bimi_svg = $4, updated_at = $5
-             WHERE id = $6",
-            &[&domain, &active, &footer_html, &bimi_svg, &now(), &id],
+             SET domain = $1, active = $2, footer_html = $3, bimi_svg = $4, unsubscribe_enabled = $5, updated_at = $6
+             WHERE id = $7",
+            &[&domain, &active, &footer_html, &bimi_svg, &unsubscribe_enabled, &now(), &id],
         );
     }
 
@@ -1412,5 +1425,91 @@ impl Database {
             .map(|row| row.get(0))
             .unwrap_or(0);
         count
+    }
+
+    pub fn create_unsubscribe_token(&self, token: &str, recipient_email: &str, sender_domain: &str) {
+        debug!("[db] creating unsubscribe token for recipient={} domain={}", recipient_email, sender_domain);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let _ = conn.execute(
+            "INSERT INTO unsubscribe_tokens (token, recipient_email, sender_domain, created_at)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (token) DO NOTHING",
+            &[&token, &recipient_email, &sender_domain, &now()],
+        );
+    }
+
+    pub fn get_unsubscribe_by_token(&self, token: &str) -> Option<(String, String)> {
+        debug!("[db] looking up unsubscribe token={}", token);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        conn.query_opt(
+            "SELECT recipient_email, sender_domain FROM unsubscribe_tokens WHERE token = $1",
+            &[&token],
+        )
+        .ok()
+        .flatten()
+        .map(|row| (row.get(0), row.get(1)))
+    }
+
+    pub fn record_unsubscribe(&self, email: &str, domain: &str) {
+        info!("[db] recording unsubscribe email={} domain={}", email, domain);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let _ = conn.execute(
+            "INSERT INTO unsubscribe_list (email, domain, created_at)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (email, domain) DO NOTHING",
+            &[&email, &domain, &now()],
+        );
+    }
+
+    pub fn is_unsubscribed(&self, email: &str, domain: &str) -> bool {
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let count: i64 = conn
+            .query_one(
+                "SELECT COUNT(*) FROM unsubscribe_list WHERE LOWER(email) = LOWER($1) AND LOWER(domain) = LOWER($2)",
+                &[&email, &domain],
+            )
+            .map(|row| row.get(0))
+            .unwrap_or(0);
+        count > 0
+    }
+
+    pub fn list_unsubscribes(&self) -> Vec<UnsubscribeEntry> {
+        debug!("[db] listing all unsubscribe entries");
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let rows = conn
+            .query(
+                "SELECT id, email, domain, created_at FROM unsubscribe_list ORDER BY created_at DESC",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list unsubscribes: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| UnsubscribeEntry {
+                id: row.get(0),
+                email: row.get(1),
+                domain: row.get(2),
+                created_at: row.get(3),
+            })
+            .collect()
+    }
+
+    pub fn delete_unsubscribe(&self, id: i64) {
+        warn!("[db] deleting unsubscribe entry id={}", id);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let _ = conn.execute("DELETE FROM unsubscribe_list WHERE id = $1", &[&id]);
+    }
+
+    pub fn is_unsubscribe_enabled_for_domain(&self, sender_domain: &str) -> bool {
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let count: i64 = conn
+            .query_one(
+                "SELECT COUNT(*) FROM domains WHERE LOWER(domain) = LOWER($1) AND unsubscribe_enabled = TRUE AND active = TRUE",
+                &[&sender_domain],
+            )
+            .map(|row| row.get(0))
+            .unwrap_or(0);
+        count > 0
     }
 }
