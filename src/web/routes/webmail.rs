@@ -56,6 +56,7 @@ pub struct ComposeForm {
     pub cc: String,
     #[serde(default)]
     pub bcc: String,
+    #[serde(default)]
     pub subject: String,
     #[serde(default)]
     pub reply_to: String,
