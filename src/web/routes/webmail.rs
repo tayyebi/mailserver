@@ -66,6 +66,8 @@ pub struct ComposeForm {
     #[serde(default)]
     pub sender_name: String,
     #[serde(default)]
+    pub from_address: String,
+    #[serde(default)]
     pub custom_headers: String,
     pub body: String,
 }
@@ -475,7 +477,9 @@ pub async fn send_email(
             let domain = acct.domain_name.as_deref().unwrap_or("unknown");
             let email_addr = format!("{}@{}", acct.username, domain);
             let sender_name = sanitize_header_value(form.sender_name.trim());
-            let from_addr = if sender_name.is_empty() {
+            let from_addr = if !form.from_address.trim().is_empty() {
+                sanitize_header_value(form.from_address.trim())
+            } else if sender_name.is_empty() {
                 email_addr.clone()
             } else {
                 format!("{} <{}>", sender_name, email_addr)
