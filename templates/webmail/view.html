@@ -2,7 +2,7 @@
 {% block title %}View Email{% endblock %}
 {% block content %}
 <h1>Email</h1>
-<p><a href="/webmail?account_id={{ account.id }}">← Back to Inbox</a></p>
+<p><a href="/webmail?account_id={{ account.id }}&folder={{ current_folder }}">← Back to {{ current_folder_name }}</a></p>
 <dl>
   <dt>From</dt><dd>{{ from }}</dd>
   <dt>To</dt><dd>{{ to }}</dd>

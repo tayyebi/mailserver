@@ -1,10 +1,15 @@
 /* ── Desktop overrides (loaded via media="(min-width: 768px)") ── */
 
+/* ── Hide hamburger, restore horizontal nav ── */
+
+.nav-burger {
+  display: none;
+}
+
 /* ── Header: horizontal bar ── */
 
 header {
-  flex-direction: row;
-  align-items: center;
+  flex-wrap: nowrap;
   padding-block: 0;
   padding-inline: var(--space-lg);
   gap: var(--space-md);
@@ -16,16 +21,26 @@ header > strong {
 }
 
 header > small {
+  display: block;
   margin-inline-end: auto;
   margin-block-end: 0;
 }
 
-header nav {
+/* Nav always visible on desktop, horizontal */
+header nav,
+.nav-toggle:checked + header nav {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  inline-size: auto;
   gap: var(--space-xs);
+  padding-block: 0;
+  border-block-start: none;
+  order: 0;
 }
 
-header mark {
-  margin-inline-start: auto;
+header > mark {
+  margin-inline-start: 0;
 }
 
 /* ── Main: constrained width ── */
@@ -121,4 +136,16 @@ section > hgroup + a {
   article {
     padding: var(--space-lg);
   }
+}
+
+/* ── Webmail layout: side-by-side on desktop ── */
+
+.webmail-layout {
+  flex-direction: row;
+  align-items: flex-start;
+}
+
+.webmail-folders {
+  inline-size: 200px;
+  flex-shrink: 0;
 }

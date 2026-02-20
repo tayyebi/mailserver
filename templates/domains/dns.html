@@ -55,6 +55,49 @@
     <p><em>Generate a DKIM key to unlock signing coverage.</em></p>
     {% endif %}
 </section>
+
+<section>
+    <hgroup>
+        <small>Live DNS check</small>
+        <h2>PTR Record</h2>
+    </hgroup>
+    <dl>
+        <dt>Resolved IP</dt>
+        <dd>{% if dns_check.resolved_ip.is_empty() %}<em>Unable to resolve {{ hostname }}</em>{% else %}<code>{{ dns_check.resolved_ip }}</code>{% endif %}</dd>
+        <dt>PTR Hostname</dt>
+        <dd>{% if dns_check.ptr_hostname.is_empty() %}<em>—</em>{% else %}<code>{{ dns_check.ptr_hostname }}</code>{% endif %}</dd>
+        <dt>Status</dt>
+        <dd>
+            {% if dns_check.ptr_matches %}
+            <span class="dns-check-ok">✓ {{ dns_check.ptr_status }}</span>
+            {% else if dns_check.resolved_ip.is_empty() %}
+            <span class="dns-check-err">✗ {{ dns_check.ptr_status }}</span>
+            {% else %}
+            <span class="dns-check-warn">⚠ {{ dns_check.ptr_status }}</span>
+            {% endif %}
+        </dd>
+    </dl>
+</section>
+
+<section>
+    <hgroup>
+        <small>Live DNS check</small>
+        <h2>SPF Chain for {{ domain_name }}</h2>
+    </hgroup>
+    {% if !dns_check.spf_error.is_empty() %}
+    <p class="dns-check-warn">⚠ {{ dns_check.spf_error }}</p>
+    {% else %}
+    <div class="spf-chain">
+        {% for rec in dns_check.spf_chain %}
+        <div class="spf-entry" style="margin-inline-start: {{ rec.depth }}rem;">
+            <strong>{{ rec.domain }}</strong>
+            <code>{{ rec.raw }}</code>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</section>
+
 <aside>
     <h2>Reverse DNS</h2>
     <p>Ask your provider to point the PTR record for your public IP back to <code>{{ hostname }}</code>.</p>
