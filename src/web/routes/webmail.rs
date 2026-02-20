@@ -56,6 +56,7 @@ pub struct ComposeForm {
     pub cc: String,
     #[serde(default)]
     pub bcc: String,
+    #[serde(default)]
     pub subject: String,
     #[serde(default)]
     pub reply_to: String,
@@ -65,6 +66,10 @@ pub struct ComposeForm {
     pub priority: String,
     #[serde(default)]
     pub sender_name: String,
+    #[serde(default)]
+    pub from_address: String,
+    #[serde(default)]
+    pub body_format: String,
     #[serde(default)]
     pub custom_headers: String,
     pub body: String,
@@ -475,7 +480,9 @@ pub async fn send_email(
             let domain = acct.domain_name.as_deref().unwrap_or("unknown");
             let email_addr = format!("{}@{}", acct.username, domain);
             let sender_name = sanitize_header_value(form.sender_name.trim());
-            let from_addr = if sender_name.is_empty() {
+            let from_addr = if !form.from_address.trim().is_empty() {
+                sanitize_header_value(form.from_address.trim())
+            } else if sender_name.is_empty() {
                 email_addr.clone()
             } else {
                 format!("{} <{}>", sender_name, email_addr)
@@ -599,24 +606,91 @@ pub async fn send_email(
                 }
             }
 
-            let email = match builder.body(form.body.clone())
-            {
-                Ok(email) => {
-                    send_log.push("Email message built successfully".to_string());
-                    email
+            let body_format = form.body_format.as_str();
+            send_log.push(format!("Body format: {}", if body_format.is_empty() { "plain" } else { body_format }));
+            use lettre::message::{MultiPart, SinglePart};
+            use lettre::message::header::ContentType;
+
+            let email = match body_format {
+                "html" => {
+                    match builder.singlepart(
+                        SinglePart::builder()
+                            .header(ContentType::TEXT_HTML)
+                            .body(form.body.clone()),
+                    ) {
+                        Ok(email) => {
+                            send_log.push("Email message built successfully (HTML)".to_string());
+                            email
+                        }
+                        Err(e) => {
+                            send_log.push(format!("Failed to build email: {}", e));
+                            error!("[web] failed to build email: {}", e);
+                            flash = Some(format!("Failed to build email: {}", e));
+                            let tmpl = ComposeTemplate {
+                                nav_active: "Webmail",
+                                flash: flash.as_deref(),
+                                accounts,
+                                selected_account: Some(acct.clone()),
+                                send_log,
+                            };
+                            return Html(tmpl.render().unwrap());
+                        }
+                    }
                 }
-                Err(e) => {
-                    send_log.push(format!("Failed to build email: {}", e));
-                    error!("[web] failed to build email: {}", e);
-                    flash = Some(format!("Failed to build email: {}", e));
-                    let tmpl = ComposeTemplate {
-                        nav_active: "Webmail",
-                        flash: flash.as_deref(),
-                        accounts,
-                        selected_account: Some(acct.clone()),
-                        send_log,
-                    };
-                    return Html(tmpl.render().unwrap());
+                "both" => {
+                    match builder.multipart(
+                        MultiPart::alternative()
+                            .singlepart(
+                                SinglePart::builder()
+                                    .header(ContentType::TEXT_PLAIN)
+                                    .body(form.body.clone()),
+                            )
+                            .singlepart(
+                                SinglePart::builder()
+                                    .header(ContentType::TEXT_HTML)
+                                    .body(form.body.clone()),
+                            ),
+                    ) {
+                        Ok(email) => {
+                            send_log.push("Email message built successfully (plain + HTML)".to_string());
+                            email
+                        }
+                        Err(e) => {
+                            send_log.push(format!("Failed to build email: {}", e));
+                            error!("[web] failed to build email: {}", e);
+                            flash = Some(format!("Failed to build email: {}", e));
+                            let tmpl = ComposeTemplate {
+                                nav_active: "Webmail",
+                                flash: flash.as_deref(),
+                                accounts,
+                                selected_account: Some(acct.clone()),
+                                send_log,
+                            };
+                            return Html(tmpl.render().unwrap());
+                        }
+                    }
+                }
+                // "plain" or any unrecognised value — default to plain text
+                _ => {
+                    match builder.body(form.body.clone()) {
+                        Ok(email) => {
+                            send_log.push("Email message built successfully (plain text)".to_string());
+                            email
+                        }
+                        Err(e) => {
+                            send_log.push(format!("Failed to build email: {}", e));
+                            error!("[web] failed to build email: {}", e);
+                            flash = Some(format!("Failed to build email: {}", e));
+                            let tmpl = ComposeTemplate {
+                                nav_active: "Webmail",
+                                flash: flash.as_deref(),
+                                accounts,
+                                selected_account: Some(acct.clone()),
+                                send_log,
+                            };
+                            return Html(tmpl.render().unwrap());
+                        }
+                    }
                 }
             };
 
