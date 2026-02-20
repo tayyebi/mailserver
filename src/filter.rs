@@ -111,7 +111,14 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
         }
     }
 
-    // 4. Reinject via SMTP to 127.0.0.1:10025
+    // 4. Strip invalid DKIM-Signature headers when email was modified, so OpenDKIM
+    //    can re-sign the modified content cleanly on the reinject port.
+    if modified != email_data {
+        debug!("[filter] email was modified, stripping DKIM-Signature headers before reinjection");
+        modified = strip_dkim_signatures(&modified);
+    }
+
+    // 5. Reinject via SMTP to 127.0.0.1:10025
     info!("[filter] reinjecting email via SMTP to 127.0.0.1:10025");
     if let Err(e) = reinject_smtp(&modified, sender, recipients) {
         warn!(
@@ -261,4 +268,137 @@ fn read_response(stream: &mut std::net::TcpStream, buf: &mut [u8]) -> io::Result
     use std::io::Read;
     let n = stream.read(buf)?;
     Ok(String::from_utf8_lossy(&buf[..n]).to_string())
+}
+
+/// Remove all DKIM-Signature headers (including folded continuations) from an email.
+///
+/// Called when the content filter modifies an email body so that the existing
+/// DKIM signatures — which were computed over the original content — are stripped
+/// before reinjection.  OpenDKIM will then produce a fresh, valid signature for
+/// the modified content on the reinject port (127.0.0.1:10025).
+fn strip_dkim_signatures(email: &str) -> String {
+    // Detect line-ending style and the corresponding header/body separator.
+    let eol: &str = if email.contains("\r\n") { "\r\n" } else { "\n" };
+    let sep: &str = if eol == "\r\n" { "\r\n\r\n" } else { "\n\n" };
+
+    // Split the email into headers and body at the first blank line.
+    let (header_section, body_section) = match email.find(sep) {
+        Some(pos) => (&email[..pos], &email[pos + sep.len()..]),
+        None => return email.to_string(),
+    };
+
+    let mut result = String::with_capacity(email.len());
+    let mut skip = false;
+
+    for line in header_section.split(eol) {
+        if line.is_empty() {
+            continue;
+        }
+        // A folded header continuation starts with whitespace.
+        if line.starts_with(' ') || line.starts_with('\t') {
+            if !skip {
+                result.push_str(line);
+                result.push_str(eol);
+            }
+            continue;
+        }
+        // New header field — "DKIM-Signature:" is exactly 15 characters.
+        skip = line.len() >= 15 && line[..15].eq_ignore_ascii_case("dkim-signature:");
+        if !skip {
+            result.push_str(line);
+            result.push_str(eol);
+        }
+    }
+
+    // Re-attach the blank-line separator and the body verbatim.
+    result.push_str(eol);
+    result.push_str(body_section);
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_dkim_signatures_removes_single_signature() {
+        let email = concat!(
+            "From: sender@example.com\r\n",
+            "DKIM-Signature: v=1; a=rsa-sha256; d=example.com; s=default;\r\n",
+            "\tb=abc123;\r\n",
+            "Subject: Hello\r\n",
+            "\r\n",
+            "Body text.\r\n"
+        );
+        let result = strip_dkim_signatures(email);
+        assert!(!result.contains("DKIM-Signature"));
+        assert!(!result.contains("b=abc123"));
+        assert!(result.contains("From: sender@example.com"));
+        assert!(result.contains("Subject: Hello"));
+        assert!(result.contains("Body text."));
+    }
+
+    #[test]
+    fn strip_dkim_signatures_removes_multiple_signatures() {
+        let email = concat!(
+            "From: sender@example.com\n",
+            "DKIM-Signature: v=1; a=rsa-sha256; d=example.com; s=s1;\n",
+            "\tb=sig1;\n",
+            "DKIM-Signature: v=1; a=rsa-sha256; d=example.com; s=s2;\n",
+            "\tb=sig2;\n",
+            "Subject: Test\n",
+            "\n",
+            "Body.\n"
+        );
+        let result = strip_dkim_signatures(email);
+        assert!(!result.contains("DKIM-Signature"));
+        assert!(!result.contains("sig1"));
+        assert!(!result.contains("sig2"));
+        assert!(result.contains("From: sender@example.com"));
+        assert!(result.contains("Subject: Test"));
+        assert!(result.contains("Body."));
+    }
+
+    #[test]
+    fn strip_dkim_signatures_preserves_email_without_dkim() {
+        let email = concat!(
+            "From: sender@example.com\n",
+            "Subject: No DKIM here\n",
+            "\n",
+            "Body text.\n"
+        );
+        let result = strip_dkim_signatures(email);
+        assert!(result.contains("From: sender@example.com"));
+        assert!(result.contains("Subject: No DKIM here"));
+        assert!(result.contains("Body text."));
+    }
+
+    #[test]
+    fn strip_dkim_signatures_keeps_other_headers_intact() {
+        let email = concat!(
+            "From: a@b.com\n",
+            "DKIM-Signature: v=1; b=xyz;\n",
+            "To: c@d.com\n",
+            "\n",
+            "Hello.\n"
+        );
+        let result = strip_dkim_signatures(email);
+        assert!(result.contains("From: a@b.com"));
+        assert!(result.contains("To: c@d.com"));
+        assert!(!result.contains("DKIM-Signature"));
+        assert!(!result.contains("b=xyz"));
+    }
+
+    #[test]
+    fn strip_dkim_signatures_preserves_crlf_line_endings() {
+        let email = concat!(
+            "From: a@b.com\r\n",
+            "DKIM-Signature: v=1; b=xyz;\r\n",
+            "To: c@d.com\r\n",
+            "\r\n",
+            "Hello.\r\n"
+        );
+        let result = strip_dkim_signatures(email);
+        assert_eq!(result, "From: a@b.com\r\nTo: c@d.com\r\n\r\nHello.\r\n");
+    }
 }
