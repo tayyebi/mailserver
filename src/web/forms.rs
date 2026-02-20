@@ -127,6 +127,13 @@ pub struct Fail2banGlobalToggleForm {
 }
 
 #[derive(Deserialize)]
+pub struct SpamblToggleForm {
+    pub id: i64,
+    #[serde(default)]
+    pub enabled: Option<String>,
+}
+
+#[derive(Deserialize)]
 pub struct UnsubscribeQuery {
     #[serde(default)]
     pub token: String,

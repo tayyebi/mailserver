@@ -1,0 +1,51 @@
+{% extends "layout.html" %}
+{% block title %}Spam Blocklists{% endblock %}
+{% block content %}
+<section>
+    <hgroup>
+        <small>Incoming mail protection</small>
+        <h1>Spam Blocklists</h1>
+    </hgroup>
+    <p>Enable or disable DNS-based block lists (DNSBLs) used by Postfix to reject incoming email from known spam sources. Changes take effect immediately after saving.</p>
+</section>
+
+<section>
+    <hgroup>
+        <small>Available blocklists</small>
+        <h2>Blocklist Settings</h2>
+    </hgroup>
+    <details>
+        <summary>How DNSBLs work</summary>
+        <p>When an inbound connection arrives, Postfix queries each enabled blocklist to see if the connecting IP address is listed as a known spam source. If found, the message is rejected at the SMTP level before any content is transferred. Enabling more lists increases protection but may occasionally reject legitimate mail — start conservatively and monitor your mail logs.</p>
+    </details>
+    <table>
+        <thead>
+            <tr><th>Name</th><th>Hostname</th><th>Status</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+        {% if lists.is_empty() %}
+            <tr><td colspan="4">No blocklists configured.</td></tr>
+        {% else %}
+            {% for list in lists %}
+            <tr>
+                <td><strong>{{ list.name }}</strong></td>
+                <td><code>{{ list.hostname }}</code></td>
+                <td><mark>{% if list.enabled %}Enabled{% else %}Disabled{% endif %}</mark></td>
+                <td>
+                    <form method="post" action="/spambl/toggle">
+                        <input type="hidden" name="id" value="{{ list.id }}">
+                        <input type="hidden" name="enabled" value="{% if list.enabled %}{% else %}on{% endif %}">
+                        {% if list.enabled %}
+                        <button type="submit" class="secondary">Disable</button>
+                        {% else %}
+                        <button type="submit">Enable</button>
+                        {% endif %}
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        {% endif %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}
