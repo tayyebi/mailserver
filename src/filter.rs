@@ -238,7 +238,8 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
             // Signal the webhook thread to not fire (both injects failed).
             let _ = modified_tx.send(None);
             let _ = webhook_handle.join();
-            return;
+            // Tell Postfix to retry delivery rather than silently dropping the message.
+            std::process::exit(75); // EX_TEMPFAIL
         }
         info!("[filter] unmodified fallback email reinjected successfully");
         // Fallback succeeded: the email sent is the original (unmodified).
@@ -335,78 +336,115 @@ fn extract_header(email: &str, header_name: &str) -> Option<String> {
 }
 
 fn reinject_smtp(email: &str, sender: &str, recipients: &[String]) -> io::Result<()> {
-    use std::io::Write;
+    use std::io::{BufReader, Write};
     use std::net::TcpStream;
 
     debug!("[filter] connecting to 127.0.0.1:10025 for reinjection");
-    let mut stream = TcpStream::connect("127.0.0.1:10025")?;
+    let stream = TcpStream::connect("127.0.0.1:10025")?;
+    // Clone the stream so we can have a buffered reader and a writer on the same socket.
+    let mut writer = stream.try_clone()?;
+    let mut reader = BufReader::new(stream);
     debug!("[filter] connected to reinjection port");
 
-    let mut buf = [0u8; 512];
-
     // Read greeting
-    let greeting = read_response(&mut stream, &mut buf)?;
+    let greeting = read_smtp_response(&mut reader)?;
     debug!("[filter] SMTP greeting: {}", greeting.trim());
+    smtp_expect(&greeting, "220")?;
 
     // EHLO
-    write!(stream, "EHLO localhost\r\n")?;
-    stream.flush()?;
-    let resp = read_response(&mut stream, &mut buf)?;
+    writer.write_all(b"EHLO localhost\r\n")?;
+    let resp = read_smtp_response(&mut reader)?;
     debug!("[filter] EHLO response: {}", resp.trim());
+    smtp_expect(&resp, "250")?;
 
     // MAIL FROM
     debug!("[filter] sending MAIL FROM:<{}>", sender);
-    write!(stream, "MAIL FROM:<{}>\r\n", sender)?;
-    stream.flush()?;
-    let resp = read_response(&mut stream, &mut buf)?;
+    writer.write_all(format!("MAIL FROM:<{}>\r\n", sender).as_bytes())?;
+    let resp = read_smtp_response(&mut reader)?;
     debug!("[filter] MAIL FROM response: {}", resp.trim());
+    smtp_expect(&resp, "250")?;
 
     // RCPT TO for each recipient
     for rcpt in recipients {
         debug!("[filter] sending RCPT TO:<{}>", rcpt);
-        write!(stream, "RCPT TO:<{}>\r\n", rcpt)?;
-        stream.flush()?;
-        let resp = read_response(&mut stream, &mut buf)?;
+        writer.write_all(format!("RCPT TO:<{}>\r\n", rcpt).as_bytes())?;
+        let resp = read_smtp_response(&mut reader)?;
         debug!("[filter] RCPT TO response: {}", resp.trim());
+        smtp_expect(&resp, "250")?;
     }
 
     // DATA
     debug!("[filter] sending DATA command");
-    write!(stream, "DATA\r\n")?;
-    stream.flush()?;
-    let resp = read_response(&mut stream, &mut buf)?;
+    writer.write_all(b"DATA\r\n")?;
+    let resp = read_smtp_response(&mut reader)?;
     debug!("[filter] DATA response: {}", resp.trim());
+    smtp_expect(&resp, "354")?;
 
     // Send email body (dot-stuff lines starting with .)
     debug!("[filter] sending email body ({} bytes)", email.len());
     for line in email.lines() {
         if line.starts_with('.') {
-            write!(stream, ".{}\r\n", line)?;
+            writer.write_all(format!(".{}\r\n", line).as_bytes())?;
         } else {
-            write!(stream, "{}\r\n", line)?;
+            writer.write_all(format!("{}\r\n", line).as_bytes())?;
         }
     }
 
     // End DATA
-    write!(stream, ".\r\n")?;
-    stream.flush()?;
-    let resp = read_response(&mut stream, &mut buf)?;
+    writer.write_all(b".\r\n")?;
+    let resp = read_smtp_response(&mut reader)?;
     debug!("[filter] end-of-data response: {}", resp.trim());
+    smtp_expect(&resp, "250")?;
 
     // QUIT
-    write!(stream, "QUIT\r\n")?;
-    stream.flush()?;
-    let resp = read_response(&mut stream, &mut buf)?;
+    writer.write_all(b"QUIT\r\n")?;
+    let resp = read_smtp_response(&mut reader)?;
     debug!("[filter] QUIT response: {}", resp.trim());
 
     info!("[filter] SMTP reinjection completed for sender={}", sender);
     Ok(())
 }
 
-fn read_response(stream: &mut std::net::TcpStream, buf: &mut [u8]) -> io::Result<String> {
-    use std::io::Read;
-    let n = stream.read(buf)?;
-    Ok(String::from_utf8_lossy(&buf[..n]).to_string())
+/// Read a complete SMTP response (possibly multi-line) from a buffered reader.
+///
+/// SMTP multi-line responses use the format `NNN-text\r\n` for continuation lines
+/// and `NNN text\r\n` (space instead of dash) for the final line. This function
+/// reads until it receives the final line, ensuring the complete response is consumed
+/// even if it spans multiple TCP segments.
+fn read_smtp_response(reader: &mut impl std::io::BufRead) -> io::Result<String> {
+    let mut response = String::new();
+    loop {
+        let mut line = String::new();
+        let n = reader.read_line(&mut line)?;
+        if n == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "SMTP server closed connection unexpectedly",
+            ));
+        }
+        response.push_str(&line);
+        // The final line of an SMTP response has a space at position 3 (e.g. "250 OK").
+        // Continuation lines have a dash at position 3 (e.g. "250-PIPELINING").
+        if line.len() >= 4 && line.as_bytes()[3] == b' ' {
+            return Ok(response);
+        }
+    }
+}
+
+/// Return an error if the SMTP response does not start with the expected code prefix.
+fn smtp_expect(response: &str, expected_code: &str) -> io::Result<()> {
+    if response.starts_with(expected_code) {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!(
+                "unexpected SMTP response (expected {}): {}",
+                expected_code,
+                response.trim()
+            ),
+        ))
+    }
 }
 
 struct EmailMetadata {
@@ -617,6 +655,68 @@ fn check_rbl(ip: &str, rbl_host: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── read_smtp_response tests ──
+
+    #[test]
+    fn read_smtp_response_single_line() {
+        let input = b"220 mail.example.com ESMTP Postfix\r\n";
+        let mut reader = std::io::BufReader::new(input.as_ref());
+        let result = read_smtp_response(&mut reader).unwrap();
+        assert_eq!(result, "220 mail.example.com ESMTP Postfix\r\n");
+    }
+
+    #[test]
+    fn read_smtp_response_multi_line_ehlo() {
+        let input = b"250-mail.example.com\r\n250-PIPELINING\r\n250-SIZE 10240000\r\n250 SMTPUTF8\r\n";
+        let mut reader = std::io::BufReader::new(input.as_ref());
+        let result = read_smtp_response(&mut reader).unwrap();
+        // Should read all four lines and stop at "250 " (final line).
+        assert!(result.contains("250-PIPELINING\r\n"));
+        assert!(result.contains("250 SMTPUTF8\r\n"));
+    }
+
+    #[test]
+    fn read_smtp_response_eof_returns_error() {
+        let input: &[u8] = b"";
+        let mut reader = std::io::BufReader::new(input);
+        let result = read_smtp_response(&mut reader);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+    }
+
+    #[test]
+    fn read_smtp_response_partial_then_eof_returns_error() {
+        // Incomplete response (no space at position 3, server closed mid-stream)
+        let input = b"421-Service\r\n";
+        let mut reader = std::io::BufReader::new(input.as_ref());
+        let result = read_smtp_response(&mut reader);
+        // After reading the continuation line, EOF is hit before the final line.
+        assert!(result.is_err());
+    }
+
+    // ── smtp_expect tests ──
+
+    #[test]
+    fn smtp_expect_accepts_matching_code() {
+        assert!(smtp_expect("250 OK\r\n", "250").is_ok());
+        assert!(smtp_expect("354 End data\r\n", "354").is_ok());
+        assert!(smtp_expect("220 mail.example.com ESMTP\r\n", "220").is_ok());
+    }
+
+    #[test]
+    fn smtp_expect_rejects_wrong_code() {
+        let err = smtp_expect("550 User unknown\r\n", "250").unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::Other);
+        assert!(err.to_string().contains("550 User unknown"));
+    }
+
+    #[test]
+    fn smtp_expect_rejects_error_response() {
+        assert!(smtp_expect("421 Service unavailable\r\n", "220").is_err());
+        assert!(smtp_expect("554 Relay denied\r\n", "250").is_err());
+    }
 
     #[test]
     fn strip_dkim_signatures_removes_single_signature() {
