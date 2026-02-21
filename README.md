@@ -1,14 +1,200 @@
-# Mailserver
+<div align="center">
 
-Single-container mail server with built-in admin dashboard.
+# 📬 Mailserver
 
-> LESS MOVING PARTS, LESS FAILURE.
+**A fully self-hosted mail server in a single Docker container.**
 
-Alpine + Postfix + Dovecot + OpenDKIM + Rust.
+Send, receive, and manage email — with a sleek web admin panel, built-in webmail, open tracking, fail2ban protection, and DKIM signing. No complex setup. No third-party dependencies.
 
-![Dashboard Screenshot](https://github.com/user-attachments/assets/da6ee91d-dfc2-4622-98fd-26622215a500)
+[![Docker Image](https://img.shields.io/badge/ghcr.io-tayyebi%2Fmailserver-blue?logo=docker)](https://ghcr.io/tayyebi/mailserver)
+[![License](https://img.shields.io/github/license/tayyebi/mailserver)](LICENSE)
 
-## Architecture
+> **Less moving parts. Less failure.**
+
+Alpine · Postfix · Dovecot · OpenDKIM · Rust · PostgreSQL — all in one container.
+
+![Admin Dashboard](https://github.com/user-attachments/assets/da6ee91d-dfc2-4622-98fd-26622215a500)
+
+</div>
+
+---
+
+## ✨ Features
+
+| Feature | Description |
+|---|---|
+| 📋 **Admin Dashboard** | Clean web UI to manage every aspect of your mail server |
+| 🌐 **Domain Management** | Add unlimited mail domains with one-click DKIM key generation |
+| 👤 **User Accounts** | Create mailboxes with passwords and storage quotas |
+| 🔀 **Aliases & Catch-all** | Forward addresses, wildcards (`*@domain.com`), and routing rules |
+| 📡 **Open Tracking** | Pixel-based email open tracking with per-message reports |
+| 🌐 **Built-in Webmail** | Read, compose, and manage email directly from your browser |
+| 🔒 **Fail2ban Protection** | Auto-ban IPs on repeated auth failures; manage whitelist & blacklist |
+| 🛡️ **2FA (TOTP)** | Two-factor authentication for the admin panel |
+| 📦 **Queue Management** | View and flush the Postfix mail queue from the dashboard |
+| 🗑️ **Unsubscribe Management** | Track and manage unsubscribe requests |
+| 🔍 **DNSBL / Spam Blocking** | DNS block-list management integrated with Postfix |
+| 📄 **DNS Runbook** | Per-domain DNS record viewer with SPF, DKIM, DMARC guidance |
+| 🔔 **Webhook Notifications** | Send HTTP webhooks on processed outbound emails |
+| ⚙️ **Config Viewer** | Inspect live Postfix/Dovecot/OpenDKIM configs from the UI |
+
+---
+
+## 🚀 Quick Start
+
+### Option A — Docker Compose (recommended)
+
+Docker Compose starts Mailserver together with a PostgreSQL database automatically:
+
+```bash
+cp .env.example .env
+# Edit .env to set your HOSTNAME and other settings
+docker compose up -d
+```
+
+Then open **http://your-server:8080** in your browser.
+
+### Option B — Docker Run (bring your own PostgreSQL)
+
+If you already have a PostgreSQL instance, you can run the container directly:
+
+```bash
+docker run -d --name mailserver \
+  -p 25:25 -p 587:587 -p 465:465 -p 2525:2525 \
+  -p 143:143 -p 993:993 -p 110:110 -p 995:995 \
+  -p 8080:8080 \
+  -v maildata:/data \
+  -e HOSTNAME=mail.example.com \
+  -e DATABASE_URL=postgres://mailserver:mailserver@your-pg-host/mailserver \
+  ghcr.io/tayyebi/mailserver:main
+```
+
+---
+
+## 🔑 First Login
+
+| Field | Value |
+|---|---|
+| **Username** | `admin` |
+| **Password** | `admin` |
+
+> ⚠️ **Change your password immediately** after first login via **Settings**.
+
+### Two-Factor Authentication (2FA)
+
+Enable TOTP-based 2FA from the Settings page. Once enabled, append your 6-digit code to your password at login.
+
+**Example:** password `secret` + TOTP `123456` → enter `secret123456`
+
+---
+
+## 🌐 Admin Dashboard Walkthrough
+
+### Domains
+
+Add your mail domains, generate DKIM signing keys with one click, and get a ready-to-use DNS runbook showing every record you need (MX, SPF, DKIM, DMARC, PTR).
+
+### Accounts
+
+Create email accounts for your users. Set display names, passwords, and per-account storage quotas.
+
+### Aliases & Catch-all
+
+Create forwarding rules between addresses. Use `*@yourdomain.com` as a catch-all to capture mail sent to any address on the domain. Toggle open tracking per alias.
+
+### Open Tracking
+
+When tracking is enabled on an alias, outgoing emails get a tiny invisible tracking pixel injected into the HTML body. Every time the recipient opens the email, a record is created. View detailed per-message open reports from the **Tracking** section.
+
+### Webmail
+
+A lightweight webmail client is built right into the admin panel. Browse folders, read messages, compose new emails (with CC, BCC, Reply-To, priority, and custom headers), and delete messages — all without leaving the browser.
+
+### Fail2ban
+
+Mailserver includes a built-in fail2ban system that watches `/var/log/mail.log` for repeated authentication failures on SMTP, IMAP, and POP3. Offending IPs are automatically banned. You can:
+
+- Configure thresholds and ban duration per service
+- Manually ban or unban individual IPs or CIDR ranges
+- Maintain a permanent whitelist and blacklist
+- Review a full audit log of all ban/unban events
+
+### Queue
+
+Inspect the live Postfix mail queue and flush stuck messages directly from the admin panel — no SSH required.
+
+### DNS Check
+
+Per-domain DNS health checker with individual shortcut links for each record type. Catch delivery problems before they affect your users.
+
+### Config Viewer
+
+Inspect the live Postfix, Dovecot, and OpenDKIM configuration files generated from your database — useful for debugging.
+
+---
+
+## 🔌 Port Reference
+
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| `25` | SMTP | Inbound mail from the Internet |
+| `587` | SMTP Submission | Outbound mail (authenticated) |
+| `465` | SMTPS | Outbound mail over TLS (authenticated) |
+| `2525` | SMTP Alt | Alternative submission port |
+| `143` | IMAP | Email retrieval (STARTTLS) |
+| `993` | IMAPS | Email retrieval over TLS |
+| `110` | POP3 | Email retrieval (STARTTLS) |
+| `995` | POP3S | Email retrieval over TLS |
+| `8080` | HTTP | Admin dashboard & webmail |
+
+---
+
+## ⚙️ Configuration
+
+All settings are managed from the admin dashboard. The only file you need to edit before starting is `.env`:
+
+| Variable | Default | Description |
+|---|---|---|
+| `HOSTNAME` | `mail.example.com` | Fully-qualified domain name of the mail server |
+| `HTTP_PORT` | `8080` | Admin dashboard port |
+| `SMTP_PORT` | `25` | Inbound SMTP port |
+| `SUBMISSION_PORT` | `587` | Submission port |
+| `DATABASE_URL` | `postgres://mailserver:mailserver@localhost/mailserver` | PostgreSQL connection string |
+| `SEED_USER` | `admin` | Initial admin username |
+| `SEED_PASS` | `admin` | Initial admin password |
+| `TZ` | `UTC` | Container timezone |
+
+---
+
+## 💾 Persistent Data
+
+All mail data is stored in the `maildata` Docker volume mounted at `/data`:
+
+| Path | Contents |
+|---|---|
+| `/data/ssl/` | TLS certificates (auto-generated self-signed on first start) |
+| `/data/dkim/` | DKIM signing keys |
+| `/data/mail/` | User mailboxes (Maildir format) |
+
+The PostgreSQL database (accounts, domains, aliases, tracking data) is required by the mail server. When using Docker Compose, it runs in a separate `db` container with its data stored in the `maildb` volume. When running standalone, point `DATABASE_URL` to your own PostgreSQL instance.
+
+---
+
+## 🌍 DNS Setup
+
+After adding a domain in the admin panel, go to **Domains → DNS** to get the exact DNS records you need to publish:
+
+- **MX** — points incoming mail to your server
+- **SPF** — authorizes your server to send mail for the domain
+- **DKIM** — cryptographic signature for outbound mail (key generated in the dashboard)
+- **DMARC** — policy for handling SPF/DKIM failures
+- **PTR** — reverse DNS (set at your VPS provider)
+
+The dashboard shows copy-pasteable values for every record.
+
+---
+
+## 🏗️ Architecture
 
 ```mermaid
 graph LR
@@ -56,7 +242,7 @@ graph LR
     OpenDKIM --- DKIM
 ```
 
-## Email Flow
+## 📨 Email Flow
 
 ```mermaid
 sequenceDiagram
@@ -93,172 +279,3 @@ sequenceDiagram
     Sender->>Postfix: (later) recipient opens email
     Recipient->>Postgres: GET /pixel?id=... → record pixel_open
 ```
-
-## Database Schema (ERD)
-
-```mermaid
-erDiagram
-    admins {
-        INTEGER id PK
-        TEXT username UK
-        TEXT password_hash
-        TEXT totp_secret
-        INTEGER totp_enabled
-        TEXT created_at
-        TEXT updated_at
-    }
-
-    domains {
-        INTEGER id PK
-        TEXT domain UK
-        INTEGER active
-        TEXT dkim_selector
-        TEXT dkim_private_key
-        TEXT dkim_public_key
-        TEXT created_at
-        TEXT updated_at
-    }
-
-    accounts {
-        INTEGER id PK
-        INTEGER domain_id FK
-        TEXT username
-        TEXT password_hash
-        TEXT name
-        INTEGER active
-        INTEGER quota
-        TEXT created_at
-        TEXT updated_at
-    }
-
-    aliases {
-        INTEGER id PK
-        INTEGER domain_id FK
-        TEXT source
-        TEXT destination
-        INTEGER active
-        INTEGER tracking_enabled
-        TEXT created_at
-        TEXT updated_at
-    }
-
-    tracked_messages {
-        INTEGER id PK
-        TEXT message_id UK
-        TEXT sender
-        TEXT recipient
-        TEXT subject
-        INTEGER alias_id FK
-        TEXT created_at
-    }
-
-    pixel_opens {
-        INTEGER id PK
-        TEXT message_id FK
-        TEXT client_ip
-        TEXT user_agent
-        TEXT opened_at
-    }
-
-    domains ||--o{ accounts : "has"
-    domains ||--o{ aliases : "has"
-    aliases ||--o{ tracked_messages : "triggers"
-    tracked_messages ||--o{ pixel_opens : "records"
-```
-
-## Use Cases
-
-```mermaid
-graph TB
-    AdminUser((Admin))
-    EmailUser((Email User))
-    RemoteSender((Remote Sender))
-
-    subgraph Admin Dashboard
-        ManageDomains[Manage Domains]
-        GenerateDKIM[Generate DKIM Keys]
-        ViewDNS[View DNS Records]
-        ManageAccounts[Manage Accounts]
-        ManageAliases[Manage Aliases]
-        ViewTracking[View Tracking Reports]
-        ChangePassword[Change Password]
-        Configure2FA[Enable / Disable 2FA]
-    end
-
-    subgraph Mail Services
-        SendEmail[Send Email via SMTP]
-        ReceiveEmail[Receive Email]
-        ReadEmail[Read Email via IMAP / POP3]
-    end
-
-    AdminUser --> ManageDomains
-    AdminUser --> GenerateDKIM
-    AdminUser --> ViewDNS
-    AdminUser --> ManageAccounts
-    AdminUser --> ManageAliases
-    AdminUser --> ViewTracking
-    AdminUser --> ChangePassword
-    AdminUser --> Configure2FA
-
-    EmailUser --> SendEmail
-    EmailUser --> ReadEmail
-    RemoteSender --> ReceiveEmail
-```
-
-## Quick Start
-
-**Docker run (one-liner with persistent storage):**
-
-```
-docker run -d --name mailserver \
-  -p 25:25 -p 587:587 -p 465:465 -p 143:143 -p 993:993 -p 110:110 -p 995:995 -p 8080:8080 \
-  -v maildata:/data \
-  -e HOSTNAME=mail.example.com \
-  ghcr.io/tayyebi/mailserver:main
-```
-
-**Docker Compose:**
-
-```
-cp .env.example .env
-docker compose up -d
-```
-
-Open `http://your-host:8080` for the admin dashboard.
-
-## Default Admin
-
-- **Username:** `admin`
-- **Password:** `admin`
-
-Change the password immediately after first login via Settings.
-
-## Authentication
-
-The admin dashboard uses HTTP Basic Authentication (browser prompt).
-When 2FA is enabled, append your 6-digit TOTP code to your password.
-
-Example: if password is `secret` and TOTP code is `123456`, enter `secret123456`.
-
-## Configuration
-
-Ports and hostname are set in `.env`. Everything else is managed from the admin dashboard:
-
-- **Domains** — add mail domains, generate DKIM keys, view DNS records
-- **Accounts** — create email accounts with passwords and quotas
-- **Aliases** — set up email forwarding with per-alias tracking toggle
-- **Tracking** — view email open tracking reports
-- **Settings** — change admin password, enable/disable 2FA
-
-## Data
-
-All persistent data is stored in the `maildata` Docker volume:
-
-- `/data/ssl/` — TLS certificates (auto-generated self-signed)
-- `/data/dkim/` — DKIM signing keys
-- `/data/mail/` — mailboxes (Maildir format)
-- `/data/db/` — SQLite database
-
-## DNS
-
-Required DNS records for each domain are shown in the admin dashboard under Domains → DNS.
