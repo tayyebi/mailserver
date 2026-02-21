@@ -112,64 +112,6 @@ fn spf_chain_recursive(domain: &str, depth: usize) -> Vec<SpfRecord> {
     result
 }
 
-fn build_dns_check(hostname: &str, domain_name: &str) -> DnsCheckResult {
-    // Resolve hostname → IP
-    let resolved_ip = format!("{}:0", hostname)
-        .parse::<std::net::SocketAddr>()
-        .map(|a| a.ip().to_string())
-        .unwrap_or_else(|_| {
-            use std::net::ToSocketAddrs;
-            format!("{}:0", hostname)
-                .to_socket_addrs()
-                .ok()
-                .and_then(|mut it| it.next())
-                .map(|a| a.ip().to_string())
-                .unwrap_or_default()
-        });
-
-    // PTR check
-    let (ptr_hostname, ptr_matches, ptr_status) = if resolved_ip.is_empty() {
-        (
-            String::new(),
-            false,
-            "Could not resolve hostname to IP".to_string(),
-        )
-    } else {
-        match query_ptr_record(&resolved_ip) {
-            Some(ptr) => {
-                let matches = ptr.eq_ignore_ascii_case(hostname);
-                let status = if matches {
-                    format!("OK — {} → {}", resolved_ip, ptr)
-                } else {
-                    format!("Mismatch — PTR is \"{}\", expected \"{}\"", ptr, hostname)
-                };
-                (ptr, matches, status)
-            }
-            None => (
-                String::new(),
-                false,
-                format!("No PTR record for {}", resolved_ip),
-            ),
-        }
-    };
-
-    // Recursive SPF check
-    let spf_chain = spf_chain_recursive(domain_name, 0);
-    let spf_error = if spf_chain.is_empty() {
-        format!("No SPF record found for {}", domain_name)
-    } else {
-        String::new()
-    };
-
-    DnsCheckResult {
-        resolved_ip,
-        ptr_hostname,
-        ptr_matches,
-        ptr_status,
-        spf_chain,
-        spf_error,
-    }
-}
 
 // ── Templates ──
 
