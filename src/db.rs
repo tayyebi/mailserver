@@ -154,6 +154,20 @@ pub struct SpamblList {
     pub enabled: bool,
 }
 
+#[derive(Clone, Serialize)]
+pub struct WebhookLog {
+    pub id: i64,
+    pub url: String,
+    pub request_body: String,
+    pub response_status: Option<i32>,
+    pub response_body: String,
+    pub error: String,
+    pub duration_ms: Option<i64>,
+    pub sender: String,
+    pub subject: String,
+    pub created_at: String,
+}
+
 
 fn load_available_migrations() -> Vec<(String, String)> {
     let mut migrations = Vec::new();
@@ -1571,5 +1585,64 @@ impl Database {
             });
 
         rows.into_iter().map(|row| row.get(0)).collect()
+    }
+
+    // ── Webhook log methods ──
+
+    pub fn log_webhook(
+        &self,
+        url: &str,
+        request_body: &str,
+        response_status: Option<i32>,
+        response_body: &str,
+        error: &str,
+        duration_ms: i64,
+        sender: &str,
+        subject: &str,
+    ) {
+        debug!("[db] logging webhook execution url={}", url);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let _ = conn.execute(
+            "INSERT INTO webhook_logs (url, request_body, response_status, response_body, error, duration_ms, sender, subject, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+            &[&url, &request_body, &response_status, &response_body, &error, &duration_ms, &sender, &subject, &now()],
+        );
+    }
+
+    pub fn count_webhook_logs(&self) -> i64 {
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        conn.query_one("SELECT COUNT(*) FROM webhook_logs", &[])
+            .map(|row| row.get(0))
+            .unwrap_or(0)
+    }
+
+    pub fn list_webhook_logs(&self, limit: i64, offset: i64) -> Vec<WebhookLog> {
+        debug!("[db] listing webhook logs limit={} offset={}", limit, offset);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let rows = conn
+            .query(
+                "SELECT id, url, request_body, response_status, response_body, error, duration_ms, sender, subject, created_at
+                 FROM webhook_logs ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+                &[&limit, &offset],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list webhook logs: {}", e);
+                Vec::new()
+            });
+
+        rows.into_iter()
+            .map(|row| WebhookLog {
+                id: row.get(0),
+                url: row.get(1),
+                request_body: row.get::<_, Option<String>>(2).unwrap_or_default(),
+                response_status: row.get(3),
+                response_body: row.get::<_, Option<String>>(4).unwrap_or_default(),
+                error: row.get::<_, Option<String>>(5).unwrap_or_default(),
+                duration_ms: row.get(6),
+                sender: row.get::<_, Option<String>>(7).unwrap_or_default(),
+                subject: row.get::<_, Option<String>>(8).unwrap_or_default(),
+                created_at: row.get(9),
+            })
+            .collect()
     }
 }

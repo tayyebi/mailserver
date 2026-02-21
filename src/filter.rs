@@ -1,5 +1,6 @@
 use log::{debug, error, info, warn};
 use std::io::{self, Read};
+use std::sync::mpsc;
 
 use crate::db::Database;
 
@@ -189,6 +190,27 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
         message_id: message_id_header.clone(),
         size_bytes,
     };
+
+    // Spawn the webhook thread early so it can start in parallel with the reinject.
+    // A channel carries the final `modified` flag (None = don't fire, Some(bool) = fire).
+    let (modified_tx, modified_rx) = mpsc::channel::<Option<bool>>();
+    let webhook_handle = {
+        let url = webhook_url.clone();
+        let db_url_owned = db_url.to_string();
+        let sender_owned = sender.to_string();
+        let subject_owned = subject.clone();
+        std::thread::spawn(move || {
+            // Wait for the reinject outcome before making the HTTP call.
+            match modified_rx.recv() {
+                Ok(Some(was_modified)) => {
+                    send_webhook(&url, &db_url_owned, &meta, was_modified, &sender_owned, &subject_owned);
+                }
+                // None or channel closed means double-failure — skip webhook.
+                _ => {}
+            }
+        })
+    };
+
     if let Err(e) = reinject_smtp(&modified, sender, recipients) {
         warn!(
             "[filter] failed to reinject modified email: {}. attempting unmodified fallback",
@@ -196,17 +218,23 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
         );
         if let Err(e) = reinject_smtp(&email_data, sender, recipients) {
             error!("[filter] failed to reinject unmodified fallback email: {}", e);
+            // Signal the webhook thread to not fire (both injects failed).
+            let _ = modified_tx.send(None);
+            let _ = webhook_handle.join();
             return;
         }
         info!("[filter] unmodified fallback email reinjected successfully");
-        // Still fire webhook even on fallback
-        send_webhook(&webhook_url, &meta, false);
+        // Fallback succeeded: the email sent is the original (unmodified).
+        let _ = modified_tx.send(Some(false));
+        let _ = webhook_handle.join();
         return;
     }
     info!("[filter] email reinjected successfully");
 
-    // 7. Send webhook notification if configured
-    send_webhook(&webhook_url, &meta, email_was_modified);
+    // Signal webhook thread with the actual modified flag; it will fire the HTTP call.
+    let _ = modified_tx.send(Some(email_was_modified));
+    // Wait for the webhook thread to complete before the process exits.
+    let _ = webhook_handle.join();
 }
 
 fn inject_headers(email: &str, headers: &str) -> String {
@@ -376,7 +404,7 @@ struct EmailMetadata {
     size_bytes: usize,
 }
 
-fn send_webhook(webhook_url: &str, meta: &EmailMetadata, modified: bool) {
+fn send_webhook(webhook_url: &str, db_url: &str, meta: &EmailMetadata, modified: bool, sender: &str, subject: &str) {
     if webhook_url.is_empty() {
         return;
     }
@@ -396,27 +424,59 @@ fn send_webhook(webhook_url: &str, meta: &EmailMetadata, modified: bool) {
         "size_bytes": meta.size_bytes,
         "modified": modified,
     });
+    let request_body = payload.to_string();
 
     debug!("[filter] sending webhook to {}", webhook_url);
-    match reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-    {
-        Ok(client) => match client.post(webhook_url).json(&payload).send() {
-            Ok(resp) => {
-                info!(
-                    "[filter] webhook delivered to {} status={}",
-                    webhook_url,
-                    resp.status()
-                );
-            }
+    let start = std::time::Instant::now();
+
+    let (response_status, response_body, error) =
+        match reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+        {
+            Ok(client) => match client.post(webhook_url).json(&payload).send() {
+                Ok(resp) => {
+                    let status = resp.status().as_u16() as i32;
+                    let body = resp.text().unwrap_or_default();
+                    // Truncate response body to 2 KB for storage (char-boundary safe)
+                    let body_truncated = if body.len() > 2048 {
+                        let mut end = 2048;
+                        while !body.is_char_boundary(end) { end -= 1; }
+                        body[..end].to_string()
+                    } else {
+                        body
+                    };
+                    info!(
+                        "[filter] webhook delivered to {} status={}",
+                        webhook_url, status
+                    );
+                    (Some(status), body_truncated, String::new())
+                }
+                Err(e) => {
+                    warn!("[filter] webhook delivery failed to {}: {}", webhook_url, e);
+                    (None, String::new(), e.to_string())
+                }
+            },
             Err(e) => {
-                warn!("[filter] webhook delivery failed to {}: {}", webhook_url, e);
+                warn!("[filter] failed to build HTTP client for webhook: {}", e);
+                (None, String::new(), e.to_string())
             }
-        },
-        Err(e) => {
-            warn!("[filter] failed to build HTTP client for webhook: {}", e);
-        }
+        };
+
+    let duration_ms = start.elapsed().as_millis() as i64;
+
+    // Log the execution to the database (best-effort — don't let logging failures surface).
+    if let Ok(db) = std::panic::catch_unwind(|| Database::open(db_url)) {
+        db.log_webhook(
+            webhook_url,
+            &request_body,
+            response_status,
+            &response_body,
+            &error,
+            duration_ms,
+            sender,
+            subject,
+        );
     }
 }
 

@@ -96,6 +96,10 @@
   </label>
   <button type="submit">Save Webhook URL</button>
 </form>
+<form method="post" action="/settings/webhook/test" style="margin-top:0.5rem">
+  <button type="submit">Send Test Webhook</button>
+  <small><em>💡 Save the URL above before testing.</em></small>
+</form>
 
 <h2>Service Management</h2>
 <form method="post" action="/settings/restart-services" onsubmit="return confirm('This will restart Postfix, Dovecot, and OpenDKIM. Mail delivery will be briefly interrupted. Continue?')">
