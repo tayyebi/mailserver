@@ -326,10 +326,12 @@ pub fn generate_sender_login_maps(db: &Database) {
     info!("[config] generating /etc/postfix/sender_login_maps");
     let entries = db.get_sender_login_map();
 
-    // Group by alias source: each alias source maps to all account emails on the same domain
+    // Group by alias source: normalize wildcards (*@domain → @domain) so Postfix
+    // can use them for wildcard lookups in smtpd_sender_login_maps.
     let mut map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
     for (alias_source, account_email) in &entries {
-        map.entry(alias_source.clone())
+        let normalized_source = normalize_virtual_alias_source(alias_source, None);
+        map.entry(normalized_source)
             .or_default()
             .push(account_email.clone());
     }
@@ -779,6 +781,29 @@ mod tests {
         assert!(
             template.contains("smtp      unix  -       -       n       -       -       smtp"),
             "master.cf template must include the smtp unix transport for outbound mail delivery"
+        );
+    }
+
+    #[test]
+    fn sender_login_maps_normalizes_wildcard_sources() {
+        // Postfix smtpd_sender_login_maps uses @domain format for wildcard lookups.
+        // Wildcard alias sources stored as *@domain must be normalized to @domain.
+        assert_eq!(
+            normalize_virtual_alias_source("*@gordarg.com", None),
+            "@gordarg.com"
+        );
+        assert_eq!(
+            normalize_virtual_alias_source("*@tyyi.net", None),
+            "@tyyi.net"
+        );
+        // Specific addresses must remain unchanged
+        assert_eq!(
+            normalize_virtual_alias_source("info@gordarg.com", None),
+            "info@gordarg.com"
+        );
+        assert_eq!(
+            normalize_virtual_alias_source("m@tyyi.net", None),
+            "m@tyyi.net"
         );
     }
 

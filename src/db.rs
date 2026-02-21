@@ -857,18 +857,20 @@ impl Database {
     }
 
     /// Returns a list of (alias_source, account_email) for building sender_login_maps.
-    /// An account owns an alias if they share the same domain_id.
+    /// Only the account that is the destination of the alias is included, preventing
+    /// other domain accounts from being granted access to aliases they don't own.
     pub fn get_sender_login_map(&self) -> Vec<(String, String)> {
         debug!("[db] building sender login map");
         let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
         let rows = conn
             .query(
-                "SELECT al.source, (ac.username || '@' || d.domain) AS account_email
+                "SELECT al.source, al.destination AS account_email
                  FROM aliases al
                  JOIN domains d ON al.domain_id = d.id
-                 JOIN accounts ac ON ac.domain_id = al.domain_id
+                 JOIN accounts ac ON ac.domain_id = d.id
+                   AND (ac.username || '@' || d.domain) = al.destination
                  WHERE al.active = TRUE AND ac.active = TRUE
-                 ORDER BY al.source, account_email",
+                 ORDER BY al.source, al.destination",
                 &[],
             )
             .unwrap_or_else(|e| {
