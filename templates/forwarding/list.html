@@ -1,0 +1,36 @@
+{% extends "layout.html" %}
+{% block title %}Forwarding{% endblock %}
+{% block content %}
+<section>
+    <hgroup>
+        <small>External delivery</small>
+        <h1>Forwarding</h1>
+    </hgroup>
+    <p>Forward mail from a local address to any external email address. Optionally keep a local copy in the original mailbox.</p>
+    <a href="/forwarding/new"><strong>Add forwarding rule</strong></a>
+</section>
+<table>
+    <thead>
+        <tr><th>Domain</th><th>Source</th><th>Destination</th><th>Keep Copy</th><th>Status</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+    {% if forwardings.is_empty() %}
+        <tr><td colspan="6">No forwarding rules yet — create one to start forwarding mail.</td></tr>
+    {% else %}
+        {% for f in forwardings %}
+        <tr>
+            <td>{{ f.domain_name.as_deref().unwrap_or("-") }}</td>
+            <td>{{ f.source }}</td>
+            <td>{{ f.destination }}</td>
+            <td>{% if f.keep_copy %}<mark>Yes</mark>{% else %}No{% endif %}</td>
+            <td>{% if f.active %}<mark>Active</mark>{% else %}<mark style="background: var(--gray-300);">Disabled</mark>{% endif %}</td>
+            <td>
+                <a href="/forwarding/{{ f.id }}/edit">Edit</a>
+                <form method="post" action="/forwarding/{{ f.id }}/delete" style="display:inline" onsubmit="return confirm('Delete this forwarding rule?')"><button type="submit">Delete</button></form>
+            </td>
+        </tr>
+        {% endfor %}
+    {% endif %}
+    </tbody>
+</table>
+{% endblock %}

@@ -66,6 +66,24 @@ pub struct AliasEditForm {
 }
 
 #[derive(Deserialize)]
+pub struct ForwardingForm {
+    pub source: String,
+    pub destination: String,
+    #[serde(default)]
+    pub keep_copy: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct ForwardingEditForm {
+    pub source: String,
+    pub destination: String,
+    #[serde(default)]
+    pub active: Option<String>,
+    #[serde(default)]
+    pub keep_copy: Option<String>,
+}
+
+#[derive(Deserialize)]
 pub struct PasswordForm {
     pub current_password: String,
     pub new_password: String,

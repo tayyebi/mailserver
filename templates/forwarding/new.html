@@ -1,0 +1,19 @@
+{% extends "layout.html" %}
+{% block title %}Add Forwarding Rule{% endblock %}
+{% block content %}
+<h1>Add Forwarding Rule</h1>
+<aside>
+    <h2>About forwarding</h2>
+    <p>Forwarding sends a copy of incoming mail to an external address. The source must be a local address on a registered domain.</p>
+    <p><small>Tip: enable <strong>Keep Copy</strong> to retain a copy in the local mailbox while also forwarding.</small></p>
+</aside>
+<form method="post" action="/forwarding">
+<label>Source Email (local address)<br><input type="text" name="source" placeholder="user@example.com" pattern="[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}" required></label>
+<small>The local email address to forward. The domain must be registered in the Domains section.</small>
+<label>Destination Email (external address)<br><input type="text" name="destination" placeholder="user@gmail.com" pattern="[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}" required></label>
+<small>Any valid email address where mail should be forwarded, including external addresses.</small>
+<label><input type="checkbox" name="keep_copy" value="on"> Keep a local copy</label>
+<small>When enabled, mail is delivered to both the local mailbox and the forwarding destination.</small>
+<button type="submit">Create</button>
+</form>
+{% endblock %}

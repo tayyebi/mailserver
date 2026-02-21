@@ -69,6 +69,17 @@ pub struct Alias {
 }
 
 #[derive(Clone, Serialize)]
+pub struct Forwarding {
+    pub id: i64,
+    pub domain_id: i64,
+    pub source: String,
+    pub destination: String,
+    pub active: bool,
+    pub keep_copy: bool,
+    pub domain_name: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
 pub struct TrackedMessage {
     pub id: i64,
     pub message_id: String,
@@ -899,6 +910,112 @@ impl Database {
         let exists = count > 0;
         debug!("[db] email {} exists: {}", email, exists);
         exists
+    }
+
+    // ── Forwarding methods ──
+
+    pub fn list_all_forwardings_with_domain(&self) -> Vec<Forwarding> {
+        debug!("[db] listing all forwardings with domain info");
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let rows = conn
+            .query(
+                "SELECT f.id, f.domain_id, f.source, f.destination, f.active, f.keep_copy, d.domain
+                 FROM forwardings f
+                 LEFT JOIN domains d ON f.domain_id = d.id
+                 ORDER BY f.id ASC",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list forwardings with domain: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| Forwarding {
+                id: row.get(0),
+                domain_id: row.get(1),
+                source: row.get(2),
+                destination: row.get(3),
+                active: row.get(4),
+                keep_copy: row.get(5),
+                domain_name: row.get(6),
+            })
+            .collect()
+    }
+
+    pub fn get_forwarding(&self, id: i64) -> Option<Forwarding> {
+        debug!("[db] getting forwarding id={}", id);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        conn.query_opt(
+            "SELECT f.id, f.domain_id, f.source, f.destination, f.active, f.keep_copy, d.domain
+             FROM forwardings f
+             LEFT JOIN domains d ON f.domain_id = d.id
+             WHERE f.id = $1",
+            &[&id],
+        )
+        .ok()
+        .flatten()
+        .map(|row| Forwarding {
+            id: row.get(0),
+            domain_id: row.get(1),
+            source: row.get(2),
+            destination: row.get(3),
+            active: row.get(4),
+            keep_copy: row.get(5),
+            domain_name: row.get(6),
+        })
+    }
+
+    pub fn create_forwarding(
+        &self,
+        domain_id: i64,
+        source: &str,
+        destination: &str,
+        keep_copy: bool,
+    ) -> Result<i64, String> {
+        info!(
+            "[db] creating forwarding source={}, destination={}, keep_copy={}",
+            source, destination, keep_copy
+        );
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let ts = now();
+        let row = conn
+            .query_one(
+                "INSERT INTO forwardings (domain_id, source, destination, keep_copy, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 RETURNING id",
+                &[&domain_id, &source, &destination, &keep_copy, &ts, &ts],
+            )
+            .map_err(|e| {
+                error!("[db] failed to create forwarding {} -> {}: {}", source, destination, e);
+                e.to_string()
+            })?;
+        let id: i64 = row.get(0);
+        info!("[db] forwarding created: {} -> {} (id={})", source, destination, id);
+        Ok(id)
+    }
+
+    pub fn update_forwarding(
+        &self,
+        id: i64,
+        source: &str,
+        destination: &str,
+        active: bool,
+        keep_copy: bool,
+    ) {
+        info!("[db] updating forwarding id={}, source={}, destination={}, active={}, keep_copy={}", id, source, destination, active, keep_copy);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let _ = conn.execute(
+            "UPDATE forwardings
+             SET source = $1, destination = $2, active = $3, keep_copy = $4, updated_at = $5
+             WHERE id = $6",
+            &[&source, &destination, &active, &keep_copy, &now(), &id],
+        );
+    }
+
+    pub fn delete_forwarding(&self, id: i64) {
+        warn!("[db] deleting forwarding id={}", id);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let _ = conn.execute("DELETE FROM forwardings WHERE id = $1", &[&id]);
     }
 
     // ── Tracking methods ──
