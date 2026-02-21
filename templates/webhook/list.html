@@ -1,0 +1,45 @@
+{% extends "layout.html" %}
+{% block title %}Webhook Logs{% endblock %}
+{% block content %}
+<h1>Webhook Logs</h1>
+<p>{{ total_count }} total executions</p>
+{% if logs.is_empty() %}
+<p>No webhook executions recorded yet.</p>
+{% else %}
+<table>
+<thead>
+<tr>
+  <th>#</th>
+  <th>Date</th>
+  <th>Sender</th>
+  <th>Subject</th>
+  <th>URL</th>
+  <th>Status</th>
+  <th>Duration</th>
+  <th>Error</th>
+</tr>
+</thead>
+<tbody>
+{% for l in logs %}
+<tr>
+  <td>{{ l.id }}</td>
+  <td>{{ l.created_at }}</td>
+  <td>{{ l.sender }}</td>
+  <td>{{ l.subject }}</td>
+  <td><code>{{ l.url }}</code></td>
+  <td>{% if l.success %}<mark>{{ l.response_status }}</mark>{% else %}<strong>{{ l.response_status }}</strong>{% endif %}</td>
+  <td>{{ l.duration_ms }}</td>
+  <td>{% if !l.error.is_empty() %}<small>{{ l.error }}</small>{% endif %}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+{% if total_pages > 1 %}
+<nav>
+  {% if page > 1 %}<a href="/webhooks?page={{ page - 1 }}">&laquo; Prev</a>{% endif %}
+  <span>Page {{ page }} / {{ total_pages }}</span>
+  {% if page < total_pages %}<a href="/webhooks?page={{ page + 1 }}">Next &raquo;</a>{% endif %}
+</nav>
+{% endif %}
+{% endif %}
+{% endblock %}

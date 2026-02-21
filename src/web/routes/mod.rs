@@ -12,6 +12,7 @@ pub mod spambl;
 pub mod tracking;
 pub mod unsubscribe;
 pub mod webmail;
+pub mod webhook;
 
 use super::AppState;
 use axum::{
@@ -77,4 +78,5 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/unsubscribe/:id/delete", post(unsubscribe::delete))
         .route("/spambl", get(spambl::list))
         .route("/spambl/toggle", post(spambl::toggle))
+        .route("/webhooks", get(webhook::list))
 }
