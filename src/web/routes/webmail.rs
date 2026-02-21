@@ -68,6 +68,15 @@ pub struct WebmailFolder {
     pub depth: usize,
 }
 
+/// A top-level folder together with its direct and indirect descendants,
+/// and a flag indicating whether the group should be rendered expanded
+/// (i.e. when the current folder is this group's root or one of its children).
+pub struct WebmailFolderGroup {
+    pub folder: WebmailFolder,
+    pub children: Vec<WebmailFolder>,
+    pub open: bool,
+}
+
 #[derive(Deserialize)]
 pub struct WebmailQuery {
     pub account_id: Option<i64>,
@@ -148,6 +157,67 @@ fn scan_folders(maildir_base: &str) -> Vec<WebmailFolder> {
         }
     }
     folders
+}
+
+/// Walk up the folder name hierarchy (by stripping trailing `.component` segments)
+/// and return the index of the first ancestor that already exists as a top-level group.
+/// Returns `None` if no ancestor group is found.
+fn find_ancestor_group(groups: &[WebmailFolderGroup], folder_name: &str) -> Option<usize> {
+    let mut current = folder_name;
+    loop {
+        let parent_name = match current.rfind('.') {
+            Some(p) if p > 0 => &current[..p],
+            _ => return None,
+        };
+        if let Some(idx) = groups.iter().position(|g| g.folder.name == parent_name) {
+            return Some(idx);
+        }
+        current = parent_name;
+    }
+}
+
+/// Group a flat, sorted list of `WebmailFolder`s into a hierarchical structure.
+/// Depth-0 folders become top-level `WebmailFolderGroup`s; deeper folders are
+/// placed as children of their closest ancestor group.  Groups are marked `open`
+/// when `current_folder` is the group root or one of its children.
+fn group_folders(folders: Vec<WebmailFolder>, current_folder: &str) -> Vec<WebmailFolderGroup> {
+    let mut groups: Vec<WebmailFolderGroup> = Vec::new();
+
+    for folder in folders {
+        if folder.depth == 0 {
+            groups.push(WebmailFolderGroup {
+                folder,
+                children: Vec::new(),
+                open: false,
+            });
+        } else {
+            let folder_name = folder.name.clone();
+            match find_ancestor_group(&groups, &folder_name) {
+                Some(idx) => groups[idx].children.push(folder),
+                None => {
+                    warn!(
+                        "[web] folder '{}' has no known parent group, adding as top-level",
+                        folder_name
+                    );
+                    groups.push(WebmailFolderGroup {
+                        folder,
+                        children: Vec::new(),
+                        open: false,
+                    });
+                }
+            }
+        }
+    }
+
+    for group in &mut groups {
+        if group.folder.name == current_folder
+            || group.children.iter().any(|c| c.name == current_folder)
+        {
+            group.open = true;
+        }
+    }
+
+    groups
 }
 
 // ── Email reading ──
@@ -255,7 +325,7 @@ struct InboxTemplate<'a> {
     accounts: Vec<Account>,
     selected_account: Option<Account>,
     emails: Vec<WebmailEmail>,
-    folders: Vec<WebmailFolder>,
+    folder_groups: Vec<WebmailFolderGroup>,
     current_folder: String,
     current_folder_name: String,
     current_page: usize,
@@ -278,6 +348,7 @@ struct ViewTemplate<'a> {
     body: String,
     current_folder: String,
     current_folder_name: String,
+    filename_b64: String,
 }
 
 #[derive(Template)]
@@ -307,7 +378,7 @@ pub async fn inbox(
 
     let mut selected_account: Option<Account> = None;
     let mut all_emails: Vec<WebmailEmail> = Vec::new();
-    let mut folders: Vec<WebmailFolder> = Vec::new();
+    let mut raw_folders: Vec<WebmailFolder> = Vec::new();
 
     let current_folder = query
         .folder
@@ -334,9 +405,8 @@ pub async fn inbox(
                 let maildir_base = maildir_path(domain, &acct.username);
                 logs.push(format!("Maildir path: {}", maildir_base));
 
-                folders = scan_folders(&maildir_base);
+                raw_folders = scan_folders(&maildir_base);
                 all_emails = read_emails(&maildir_base, &current_folder, &mut logs);
-
                 logs.push(format!("Total emails found: {}", all_emails.len()));
                 selected_account = Some(acct);
             }
@@ -383,13 +453,15 @@ pub async fn inbox(
         current_folder.trim_start_matches('.').to_string()
     };
 
+    let folder_groups = group_folders(raw_folders, &current_folder);
+
     let tmpl = InboxTemplate {
         nav_active: "Webmail",
         flash: None,
         accounts,
         selected_account,
         emails,
-        folders,
+        folder_groups,
         current_folder,
         current_folder_name,
         current_page,
@@ -550,6 +622,7 @@ pub async fn view_email(
         body,
         current_folder,
         current_folder_name: folder_name,
+        filename_b64: filename_b64.clone(),
     };
     Html(tmpl.render().unwrap()).into_response()
 }
@@ -990,7 +1063,7 @@ pub async fn send_email(
 
 #[cfg(test)]
 mod tests {
-    use super::{is_safe_folder, maildir_path};
+    use super::{group_folders, is_safe_folder, maildir_path, WebmailFolder};
 
     #[test]
     fn maildir_path_uses_data_mail_root() {
@@ -1016,5 +1089,56 @@ mod tests {
         assert!(!is_safe_folder("../etc"));
         assert!(!is_safe_folder(".Sent/../../etc"));
         assert!(!is_safe_folder("noLeadingDot"));
+    }
+
+    #[test]
+    fn group_folders_flat_no_children() {
+        let folders = vec![
+            WebmailFolder { name: String::new(), display_name: "INBOX".into(), depth: 0 },
+            WebmailFolder { name: ".Sent".into(), display_name: "Sent".into(), depth: 0 },
+            WebmailFolder { name: ".Drafts".into(), display_name: "Drafts".into(), depth: 0 },
+        ];
+        let groups = group_folders(folders, "");
+        assert_eq!(groups.len(), 3);
+        assert!(groups.iter().all(|g| g.children.is_empty()));
+    }
+
+    #[test]
+    fn group_folders_nests_child_under_parent() {
+        let folders = vec![
+            WebmailFolder { name: String::new(), display_name: "INBOX".into(), depth: 0 },
+            WebmailFolder { name: ".Archive".into(), display_name: "Archive".into(), depth: 0 },
+            WebmailFolder { name: ".Archive.2023".into(), display_name: "2023".into(), depth: 1 },
+        ];
+        let groups = group_folders(folders, "");
+        assert_eq!(groups.len(), 2);
+        let archive = groups.iter().find(|g| g.folder.name == ".Archive").unwrap();
+        assert_eq!(archive.children.len(), 1);
+        assert_eq!(archive.children[0].name, ".Archive.2023");
+    }
+
+    #[test]
+    fn group_folders_marks_open_for_current_folder() {
+        let folders = vec![
+            WebmailFolder { name: ".Archive".into(), display_name: "Archive".into(), depth: 0 },
+            WebmailFolder { name: ".Archive.2023".into(), display_name: "2023".into(), depth: 1 },
+        ];
+        let groups = group_folders(folders, ".Archive.2023");
+        let archive = groups.iter().find(|g| g.folder.name == ".Archive").unwrap();
+        assert!(archive.open);
+    }
+
+    #[test]
+    fn group_folders_nests_grandchild_under_root_ancestor() {
+        let folders = vec![
+            WebmailFolder { name: ".Archive".into(), display_name: "Archive".into(), depth: 0 },
+            WebmailFolder { name: ".Archive.2023".into(), display_name: "2023".into(), depth: 1 },
+            WebmailFolder { name: ".Archive.2023.Q1".into(), display_name: "Q1".into(), depth: 2 },
+        ];
+        let groups = group_folders(folders, "");
+        // Grandchild is nested under the root ancestor group's children
+        let archive = groups.iter().find(|g| g.folder.name == ".Archive").unwrap();
+        assert_eq!(archive.children.len(), 2);
+        assert!(archive.children.iter().any(|c| c.name == ".Archive.2023.Q1"));
     }
 }
