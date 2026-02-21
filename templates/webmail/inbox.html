@@ -41,7 +41,7 @@
             {% for child in group.children %}
             <li>
               <a href="/webmail?account_id={{ sel.id }}&folder={{ child.name }}"
-                 style="padding-inline-start: calc(var(--space-sm) + 1rem);"
+                 style="padding-inline-start: calc(var(--space-sm) + {{ child.depth }}rem);"
                  {% if child.name == current_folder %}aria-current="page"{% endif %}>
                 {{ child.display_name }}
               </a>

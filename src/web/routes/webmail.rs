@@ -68,6 +68,9 @@ pub struct WebmailFolder {
     pub depth: usize,
 }
 
+/// A top-level folder together with its direct and indirect descendants,
+/// and a flag indicating whether the group should be rendered expanded
+/// (i.e. when the current folder is this group's root or one of its children).
 pub struct WebmailFolderGroup {
     pub folder: WebmailFolder,
     pub children: Vec<WebmailFolder>,
@@ -156,6 +159,27 @@ fn scan_folders(maildir_base: &str) -> Vec<WebmailFolder> {
     folders
 }
 
+/// Walk up the folder name hierarchy (by stripping trailing `.component` segments)
+/// and return the index of the first ancestor that already exists as a top-level group.
+/// Returns `None` if no ancestor group is found.
+fn find_ancestor_group(groups: &[WebmailFolderGroup], folder_name: &str) -> Option<usize> {
+    let mut current = folder_name;
+    loop {
+        let parent_name = match current.rfind('.') {
+            Some(p) if p > 0 => &current[..p],
+            _ => return None,
+        };
+        if let Some(idx) = groups.iter().position(|g| g.folder.name == parent_name) {
+            return Some(idx);
+        }
+        current = parent_name;
+    }
+}
+
+/// Group a flat, sorted list of `WebmailFolder`s into a hierarchical structure.
+/// Depth-0 folders become top-level `WebmailFolderGroup`s; deeper folders are
+/// placed as children of their closest ancestor group.  Groups are marked `open`
+/// when `current_folder` is the group root or one of its children.
 fn group_folders(folders: Vec<WebmailFolder>, current_folder: &str) -> Vec<WebmailFolderGroup> {
     let mut groups: Vec<WebmailFolderGroup> = Vec::new();
 
@@ -167,21 +191,20 @@ fn group_folders(folders: Vec<WebmailFolder>, current_folder: &str) -> Vec<Webma
                 open: false,
             });
         } else {
-            let parent_name = {
-                let pos = folder.name.rfind('.');
-                match pos {
-                    Some(p) if p > 0 => folder.name[..p].to_string(),
-                    _ => String::new(),
+            let folder_name = folder.name.clone();
+            match find_ancestor_group(&groups, &folder_name) {
+                Some(idx) => groups[idx].children.push(folder),
+                None => {
+                    warn!(
+                        "[web] folder '{}' has no known parent group, adding as top-level",
+                        folder_name
+                    );
+                    groups.push(WebmailFolderGroup {
+                        folder,
+                        children: Vec::new(),
+                        open: false,
+                    });
                 }
-            };
-            if let Some(group) = groups.iter_mut().find(|g| g.folder.name == parent_name) {
-                group.children.push(folder);
-            } else {
-                groups.push(WebmailFolderGroup {
-                    folder,
-                    children: Vec::new(),
-                    open: false,
-                });
             }
         }
     }
@@ -1103,5 +1126,19 @@ mod tests {
         let groups = group_folders(folders, ".Archive.2023");
         let archive = groups.iter().find(|g| g.folder.name == ".Archive").unwrap();
         assert!(archive.open);
+    }
+
+    #[test]
+    fn group_folders_nests_grandchild_under_root_ancestor() {
+        let folders = vec![
+            WebmailFolder { name: ".Archive".into(), display_name: "Archive".into(), depth: 0 },
+            WebmailFolder { name: ".Archive.2023".into(), display_name: "2023".into(), depth: 1 },
+            WebmailFolder { name: ".Archive.2023.Q1".into(), display_name: "Q1".into(), depth: 2 },
+        ];
+        let groups = group_folders(folders, "");
+        // Grandchild is nested under the root ancestor group's children
+        let archive = groups.iter().find(|g| g.folder.name == ".Archive").unwrap();
+        assert_eq!(archive.children.len(), 2);
+        assert!(archive.children.iter().any(|c| c.name == ".Archive.2023.Q1"));
     }
 }
