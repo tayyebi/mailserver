@@ -795,18 +795,40 @@ mod tests {
 
 // ── Certificate and DH parameter generation ──
 
-pub fn generate_tls_certificate(hostname: &str) -> Result<(), String> {
-    if Path::new("/data/ssl/cert.pem").exists()
-        && Path::new("/data/ssl/key.pem").exists()
-        && fs::read("/data/ssl/cert.pem")
-            .map(|content| !content.is_empty())
-            .unwrap_or(false)
-        && fs::read("/data/ssl/key.pem")
-            .map(|content| !content.is_empty())
-            .unwrap_or(false)
-    {
-        info!("[config] existing TLS certificate and key found, skipping certificate generation");
-        return Ok(());
+/// Returns true if the certificate at `path` contains a Subject Alternative Name extension.
+fn cert_has_san(path: &str) -> bool {
+    let output = Command::new("openssl")
+        .args(["x509", "-in", path, "-noout", "-text"])
+        .output();
+    match output {
+        Ok(o) if o.status.success() => {
+            let text = String::from_utf8_lossy(&o.stdout);
+            text.contains("Subject Alternative Name")
+        }
+        Ok(o) => {
+            warn!("[config] openssl x509 -text failed for {}: {}", path, String::from_utf8_lossy(&o.stderr));
+            false
+        }
+        Err(e) => {
+            warn!("[config] failed to run openssl to inspect {}: {}", path, e);
+            false
+        }
+    }
+}
+
+pub fn generate_tls_certificate(hostname: &str, force: bool) -> Result<(), String> {
+    let cert_path = "/data/ssl/cert.pem";
+    let key_path = "/data/ssl/key.pem";
+    let cert_exists = Path::new(cert_path).exists()
+        && Path::new(key_path).exists()
+        && fs::read(cert_path).map(|c| !c.is_empty()).unwrap_or(false)
+        && fs::read(key_path).map(|c| !c.is_empty()).unwrap_or(false);
+    if !force && cert_exists {
+        if cert_has_san(cert_path) {
+            info!("[config] existing TLS certificate with SAN found, skipping certificate generation");
+            return Ok(());
+        }
+        info!("[config] existing TLS certificate lacks Subject Alternative Name — regenerating with SAN support");
     }
     info!("[config] generating self-signed TLS certificate for hostname={}", hostname);
     
@@ -936,11 +958,11 @@ pub fn generate_dh_parameters() -> Result<(), String> {
     }
 }
 
-pub fn generate_all_certificates(hostname: &str) -> Result<(), String> {
+pub fn generate_all_certificates(hostname: &str, force: bool) -> Result<(), String> {
     info!("[config] generating all certificates and DH parameters for hostname={}", hostname);
     
     // Generate TLS certificate
-    generate_tls_certificate(hostname)?;
+    generate_tls_certificate(hostname, force)?;
     
     // Generate DH parameters
     generate_dh_parameters()?;
