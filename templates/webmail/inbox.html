@@ -20,14 +20,37 @@
   <nav class="webmail-folders" aria-label="Folders">
     <strong>Folders</strong>
     <ul>
-      {% for f in folders %}
+      {% for group in folder_groups %}
+      {% if group.children.is_empty() %}
       <li>
-        <a href="/webmail?account_id={{ sel.id }}&folder={{ f.name }}"
-           style="padding-inline-start: calc(var(--space-sm) + {{ f.depth }}rem);"
-           {% if f.name == current_folder %}aria-current="page"{% endif %}>
-          {{ f.display_name }}
+        <a href="/webmail?account_id={{ sel.id }}&folder={{ group.folder.name }}"
+           {% if group.folder.name == current_folder %}aria-current="page"{% endif %}>
+          {{ group.folder.display_name }}
         </a>
       </li>
+      {% else %}
+      <li>
+        <details {% if group.open %}open{% endif %}>
+          <summary>
+            <a href="/webmail?account_id={{ sel.id }}&folder={{ group.folder.name }}"
+               {% if group.folder.name == current_folder %}aria-current="page"{% endif %}>
+              {{ group.folder.display_name }}
+            </a>
+          </summary>
+          <ul>
+            {% for child in group.children %}
+            <li>
+              <a href="/webmail?account_id={{ sel.id }}&folder={{ child.name }}"
+                 style="padding-inline-start: calc(var(--space-sm) + 1rem);"
+                 {% if child.name == current_folder %}aria-current="page"{% endif %}>
+                {{ child.display_name }}
+              </a>
+            </li>
+            {% endfor %}
+          </ul>
+        </details>
+      </li>
+      {% endif %}
       {% endfor %}
     </ul>
   </nav>
