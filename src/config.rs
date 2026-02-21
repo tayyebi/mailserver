@@ -160,7 +160,7 @@ pub fn generate_postfix_main_cf(db: &Database, hostname: &str) {
     } else {
         rbl_hostnames
             .iter()
-            .map(|h| format!("reject_rbl_client {}", h))
+            .map(|h| format!("warn_if_reject reject_rbl_client {}", h))
             .collect::<Vec<_>>()
             .join(", ")
             + ", "

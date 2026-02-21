@@ -60,6 +60,7 @@ pub struct WebmailEmail {
     pub to: String,
     pub date: String,
     pub is_new: bool,
+    pub is_spam: bool,
 }
 
 pub struct WebmailFolder {
@@ -278,6 +279,12 @@ fn read_emails(maildir_base: &str, folder: &str, logs: &mut Vec<String>) -> Vec<
                                     .find(|h| h.get_key().eq_ignore_ascii_case("Date"))
                                     .map(|h| h.get_value())
                                     .unwrap_or_default();
+                                let is_spam = parsed
+                                    .headers
+                                    .iter()
+                                    .find(|h| h.get_key().eq_ignore_ascii_case("X-Spam-Flag"))
+                                    .map(|h| h.get_value().trim().eq_ignore_ascii_case("YES"))
+                                    .unwrap_or(false);
                                 let encoded = URL_SAFE_NO_PAD.encode(fname.as_bytes());
                                 emails.push(WebmailEmail {
                                     filename: encoded,
@@ -286,6 +293,7 @@ fn read_emails(maildir_base: &str, folder: &str, logs: &mut Vec<String>) -> Vec<
                                     to,
                                     date,
                                     is_new: *is_new,
+                                    is_spam,
                                 });
                             }
                             Err(e) => {
@@ -349,6 +357,7 @@ struct ViewTemplate<'a> {
     current_folder: String,
     current_folder_name: String,
     filename_b64: String,
+    is_spam: bool,
 }
 
 #[derive(Template)]
@@ -595,6 +604,12 @@ pub async fn view_email(
         .find(|h| h.get_key().eq_ignore_ascii_case("Date"))
         .map(|h| h.get_value())
         .unwrap_or_default();
+    let is_spam = parsed
+        .headers
+        .iter()
+        .find(|h| h.get_key().eq_ignore_ascii_case("X-Spam-Flag"))
+        .map(|h| h.get_value().trim().eq_ignore_ascii_case("YES"))
+        .unwrap_or(false);
 
     // Extract body: prefer text/plain, fall back to text/html (escaped)
     let body = extract_body(&parsed);
@@ -623,6 +638,7 @@ pub async fn view_email(
         current_folder,
         current_folder_name: folder_name,
         filename_b64: filename_b64.clone(),
+        is_spam,
     };
     Html(tmpl.render().unwrap()).into_response()
 }

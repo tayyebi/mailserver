@@ -1430,3 +1430,27 @@ img {
   padding: var(--space-sm) var(--space-md);
   font-size: var(--font-size-sm);
 }
+
+/* ── Spam badge and alert ── */
+
+.badge-spam {
+  display: inline-block;
+  background: var(--color-warning);
+  color: #fff;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-sm);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.alert-spam {
+  background: #fff8e1;
+  border: var(--border-width) solid var(--color-warning);
+  color: var(--color-warning);
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm) var(--space-md);
+  margin-block-end: var(--space-md);
+  font-weight: 600;
+}
