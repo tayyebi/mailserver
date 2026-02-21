@@ -69,9 +69,10 @@
         <tr>
           <td>{{ email.date }}</td>
           <td>{{ email.from }}</td>
-          <td><a href="/webmail/view/{{ email.filename }}?account_id={{ sel.id }}&folder={{ current_folder }}">{{ email.subject }}</a></td>
+          <td>{{ email.subject }}</td>
           <td>{% if email.is_new %}<strong>New</strong>{% else %}Read{% endif %}</td>
           <td>
+            <a href="/webmail/view/{{ email.filename }}?account_id={{ sel.id }}&folder={{ current_folder }}" class="button-small" aria-label="View email: {{ email.subject }}">View</a>
             <form method="post" action="/webmail/delete/{{ email.filename }}" style="display:inline;">
               <input type="hidden" name="account_id" value="{{ sel.id }}">
               <input type="hidden" name="folder" value="{{ current_folder }}">

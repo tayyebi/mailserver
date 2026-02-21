@@ -35,6 +35,7 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
     // 2. Check if the content filter feature is enabled
     let mut modified = email_data.clone();
     let mut webhook_url = String::new();
+    let mut suppressed = false;
     match std::panic::catch_unwind(|| {
         debug!("[filter] opening database at {}", db_url);
         let db = Database::open(db_url);
@@ -86,16 +87,23 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
                 if unsubscribe_domain && !unsubscribe_base_url.is_empty() {
                     // Inject a single List-Unsubscribe header for the primary recipient (RFC 8058).
                     // The content filter reinjects one message, so we use the first recipient's token.
+                    // Only send to recipients who have not unsubscribed — suppress promotional emails
+                    // for unsubscribed recipients while leaving transactional emails untouched.
                     if let Some(primary_recipient) = recipients.first() {
-                        let token = uuid::Uuid::new_v4().to_string();
-                        let unsub_url = format!("{}/unsubscribe?token={}", unsubscribe_base_url.trim_end_matches('/'), token);
-                        db.create_unsubscribe_token(&token, primary_recipient, &sender_domain);
-                        let headers = format!(
-                            "List-Unsubscribe: <{}>\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click",
-                            unsub_url
-                        );
-                        modified = inject_headers(&modified, &headers);
-                        info!("[filter] injected List-Unsubscribe header for recipient={} token={}", primary_recipient, token);
+                        if db.is_unsubscribed(primary_recipient, &sender_domain) {
+                            info!("[filter] recipient={} has unsubscribed from domain={}, suppressing promotional email", primary_recipient, sender_domain);
+                            suppressed = true;
+                        } else {
+                            let token = uuid::Uuid::new_v4().to_string();
+                            let unsub_url = format!("{}/unsubscribe?token={}", unsubscribe_base_url.trim_end_matches('/'), token);
+                            db.create_unsubscribe_token(&token, primary_recipient, &sender_domain);
+                            let headers = format!(
+                                "List-Unsubscribe: <{}>\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click",
+                                unsub_url
+                            );
+                            modified = inject_headers(&modified, &headers);
+                            info!("[filter] injected List-Unsubscribe header for recipient={} token={}", primary_recipient, token);
+                        }
                     }
                 }
 
@@ -160,7 +168,15 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
         modified = strip_dkim_signatures(&modified);
     }
 
-    // 5. Reinject via SMTP to 127.0.0.1:10025
+    // 5. If the email was suppressed because the recipient has unsubscribed, drop
+    //    the message here (do not reinject) without an error so Postfix discards it.
+    //    Recipient and domain details were logged when suppressed was set above.
+    if suppressed {
+        info!("[filter] email suppressed — not reinjecting (see earlier log for recipient/domain)");
+        return;
+    }
+
+    // 6. Reinject via SMTP to 127.0.0.1:10025
     info!("[filter] reinjecting email via SMTP to 127.0.0.1:10025");
     let email_was_modified = modified != email_data;
     let meta = EmailMetadata {
