@@ -167,7 +167,7 @@ fn main() {
             });
 
             info!("[gencerts] generating certificates and DH parameters for hostname={}", hostname);
-            match config::generate_all_certificates(&hostname) {
+            match config::generate_all_certificates(&hostname, false) {
                 Ok(_) => {
                     info!("[gencerts] certificates and DH parameters generated successfully");
                     config::reload_services();

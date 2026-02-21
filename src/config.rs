@@ -795,15 +795,14 @@ mod tests {
 
 // ── Certificate and DH parameter generation ──
 
-pub fn generate_tls_certificate(hostname: &str) -> Result<(), String> {
-    if Path::new("/data/ssl/cert.pem").exists()
-        && Path::new("/data/ssl/key.pem").exists()
-        && fs::read("/data/ssl/cert.pem")
-            .map(|content| !content.is_empty())
-            .unwrap_or(false)
-        && fs::read("/data/ssl/key.pem")
-            .map(|content| !content.is_empty())
-            .unwrap_or(false)
+pub fn generate_tls_certificate(hostname: &str, force: bool) -> Result<(), String> {
+    let cert_path = "/data/ssl/cert.pem";
+    let key_path = "/data/ssl/key.pem";
+    if !force
+        && Path::new(cert_path).exists()
+        && Path::new(key_path).exists()
+        && fs::read(cert_path).map(|c| !c.is_empty()).unwrap_or(false)
+        && fs::read(key_path).map(|c| !c.is_empty()).unwrap_or(false)
     {
         info!("[config] existing TLS certificate and key found, skipping certificate generation");
         return Ok(());
@@ -936,11 +935,11 @@ pub fn generate_dh_parameters() -> Result<(), String> {
     }
 }
 
-pub fn generate_all_certificates(hostname: &str) -> Result<(), String> {
+pub fn generate_all_certificates(hostname: &str, force: bool) -> Result<(), String> {
     info!("[config] generating all certificates and DH parameters for hostname={}", hostname);
     
     // Generate TLS certificate
-    generate_tls_certificate(hostname)?;
+    generate_tls_certificate(hostname, force)?;
     
     // Generate DH parameters
     generate_dh_parameters()?;

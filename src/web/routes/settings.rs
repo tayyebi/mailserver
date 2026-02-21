@@ -467,7 +467,7 @@ pub async fn regenerate_tls(
     info!("[web] POST /settings/tls/regenerate — regenerating self-signed TLS certificate by username={}", auth.admin.username);
     let hostname = &state.hostname;
     
-    match crate::config::generate_all_certificates(hostname) {
+    match crate::config::generate_all_certificates(hostname, true) {
         Ok(_) => {
             info!("[web] TLS certificates and DH parameters regenerated successfully for hostname={}", hostname);
             crate::config::reload_services();
