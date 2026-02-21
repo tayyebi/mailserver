@@ -781,6 +781,16 @@ mod tests {
             "master.cf template must include the smtp unix transport for outbound mail delivery"
         );
     }
+
+    #[test]
+    fn main_cf_template_exports_database_url_to_filter_subprocess() {
+        let template = load_template("postfix-main.cf.txt")
+            .expect("postfix-main.cf.txt template should be loadable");
+        assert!(
+            template.contains("export_environment") && template.contains("DATABASE_URL"),
+            "main.cf template must export DATABASE_URL so the pipe filter subprocess can connect to the database"
+        );
+    }
 }
 
 // ── Certificate and DH parameter generation ──
