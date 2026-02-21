@@ -133,6 +133,12 @@ pub struct UnsubscribeQuery {
 }
 
 #[derive(Deserialize)]
+pub struct WebhookSettingsForm {
+    #[serde(default)]
+    pub webhook_url: String,
+}
+
+#[derive(Deserialize)]
 pub struct FeatureToggleForm {
     #[serde(default)]
     pub filter_enabled: Option<String>,

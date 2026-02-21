@@ -10,7 +10,7 @@ use log::{debug, error, info, warn};
 use crate::db::Admin;
 use crate::web::AppState;
 use crate::web::auth::AuthAdmin;
-use crate::web::forms::{FeatureToggleForm, PasswordForm, TotpEnableForm};
+use crate::web::forms::{FeatureToggleForm, PasswordForm, TotpEnableForm, WebhookSettingsForm};
 
 // ── Templates ──
 
@@ -32,6 +32,7 @@ struct SettingsTemplate<'a> {
     filter_healthy: bool,
     milter_healthy: bool,
     unsubscribe_enabled: bool,
+    webhook_url: String,
 }
 
 #[derive(Template)]
@@ -183,6 +184,11 @@ pub async fn page(auth: AuthAdmin, State(state): State<AppState>) -> Html<String
     let filter_healthy = check_filter_health();
     let milter_healthy = check_milter_health();
 
+    let webhook_url = state
+        .blocking_db(|db| db.get_setting("webhook_url"))
+        .await
+        .unwrap_or_default();
+
     let tmpl = SettingsTemplate {
         nav_active: "Settings",
         flash: None,
@@ -199,6 +205,7 @@ pub async fn page(auth: AuthAdmin, State(state): State<AppState>) -> Html<String
         filter_healthy,
         milter_healthy,
         unsubscribe_enabled,
+        webhook_url,
     };
     Html(tmpl.render().unwrap())
 }
@@ -629,4 +636,49 @@ pub async fn download_key(auth: AuthAdmin) -> Response {
             Html(tmpl.render().unwrap()).into_response()
         }
     }
+}
+
+pub async fn update_webhook(
+    auth: AuthAdmin,
+    State(state): State<AppState>,
+    Form(form): Form<WebhookSettingsForm>,
+) -> Response {
+    info!(
+        "[web] POST /settings/webhook — update webhook URL by username={}",
+        auth.admin.username
+    );
+    let url = form.webhook_url.trim().to_string();
+    // Validate: must be empty or start with http:// or https://
+    if !url.is_empty() && !url.starts_with("http://") && !url.starts_with("https://") {
+        let tmpl = ErrorTemplate {
+            nav_active: "Settings",
+            flash: None,
+            status_code: 400,
+            status_text: "Bad Request",
+            title: "Error",
+            message: "Webhook URL must start with http:// or https://",
+            back_url: "/settings",
+            back_label: "Back",
+        };
+        return Html(tmpl.render().unwrap()).into_response();
+    }
+    let url_for_db = url.clone();
+    state
+        .blocking_db(move |db| db.set_setting("webhook_url", &url_for_db))
+        .await;
+    info!(
+        "[web] webhook_url updated by user={}",
+        auth.admin.username
+    );
+    let tmpl = ErrorTemplate {
+        nav_active: "Settings",
+        flash: None,
+        status_code: 200,
+        status_text: "OK",
+        title: "Success",
+        message: "Webhook URL updated successfully.",
+        back_url: "/settings",
+        back_label: "Back to Settings",
+    };
+    Html(tmpl.render().unwrap()).into_response()
 }

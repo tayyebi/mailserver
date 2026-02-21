@@ -22,8 +22,18 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
         email_data.len()
     );
 
+    // Extract headers early for use in webhook payload
+    let subject = extract_header(&email_data, "Subject").unwrap_or_default();
+    let from_header = extract_header(&email_data, "From").unwrap_or_default();
+    let to_header = extract_header(&email_data, "To").unwrap_or_default();
+    let cc_header = extract_header(&email_data, "Cc").unwrap_or_default();
+    let date_header = extract_header(&email_data, "Date").unwrap_or_default();
+    let message_id_header = extract_header(&email_data, "Message-ID").unwrap_or_default();
+    let size_bytes = email_data.len();
+
     // 2. Check if the content filter feature is enabled
     let mut modified = email_data.clone();
+    let mut webhook_url = String::new();
     match std::panic::catch_unwind(|| {
         debug!("[filter] opening database at {}", db_url);
         let db = Database::open(db_url);
@@ -34,9 +44,11 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
             .map(|v| v != "false")
             .unwrap_or(true);
 
+        let webhook_url = db.get_setting("webhook_url").unwrap_or_default();
+
         if !filter_enabled {
             info!("[filter] content filter feature is disabled, bypassing");
-            return (db, false, None, false, false, String::new());
+            return (db, false, None, false, false, String::new(), webhook_url);
         }
 
         let tracking = db.is_tracking_enabled_for_sender(sender);
@@ -54,9 +66,10 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
             false
         };
 
-        (db, tracking, footer_html, true, unsubscribe_domain, sender_domain)
+        (db, tracking, footer_html, true, unsubscribe_domain, sender_domain, webhook_url)
     }) {
-        Ok((db, tracking, footer_html, enabled, unsubscribe_domain, sender_domain)) => {
+        Ok((db, tracking, footer_html, enabled, unsubscribe_domain, sender_domain, wh_url)) => {
+            webhook_url = wh_url;
             if !enabled {
                 // Feature disabled — pass through unmodified
             } else {
@@ -119,7 +132,6 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
                     }
 
                     // Record tracked message
-                    let subject = extract_header(&email_data, "Subject").unwrap_or_default();
                     let recipient = recipients.first().map(|s| s.as_str()).unwrap_or("");
                     debug!(
                         "[filter] recording tracked message: message_id={}, subject={}",
@@ -149,6 +161,18 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
 
     // 5. Reinject via SMTP to 127.0.0.1:10025
     info!("[filter] reinjecting email via SMTP to 127.0.0.1:10025");
+    let email_was_modified = modified != email_data;
+    let meta = EmailMetadata {
+        sender: sender.to_string(),
+        recipients: recipients.to_vec(),
+        subject: subject.clone(),
+        from: from_header.clone(),
+        to: to_header.clone(),
+        cc: cc_header.clone(),
+        date: date_header.clone(),
+        message_id: message_id_header.clone(),
+        size_bytes,
+    };
     if let Err(e) = reinject_smtp(&modified, sender, recipients) {
         warn!(
             "[filter] failed to reinject modified email: {}. attempting unmodified fallback",
@@ -159,9 +183,14 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
             return;
         }
         info!("[filter] unmodified fallback email reinjected successfully");
+        // Still fire webhook even on fallback
+        send_webhook(&webhook_url, &meta, false);
         return;
     }
     info!("[filter] email reinjected successfully");
+
+    // 6. Send webhook notification if configured
+    send_webhook(&webhook_url, &meta, email_was_modified);
 }
 
 fn inject_headers(email: &str, headers: &str) -> String {
@@ -317,6 +346,62 @@ fn read_response(stream: &mut std::net::TcpStream, buf: &mut [u8]) -> io::Result
     use std::io::Read;
     let n = stream.read(buf)?;
     Ok(String::from_utf8_lossy(&buf[..n]).to_string())
+}
+
+struct EmailMetadata {
+    sender: String,
+    recipients: Vec<String>,
+    subject: String,
+    from: String,
+    to: String,
+    cc: String,
+    date: String,
+    message_id: String,
+    size_bytes: usize,
+}
+
+fn send_webhook(webhook_url: &str, meta: &EmailMetadata, modified: bool) {
+    if webhook_url.is_empty() {
+        return;
+    }
+
+    let timestamp = chrono::Utc::now().to_rfc3339();
+    let payload = serde_json::json!({
+        "event": "email_processed",
+        "timestamp": timestamp,
+        "sender": meta.sender,
+        "recipients": meta.recipients,
+        "subject": meta.subject,
+        "from": meta.from,
+        "to": meta.to,
+        "cc": meta.cc,
+        "date": meta.date,
+        "message_id": meta.message_id,
+        "size_bytes": meta.size_bytes,
+        "modified": modified,
+    });
+
+    debug!("[filter] sending webhook to {}", webhook_url);
+    match reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(client) => match client.post(webhook_url).json(&payload).send() {
+            Ok(resp) => {
+                info!(
+                    "[filter] webhook delivered to {} status={}",
+                    webhook_url,
+                    resp.status()
+                );
+            }
+            Err(e) => {
+                warn!("[filter] webhook delivery failed to {}: {}", webhook_url, e);
+            }
+        },
+        Err(e) => {
+            warn!("[filter] failed to build HTTP client for webhook: {}", e);
+        }
+    }
 }
 
 /// Remove all DKIM-Signature headers (including folded continuations) from an email.
@@ -492,5 +577,33 @@ mod tests {
         let headers = "List-Unsubscribe: <https://example.com/unsubscribe?token=abc>\r\n";
         let result = inject_headers(email, headers);
         assert_eq!(result, email);
+    }
+
+    #[test]
+    fn extract_header_returns_correct_values() {
+        let email = concat!(
+            "From: sender@example.com\r\n",
+            "To: recipient@example.com\r\n",
+            "Subject: Test Subject\r\n",
+            "Message-ID: <abc123@example.com>\r\n",
+            "Date: Mon, 01 Jan 2024 00:00:00 +0000\r\n",
+            "\r\n",
+            "Body.\r\n"
+        );
+        assert_eq!(extract_header(email, "From"), Some("sender@example.com".to_string()));
+        assert_eq!(extract_header(email, "To"), Some("recipient@example.com".to_string()));
+        assert_eq!(extract_header(email, "Subject"), Some("Test Subject".to_string()));
+        assert_eq!(extract_header(email, "Message-ID"), Some("<abc123@example.com>".to_string()));
+        assert_eq!(extract_header(email, "Cc"), None);
+    }
+
+    #[test]
+    fn extract_header_stops_at_blank_line() {
+        let email = concat!(
+            "Subject: InHeader\r\n",
+            "\r\n",
+            "Subject: InBody\r\n"
+        );
+        assert_eq!(extract_header(email, "Subject"), Some("InHeader".to_string()));
     }
 }
