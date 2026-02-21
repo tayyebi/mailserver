@@ -65,7 +65,7 @@ smtpd_sender_login_maps = lmdb:/etc/postfix/sender_login_maps
 smtpd_sender_restrictions = reject_authenticated_sender_login_mismatch, permit
 
 # Restrictions
-smtpd_recipient_restrictions = permit_sasl_authenticated, permit_mynetworks, reject_unauth_destination
+smtpd_recipient_restrictions = permit_sasl_authenticated, permit_mynetworks, {{ rbl_checks }}reject_unauth_destination
 
 # Client restrictions - allow connections while reducing reverse DNS warnings
 # Note: Many legitimate clients have incomplete reverse DNS, so we permit by default

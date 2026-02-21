@@ -8,6 +8,7 @@ pub mod fail2ban;
 pub mod pixel;
 pub mod queue;
 pub mod settings;
+pub mod spambl;
 pub mod tracking;
 pub mod unsubscribe;
 pub mod webmail;
@@ -71,4 +72,6 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/fail2ban/blacklist/:id/delete", post(fail2ban::remove_blacklist))
         .route("/unsubscribe/list", get(unsubscribe::list))
         .route("/unsubscribe/:id/delete", post(unsubscribe::delete))
+        .route("/spambl", get(spambl::list))
+        .route("/spambl/toggle", post(spambl::toggle))
 }

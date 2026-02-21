@@ -146,6 +146,14 @@ pub struct Fail2banLogEntry {
     pub created_at: String,
 }
 
+#[derive(Clone, Serialize)]
+pub struct SpamblList {
+    pub id: i64,
+    pub name: String,
+    pub hostname: String,
+    pub enabled: bool,
+}
+
 
 fn load_available_migrations() -> Vec<(String, String)> {
     let mut migrations = Vec::new();
@@ -1511,5 +1519,57 @@ impl Database {
             .map(|row| row.get(0))
             .unwrap_or(0);
         count > 0
+    }
+
+    // ── Spambl methods ──
+
+    pub fn list_spambl_lists(&self) -> Vec<SpamblList> {
+        debug!("[db] listing spambl lists");
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let rows = conn
+            .query(
+                "SELECT id, name, hostname, enabled FROM spambl_lists ORDER BY id",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list spambl lists: {}", e);
+                Vec::new()
+            });
+
+        rows.into_iter()
+            .map(|row| SpamblList {
+                id: row.get(0),
+                name: row.get(1),
+                hostname: row.get(2),
+                enabled: row.get(3),
+            })
+            .collect()
+    }
+
+    pub fn set_spambl_enabled(&self, id: i64, enabled: bool) {
+        info!("[db] setting spambl id={} enabled={}", id, enabled);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        if let Err(e) = conn.execute(
+            "UPDATE spambl_lists SET enabled = $1, updated_at = $2 WHERE id = $3",
+            &[&enabled, &now(), &id],
+        ) {
+            error!("[db] failed to set spambl id={} enabled={}: {}", id, enabled, e);
+        }
+    }
+
+    pub fn list_enabled_spambl_hostnames(&self) -> Vec<String> {
+        debug!("[db] listing enabled spambl hostnames");
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let rows = conn
+            .query(
+                "SELECT hostname FROM spambl_lists WHERE enabled = TRUE ORDER BY id",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list enabled spambl hostnames: {}", e);
+                Vec::new()
+            });
+
+        rows.into_iter().map(|row| row.get(0)).collect()
     }
 }

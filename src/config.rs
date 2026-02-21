@@ -152,11 +152,26 @@ pub fn generate_postfix_main_cf(db: &Database, hostname: &str) {
         "# milter disabled via feature settings".to_string()
     };
 
+    let rbl_hostnames = db.list_enabled_spambl_hostnames();
+    // Trailing ", " is intentional: the placeholder sits before reject_unauth_destination
+    // in the template, so each rbl check must be followed by a comma separator.
+    let rbl_checks = if rbl_hostnames.is_empty() {
+        String::new()
+    } else {
+        rbl_hostnames
+            .iter()
+            .map(|h| format!("reject_rbl_client {}", h))
+            .collect::<Vec<_>>()
+            .join(", ")
+            + ", "
+    };
+
     let config = template
         .replace("{{ generated_at }}", &generated_at)
         .replace("{{ hostname }}", hostname)
         .replace("{{ mydomain }}", mydomain)
-        .replace("{{ milter_config }}", &milter_config);
+        .replace("{{ milter_config }}", &milter_config)
+        .replace("{{ rbl_checks }}", &rbl_checks);
 
     match fs::write("/etc/postfix/main.cf", config) {
         Ok(_) => debug!("[config] wrote /etc/postfix/main.cf"),
