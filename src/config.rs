@@ -260,8 +260,9 @@ pub fn generate_virtual_mailboxes(db: &Database) {
 pub fn generate_virtual_aliases(db: &Database) {
     info!("[config] generating /etc/postfix/virtual_aliases");
     let aliases = db.list_all_aliases_with_domain();
+    let forwardings = db.list_all_forwardings_with_domain();
     let mut lines = generated_header();
-    
+
     let mut active_count = 0;
     for a in &aliases {
         if a.active {
@@ -273,16 +274,29 @@ pub fn generate_virtual_aliases(db: &Database) {
             active_count += 1;
         }
     }
-    
-    // Add a comment if there are no active aliases to make the file more informative
-    if active_count == 0 {
-        lines.push_str("# No active aliases configured\n");
-        lines.push_str("# Add aliases in the admin dashboard to configure email forwarding\n");
+
+    // Forwardings: when keep_copy is set, deliver to both the source mailbox and the external address
+    for f in &forwardings {
+        if f.active {
+            let destination = if f.keep_copy {
+                format!("{}, {}", f.source, f.destination)
+            } else {
+                f.destination.clone()
+            };
+            lines.push_str(&format!("{} {}\n", f.source, destination));
+            active_count += 1;
+        }
     }
-    
+
+    // Add a comment if there are no active aliases or forwardings to make the file more informative
+    if active_count == 0 {
+        lines.push_str("# No active aliases or forwardings configured\n");
+        lines.push_str("# Add aliases or forwarding rules in the admin dashboard\n");
+    }
+
     match write_secure_file("/etc/postfix/virtual_aliases", &lines) {
         Ok(_) => debug!(
-            "[config] wrote /etc/postfix/virtual_aliases with secure permissions ({} active aliases)",
+            "[config] wrote /etc/postfix/virtual_aliases with secure permissions ({} active entries)",
             active_count
         ),
         Err(e) => error!(

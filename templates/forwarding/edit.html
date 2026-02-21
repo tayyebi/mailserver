@@ -1,0 +1,19 @@
+{% extends "layout.html" %}
+{% block title %}Edit Forwarding Rule{% endblock %}
+{% block content %}
+<h1>Edit Forwarding Rule</h1>
+<aside>
+    <h2>Routing notes</h2>
+    <p>Toggle <strong>Active</strong> instead of deleting when you want to pause forwarding temporarily.</p>
+    <p><small>Enable <strong>Keep Copy</strong> to retain a local copy while forwarding.</small></p>
+</aside>
+<form method="post" action="/forwarding/{{ forwarding.id }}">
+<label>Source Email<br><input type="text" name="source" value="{{ forwarding.source }}" pattern="[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}" required></label>
+<small>The local address from which mail will be forwarded.</small>
+<label>Destination Email<br><input type="text" name="destination" value="{{ forwarding.destination }}" pattern="[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}" required></label>
+<small>Any valid email address where mail should be forwarded.</small>
+<label><input type="checkbox" name="active" value="on"{% if forwarding.active %} checked{% endif %}> Active</label>
+<label><input type="checkbox" name="keep_copy" value="on"{% if forwarding.keep_copy %} checked{% endif %}> Keep a local copy</label>
+<button type="submit">Save</button>
+</form>
+{% endblock %}

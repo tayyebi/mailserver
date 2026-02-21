@@ -5,6 +5,7 @@ pub mod configs;
 pub mod dashboard;
 pub mod domains;
 pub mod fail2ban;
+pub mod forwarding;
 pub mod pixel;
 pub mod queue;
 pub mod settings;
@@ -40,6 +41,11 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/aliases/:id/edit", get(aliases::edit_form))
         .route("/aliases/:id/delete", post(aliases::delete))
         .route("/aliases/:id", post(aliases::update))
+        .route("/forwarding/new", get(forwarding::new_form))
+        .route("/forwarding", get(forwarding::list).post(forwarding::create))
+        .route("/forwarding/:id/edit", get(forwarding::edit_form))
+        .route("/forwarding/:id/delete", post(forwarding::delete))
+        .route("/forwarding/:id", post(forwarding::update))
         .route("/tracking", get(tracking::list))
         .route("/tracking/:msg_id", get(tracking::detail))
         .route("/queue", get(queue::list))
