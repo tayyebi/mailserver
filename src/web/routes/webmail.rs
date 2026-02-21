@@ -1,7 +1,7 @@
 use askama::Template;
 use axum::{
     extract::{Path, Query, State},
-    response::{Html, IntoResponse, Response},
+    response::{Html, IntoResponse, Redirect, Response},
     Form,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
@@ -18,7 +18,18 @@ fn is_safe_path_component(s: &str) -> bool {
     !s.is_empty() && !s.contains('/') && !s.contains('\\') && s != "." && s != ".."
 }
 
+/// Validate a Maildir subfolder name (e.g. ".Sent", ".Drafts.Sub").
+/// Empty string is valid and means INBOX.
+fn is_safe_folder(s: &str) -> bool {
+    if s.is_empty() {
+        return true; // INBOX
+    }
+    // Must start with "." and contain no path separators
+    s.starts_with('.') && !s.contains('/') && !s.contains('\\') && s != ".."
+}
+
 const MAILDIR_ROOT: &str = "/data/mail";
+const PAGE_SIZE: usize = 20;
 
 fn maildir_path(domain: &str, username: &str) -> String {
     format!("{}/{}/{}/Maildir", MAILDIR_ROOT, domain, username)
@@ -29,6 +40,14 @@ fn sanitize_header_value(s: &str) -> String {
         .chars()
         .filter(|c| !c.is_control())
         .collect()
+}
+
+fn folder_root(maildir_base: &str, folder: &str) -> String {
+    if folder.is_empty() {
+        maildir_base.to_string()
+    } else {
+        format!("{}/{}", maildir_base, folder)
+    }
 }
 
 // ── Structures ──
@@ -43,9 +62,23 @@ pub struct WebmailEmail {
     pub is_new: bool,
 }
 
+pub struct WebmailFolder {
+    pub name: String,
+    pub display_name: String,
+    pub depth: usize,
+}
+
 #[derive(Deserialize)]
 pub struct WebmailQuery {
     pub account_id: Option<i64>,
+    pub folder: Option<String>,
+    pub page: Option<usize>,
+}
+
+#[derive(Deserialize)]
+pub struct DeleteForm {
+    pub account_id: i64,
+    pub folder: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -75,6 +108,143 @@ pub struct ComposeForm {
     pub body: String,
 }
 
+// ── Folder scanning ──
+
+fn scan_folders(maildir_base: &str) -> Vec<WebmailFolder> {
+    let mut folders = vec![WebmailFolder {
+        name: String::new(),
+        display_name: "INBOX".to_string(),
+        depth: 0,
+    }];
+
+    if let Ok(entries) = std::fs::read_dir(maildir_base) {
+        let mut names: Vec<String> = entries
+            .flatten()
+            .filter(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                e.file_type().map(|t| t.is_dir()).unwrap_or(false)
+                    && name.starts_with('.')
+                    && std::path::Path::new(&format!(
+                        "{}/{}/cur",
+                        maildir_base,
+                        e.file_name().to_string_lossy()
+                    ))
+                    .is_dir()
+            })
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        names.sort();
+        for name in names {
+            // Depth = number of dots minus 1 (e.g., ".Sent" → depth 0, ".INBOX.Sent" → depth 1)
+            let inner = name.trim_start_matches('.');
+            let parts: Vec<&str> = inner.split('.').collect();
+            let depth = parts.len().saturating_sub(1);
+            let display_name = parts.last().copied().unwrap_or("").to_string();
+            folders.push(WebmailFolder {
+                name: name.clone(),
+                display_name,
+                depth,
+            });
+        }
+    }
+    folders
+}
+
+// ── Email reading ──
+
+fn read_emails(maildir_base: &str, folder: &str, logs: &mut Vec<String>) -> Vec<WebmailEmail> {
+    let root = folder_root(maildir_base, folder);
+    let mut emails = Vec::new();
+
+    // Create Maildir directories if they don't exist (INBOX only)
+    if folder.is_empty() {
+        for subdir in &["new", "cur", "tmp"] {
+            let dir_path = format!("{}/{}", root, subdir);
+            if let Err(e) = std::fs::create_dir_all(&dir_path) {
+                logs.push(format!(
+                    "Warning: Failed to create directory {}: {}",
+                    dir_path, e
+                ));
+                warn!("[web] failed to create maildir directory {}: {}", dir_path, e);
+            }
+        }
+    }
+
+    for (subdir, is_new) in &[("new", true), ("cur", false)] {
+        let dir_path = format!("{}/{}", root, subdir);
+        logs.push(format!("Scanning directory: {}", dir_path));
+        match std::fs::read_dir(&dir_path) {
+            Ok(entries) => {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if !path.is_file() {
+                        continue;
+                    }
+                    let fname = entry.file_name().to_string_lossy().to_string();
+                    match std::fs::read(&path) {
+                        Ok(data) => match mailparse::parse_mail(&data) {
+                            Ok(parsed) => {
+                                let subject = parsed
+                                    .headers
+                                    .iter()
+                                    .find(|h| h.get_key().eq_ignore_ascii_case("Subject"))
+                                    .map(|h| h.get_value())
+                                    .unwrap_or_default();
+                                let from = parsed
+                                    .headers
+                                    .iter()
+                                    .find(|h| h.get_key().eq_ignore_ascii_case("From"))
+                                    .map(|h| h.get_value())
+                                    .unwrap_or_default();
+                                let to = parsed
+                                    .headers
+                                    .iter()
+                                    .find(|h| h.get_key().eq_ignore_ascii_case("To"))
+                                    .map(|h| h.get_value())
+                                    .unwrap_or_default();
+                                let date = parsed
+                                    .headers
+                                    .iter()
+                                    .find(|h| h.get_key().eq_ignore_ascii_case("Date"))
+                                    .map(|h| h.get_value())
+                                    .unwrap_or_default();
+                                let encoded = URL_SAFE_NO_PAD.encode(fname.as_bytes());
+                                emails.push(WebmailEmail {
+                                    filename: encoded,
+                                    subject,
+                                    from,
+                                    to,
+                                    date,
+                                    is_new: *is_new,
+                                });
+                            }
+                            Err(e) => {
+                                logs.push(format!("Failed to parse email {}: {}", fname, e));
+                                warn!("[web] failed to parse email {}: {}", fname, e);
+                            }
+                        },
+                        Err(e) => {
+                            logs.push(format!("Failed to read file {}: {}", fname, e));
+                            warn!("[web] failed to read email file {}: {}", fname, e);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                logs.push(format!(
+                    "Directory {} not found or not readable: {}",
+                    dir_path, e
+                ));
+                debug!(
+                    "[web] maildir directory {} not accessible: {}",
+                    dir_path, e
+                );
+            }
+        }
+    }
+    emails
+}
+
 // ── Templates ──
 
 #[derive(Template)]
@@ -85,6 +255,13 @@ struct InboxTemplate<'a> {
     accounts: Vec<Account>,
     selected_account: Option<Account>,
     emails: Vec<WebmailEmail>,
+    folders: Vec<WebmailFolder>,
+    current_folder: String,
+    current_folder_name: String,
+    current_page: usize,
+    total_pages: usize,
+    prev_page: Option<usize>,
+    next_page: Option<usize>,
     logs: Vec<String>,
 }
 
@@ -99,6 +276,8 @@ struct ViewTemplate<'a> {
     to: String,
     date: String,
     body: String,
+    current_folder: String,
+    current_folder_name: String,
 }
 
 #[derive(Template)]
@@ -127,7 +306,15 @@ pub async fn inbox(
     logs.push(format!("Loaded {} accounts from database", accounts.len()));
 
     let mut selected_account: Option<Account> = None;
-    let mut emails: Vec<WebmailEmail> = Vec::new();
+    let mut all_emails: Vec<WebmailEmail> = Vec::new();
+    let mut folders: Vec<WebmailFolder> = Vec::new();
+
+    let current_folder = query
+        .folder
+        .as_deref()
+        .filter(|f| is_safe_folder(f))
+        .unwrap_or("")
+        .to_string();
 
     if let Some(account_id) = query.account_id {
         logs.push(format!("Account ID {} selected", account_id));
@@ -138,118 +325,63 @@ pub async fn inbox(
             let domain = acct.domain_name.as_deref().unwrap_or("unknown");
             if !is_safe_path_component(domain) || !is_safe_path_component(&acct.username) {
                 logs.push("Invalid domain or username for path construction".to_string());
-                warn!("[web] unsafe path component: domain={}, username={}", domain, acct.username);
+                warn!(
+                    "[web] unsafe path component: domain={}, username={}",
+                    domain, acct.username
+                );
                 selected_account = Some(acct);
             } else {
-            let maildir_base = maildir_path(domain, &acct.username);
-            logs.push(format!("Maildir path: {}", maildir_base));
+                let maildir_base = maildir_path(domain, &acct.username);
+                logs.push(format!("Maildir path: {}", maildir_base));
 
-            // Create Maildir directories if they don't exist
-            for subdir in &["new", "cur", "tmp"] {
-                let dir_path = format!("{}/{}", maildir_base, subdir);
-                if let Err(e) = std::fs::create_dir_all(&dir_path) {
-                    logs.push(format!("Warning: Failed to create directory {}: {} (subsequent operations may fail)", dir_path, e));
-                    warn!("[web] failed to create maildir directory {}: {}", dir_path, e);
-                }
+                folders = scan_folders(&maildir_base);
+                all_emails = read_emails(&maildir_base, &current_folder, &mut logs);
+
+                logs.push(format!("Total emails found: {}", all_emails.len()));
+                selected_account = Some(acct);
             }
-
-            for (subdir, is_new) in &[("new", true), ("cur", false)] {
-                let dir_path = format!("{}/{}", maildir_base, subdir);
-                logs.push(format!("Scanning directory: {}", dir_path));
-                match std::fs::read_dir(&dir_path) {
-                    Ok(entries) => {
-                        for entry in entries.flatten() {
-                            let path = entry.path();
-                            if !path.is_file() {
-                                continue;
-                            }
-                            let fname = entry.file_name().to_string_lossy().to_string();
-                            logs.push(format!("Reading email file: {}", fname));
-                            match std::fs::read(&path) {
-                                Ok(data) => {
-                                    match mailparse::parse_mail(&data) {
-                                        Ok(parsed) => {
-                                            let subject = parsed
-                                                .headers
-                                                .iter()
-                                                .find(|h| h.get_key().eq_ignore_ascii_case("Subject"))
-                                                .map(|h| h.get_value())
-                                                .unwrap_or_default();
-                                            let from = parsed
-                                                .headers
-                                                .iter()
-                                                .find(|h| h.get_key().eq_ignore_ascii_case("From"))
-                                                .map(|h| h.get_value())
-                                                .unwrap_or_default();
-                                            let to = parsed
-                                                .headers
-                                                .iter()
-                                                .find(|h| h.get_key().eq_ignore_ascii_case("To"))
-                                                .map(|h| h.get_value())
-                                                .unwrap_or_default();
-                                            let date = parsed
-                                                .headers
-                                                .iter()
-                                                .find(|h| h.get_key().eq_ignore_ascii_case("Date"))
-                                                .map(|h| h.get_value())
-                                                .unwrap_or_default();
-                                            let encoded =
-                                                URL_SAFE_NO_PAD.encode(fname.as_bytes());
-                                            logs.push(format!(
-                                                "Parsed email: subject={}, from={}, is_new={}",
-                                                subject, from, is_new
-                                            ));
-                                            emails.push(WebmailEmail {
-                                                filename: encoded,
-                                                subject,
-                                                from,
-                                                to,
-                                                date,
-                                                is_new: *is_new,
-                                            });
-                                        }
-                                        Err(e) => {
-                                            logs.push(format!(
-                                                "Failed to parse email {}: {}",
-                                                fname, e
-                                            ));
-                                            warn!(
-                                                "[web] failed to parse email {}: {}",
-                                                fname, e
-                                            );
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    logs.push(format!("Failed to read file {}: {}", fname, e));
-                                    warn!("[web] failed to read email file {}: {}", fname, e);
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        logs.push(format!(
-                            "Directory {} not found or not readable: {}",
-                            dir_path, e
-                        ));
-                        debug!(
-                            "[web] maildir directory {} not accessible: {}",
-                            dir_path, e
-                        );
-                    }
-                }
-            }
-
-            logs.push(format!("Total emails found: {}", emails.len()));
-            selected_account = Some(acct);
-            } // end safe path else
         } else {
-            logs.push(format!("Account ID {} not found in database", account_id));
-            warn!("[web] account id={} not found for webmail", account_id);
+            logs.push(format!(
+                "Account ID {} not found in database",
+                account_id
+            ));
+            warn!(
+                "[web] account id={} not found for webmail",
+                account_id
+            );
         }
     } else {
         logs.push("No account selected".to_string());
     }
+
+    // Pagination
+    let total = all_emails.len();
+    let total_pages = if total == 0 {
+        1
+    } else {
+        (total + PAGE_SIZE - 1) / PAGE_SIZE
+    };
+    let current_page = query.page.unwrap_or(1).max(1).min(total_pages);
+    let start = (current_page - 1) * PAGE_SIZE;
+    let end = (start + PAGE_SIZE).min(total);
+    let emails = all_emails.into_iter().skip(start).take(end - start).collect();
+
+    let prev_page = if current_page > 1 {
+        Some(current_page - 1)
+    } else {
+        None
+    };
+    let next_page = if current_page < total_pages {
+        Some(current_page + 1)
+    } else {
+        None
+    };
+
+    let current_folder_name = if current_folder.is_empty() {
+        "INBOX".to_string()
+    } else {
+        current_folder.trim_start_matches('.').to_string()
+    };
 
     let tmpl = InboxTemplate {
         nav_active: "Webmail",
@@ -257,6 +389,13 @@ pub async fn inbox(
         accounts,
         selected_account,
         emails,
+        folders,
+        current_folder,
+        current_folder_name,
+        current_page,
+        total_pages,
+        prev_page,
+        next_page,
         logs,
     };
     Html(tmpl.render().unwrap())
@@ -306,16 +445,28 @@ pub async fn view_email(
     debug!("[web] decoded filename: {}", filename);
 
     let domain = acct.domain_name.as_deref().unwrap_or("unknown");
-    if !is_safe_path_component(domain) || !is_safe_path_component(&acct.username) || !is_safe_path_component(&filename) {
+    if !is_safe_path_component(domain)
+        || !is_safe_path_component(&acct.username)
+        || !is_safe_path_component(&filename)
+    {
         warn!("[web] unsafe path component in view_email");
         return Html("Invalid path component".to_string()).into_response();
     }
     let maildir_base = maildir_path(domain, &acct.username);
 
+    let current_folder = query
+        .folder
+        .as_deref()
+        .filter(|f| is_safe_folder(f))
+        .unwrap_or("")
+        .to_string();
+
+    let root = folder_root(&maildir_base, &current_folder);
+
     // Search in both new/ and cur/
     let mut file_path = None;
     for subdir in &["new", "cur"] {
-        let candidate = format!("{}/{}/{}", maildir_base, subdir, filename);
+        let candidate = format!("{}/{}/{}", root, subdir, filename);
         debug!("[web] checking path: {}", candidate);
         if std::path::Path::new(&candidate).is_file() {
             file_path = Some(candidate);
@@ -382,6 +533,12 @@ pub async fn view_email(
         body.len()
     );
 
+    let folder_name = if current_folder.is_empty() {
+        "INBOX".to_string()
+    } else {
+        current_folder.trim_start_matches('.').to_string()
+    };
+
     let tmpl = ViewTemplate {
         nav_active: "Webmail",
         flash: None,
@@ -391,8 +548,95 @@ pub async fn view_email(
         to,
         date,
         body,
+        current_folder,
+        current_folder_name: folder_name,
     };
     Html(tmpl.render().unwrap()).into_response()
+}
+
+pub async fn delete_email(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Path(filename_b64): Path<String>,
+    Form(form): Form<DeleteForm>,
+) -> Response {
+    info!("[web] POST /webmail/delete/{} — deleting email", filename_b64);
+
+    let acct = match state
+        .blocking_db(move |db| db.get_account_with_domain(form.account_id))
+        .await
+    {
+        Some(a) => a,
+        None => {
+            warn!("[web] account not found for delete");
+            return Html("Account not found".to_string()).into_response();
+        }
+    };
+
+    let filename = match URL_SAFE_NO_PAD.decode(filename_b64.as_bytes()) {
+        Ok(bytes) => match String::from_utf8(bytes) {
+            Ok(s) => s,
+            Err(_) => {
+                error!("[web] invalid UTF-8 in decoded filename for delete");
+                return Html("Invalid filename encoding".to_string()).into_response();
+            }
+        },
+        Err(e) => {
+            error!("[web] failed to decode base64 filename for delete: {}", e);
+            return Html("Invalid filename encoding".to_string()).into_response();
+        }
+    };
+
+    let domain = acct.domain_name.as_deref().unwrap_or("unknown");
+    let folder = form.folder.as_deref().unwrap_or("");
+    if !is_safe_path_component(domain)
+        || !is_safe_path_component(&acct.username)
+        || !is_safe_path_component(&filename)
+        || !is_safe_folder(folder)
+    {
+        warn!("[web] unsafe path component in delete_email");
+        return Html("Invalid path component".to_string()).into_response();
+    }
+
+    let maildir_base = maildir_path(domain, &acct.username);
+    let root = folder_root(&maildir_base, folder);
+
+    let mut deleted = false;
+    for subdir in &["new", "cur"] {
+        let candidate = format!("{}/{}/{}", root, subdir, filename);
+        if std::path::Path::new(&candidate).is_file() {
+            if let Err(e) = std::fs::remove_file(&candidate) {
+                error!("[web] failed to delete email file {}: {}", candidate, e);
+                return Html(format!("Failed to delete email: {}", e)).into_response();
+            }
+            info!("[web] deleted email file: {}", candidate);
+            deleted = true;
+            break;
+        }
+    }
+
+    if !deleted {
+        warn!("[web] email file not found for deletion: {}", filename);
+    }
+
+    let redirect_url = format!(
+        "/webmail?account_id={}&folder={}",
+        acct.id,
+        urlencoding_simple(folder)
+    );
+    Redirect::to(&redirect_url).into_response()
+}
+
+fn urlencoding_simple(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                vec![c]
+            } else {
+                format!("%{:02X}", c as u32).chars().collect()
+            }
+        })
+        .collect()
 }
 
 fn extract_body(parsed: &mailparse::ParsedMail) -> String {
@@ -746,11 +990,31 @@ pub async fn send_email(
 
 #[cfg(test)]
 mod tests {
-    use super::maildir_path;
+    use super::{is_safe_folder, maildir_path};
 
     #[test]
     fn maildir_path_uses_data_mail_root() {
         let path = maildir_path("example.com", "alice");
         assert_eq!(path, "/data/mail/example.com/alice/Maildir");
+    }
+
+    #[test]
+    fn safe_folder_empty_is_inbox() {
+        assert!(is_safe_folder(""));
+    }
+
+    #[test]
+    fn safe_folder_valid_names() {
+        assert!(is_safe_folder(".Sent"));
+        assert!(is_safe_folder(".Drafts"));
+        assert!(is_safe_folder(".INBOX.Subfolder"));
+    }
+
+    #[test]
+    fn safe_folder_rejects_path_traversal() {
+        assert!(!is_safe_folder(".."));
+        assert!(!is_safe_folder("../etc"));
+        assert!(!is_safe_folder(".Sent/../../etc"));
+        assert!(!is_safe_folder("noLeadingDot"));
     }
 }

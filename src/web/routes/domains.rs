@@ -1,10 +1,11 @@
 use askama::Template;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     response::{Html, IntoResponse, Redirect, Response},
     Form,
 };
 use log::{debug, error, info, warn};
+use serde::Deserialize;
 
 use crate::web::auth::AuthAdmin;
 use crate::web::forms::{DomainEditForm, DomainForm};
@@ -19,6 +20,155 @@ struct DomainRow {
     active_label: String,
     dkim_label: String,
     footer_label: String,
+}
+
+// ── DNS check structures ──
+
+struct SpfRecord {
+    domain: String,
+    raw: String,
+    depth: usize,
+}
+
+struct DnsCheckResult {
+    resolved_ip: String,
+    ptr_hostname: String,
+    ptr_matches: bool,
+    ptr_status: String,
+    spf_chain: Vec<SpfRecord>,
+    spf_error: String,
+}
+
+// ── DNS helpers ──
+
+const MAX_SPF_RECURSION: usize = 10;
+
+fn query_txt_records(domain: &str) -> Vec<String> {
+    let output = match std::process::Command::new("nslookup")
+        .args(["-type=TXT", domain])
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return vec![],
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut results = Vec::new();
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.contains("text = ") {
+            // Extract content between outermost quotes
+            if let Some(start) = line.find('"') {
+                let rest = &line[start + 1..];
+                if let Some(end) = rest.rfind('"') {
+                    results.push(rest[..end].to_string());
+                }
+            }
+        }
+    }
+    results
+}
+
+fn query_ptr_record(ip: &str) -> Option<String> {
+    let output = std::process::Command::new("nslookup")
+        .arg(ip)
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let line = line.trim();
+        if let Some(pos) = line.find("name = ") {
+            let name = line[pos + 7..].trim().trim_end_matches('.');
+            if !name.is_empty() {
+                return Some(name.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn spf_chain_recursive(domain: &str, depth: usize) -> Vec<SpfRecord> {
+    if depth >= MAX_SPF_RECURSION {
+        return vec![];
+    }
+    let txts = query_txt_records(domain);
+    let spf_raw = match txts.into_iter().find(|t| t.starts_with("v=spf1")) {
+        Some(r) => r,
+        None => return vec![],
+    };
+
+    let mut result = vec![SpfRecord {
+        domain: domain.to_string(),
+        raw: spf_raw.clone(),
+        depth,
+    }];
+
+    for token in spf_raw.split_whitespace().skip(1) {
+        if let Some(inc) = token.strip_prefix("include:") {
+            result.extend(spf_chain_recursive(inc, depth + 1));
+        } else if let Some(redir) = token.strip_prefix("redirect=") {
+            result.extend(spf_chain_recursive(redir, depth + 1));
+        }
+    }
+    result
+}
+
+fn build_dns_check(hostname: &str, domain_name: &str) -> DnsCheckResult {
+    // Resolve hostname → IP
+    let resolved_ip = format!("{}:0", hostname)
+        .parse::<std::net::SocketAddr>()
+        .map(|a| a.ip().to_string())
+        .unwrap_or_else(|_| {
+            use std::net::ToSocketAddrs;
+            format!("{}:0", hostname)
+                .to_socket_addrs()
+                .ok()
+                .and_then(|mut it| it.next())
+                .map(|a| a.ip().to_string())
+                .unwrap_or_default()
+        });
+
+    // PTR check
+    let (ptr_hostname, ptr_matches, ptr_status) = if resolved_ip.is_empty() {
+        (
+            String::new(),
+            false,
+            "Could not resolve hostname to IP".to_string(),
+        )
+    } else {
+        match query_ptr_record(&resolved_ip) {
+            Some(ptr) => {
+                let matches = ptr.eq_ignore_ascii_case(hostname);
+                let status = if matches {
+                    format!("OK — {} → {}", resolved_ip, ptr)
+                } else {
+                    format!("Mismatch — PTR is \"{}\", expected \"{}\"", ptr, hostname)
+                };
+                (ptr, matches, status)
+            }
+            None => (
+                String::new(),
+                false,
+                format!("No PTR record for {}", resolved_ip),
+            ),
+        }
+    };
+
+    // Recursive SPF check
+    let spf_chain = spf_chain_recursive(domain_name, 0);
+    let spf_error = if spf_chain.is_empty() {
+        format!("No SPF record found for {}", domain_name)
+    } else {
+        String::new()
+    };
+
+    DnsCheckResult {
+        resolved_ip,
+        ptr_hostname,
+        ptr_matches,
+        ptr_status,
+        spf_chain,
+        spf_error,
+    }
 }
 
 // ── Templates ──
@@ -58,6 +208,24 @@ struct DnsTemplate<'a> {
     dkim_record: String,
     bimi_logo_url: String,
     has_bimi: bool,
+}
+
+#[derive(Deserialize)]
+pub struct DnsCheckQuery {
+    #[serde(rename = "type")]
+    pub check_type: Option<String>,
+}
+
+#[derive(Template)]
+#[template(path = "domains/check.html")]
+struct DnsCheckTemplate<'a> {
+    nav_active: &'a str,
+    flash: Option<&'a str>,
+    domain_id: i64,
+    domain_name: String,
+    hostname: &'a str,
+    check_type: String,
+    dns_check: DnsCheckResult,
 }
 
 #[derive(Template)]
@@ -390,6 +558,112 @@ pub async fn dns_info(
         dkim_record,
         bimi_logo_url,
         has_bimi,
+    };
+    Html(tmpl.render().unwrap()).into_response()
+}
+
+pub async fn dns_check_run(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Query(query): Query<DnsCheckQuery>,
+) -> Response {
+    let check_type = query
+        .check_type
+        .as_deref()
+        .unwrap_or("ptr")
+        .to_lowercase();
+    debug!(
+        "[web] GET /domains/{}/check?type={} — running DNS check",
+        id, check_type
+    );
+
+    let domain = match state.blocking_db(move |db| db.get_domain(id)).await {
+        Some(d) => d,
+        None => {
+            warn!("[web] domain id={} not found for DNS check", id);
+            return Redirect::to("/domains").into_response();
+        }
+    };
+
+    let dns_check = match check_type.as_str() {
+        "spf" => {
+            let spf_chain = spf_chain_recursive(&domain.domain, 0);
+            let spf_error = if spf_chain.is_empty() {
+                format!("No SPF record found for {}", domain.domain)
+            } else {
+                String::new()
+            };
+            DnsCheckResult {
+                resolved_ip: String::new(),
+                ptr_hostname: String::new(),
+                ptr_matches: false,
+                ptr_status: String::new(),
+                spf_chain,
+                spf_error,
+            }
+        }
+        _ => {
+            // Default: PTR
+            let host_socket_addr = format!("{}:0", state.hostname);
+            let resolved_ip = host_socket_addr
+                .parse::<std::net::SocketAddr>()
+                .map(|a| a.ip().to_string())
+                .unwrap_or_else(|_| {
+                    use std::net::ToSocketAddrs;
+                    host_socket_addr
+                        .to_socket_addrs()
+                        .ok()
+                        .and_then(|mut it| it.next())
+                        .map(|a| a.ip().to_string())
+                        .unwrap_or_default()
+                });
+            let (ptr_hostname, ptr_matches, ptr_status) = if resolved_ip.is_empty() {
+                (
+                    String::new(),
+                    false,
+                    "Could not resolve hostname to IP".to_string(),
+                )
+            } else {
+                match query_ptr_record(&resolved_ip) {
+                    Some(ptr) => {
+                        let matches = ptr.eq_ignore_ascii_case(&state.hostname);
+                        let status = if matches {
+                            format!("OK — {} → {}", resolved_ip, ptr)
+                        } else {
+                            format!(
+                                "Mismatch — PTR is \"{}\", expected \"{}\"",
+                                ptr, state.hostname
+                            )
+                        };
+                        (ptr, matches, status)
+                    }
+                    None => (
+                        String::new(),
+                        false,
+                        format!("No PTR record for {}", resolved_ip),
+                    ),
+                }
+            };
+            DnsCheckResult {
+                resolved_ip,
+                ptr_hostname,
+                ptr_matches,
+                ptr_status,
+                spf_chain: Vec::new(),
+                spf_error: String::new(),
+            }
+        }
+    };
+
+    let tmpl = DnsCheckTemplate {
+        nav_active: "Domains",
+        flash: None,
+        domain_id: domain.id,
+        domain_name: domain.domain.clone(),
+        hostname: &state.hostname,
+        check_type,
+        dns_check,
     };
     Html(tmpl.render().unwrap()).into_response()
 }

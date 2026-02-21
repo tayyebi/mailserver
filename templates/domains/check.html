@@ -1,0 +1,51 @@
+{% extends "layout.html" %}
+{% block title %}DNS Check — {{ domain_name }}{% endblock %}
+{% block content %}
+<section>
+    <hgroup>
+        <small>Live DNS check</small>
+        <h1>
+            {% if check_type == "spf" %}SPF Chain — {{ domain_name }}
+            {% else %}PTR Record — {{ hostname }}
+            {% endif %}
+        </h1>
+    </hgroup>
+    <p><a href="/domains/{{ domain_id }}/dns">← Back to DNS runbook</a></p>
+</section>
+
+{% if check_type == "spf" %}
+<section>
+    {% if !dns_check.spf_error.is_empty() %}
+    <p class="dns-check-warn">⚠ {{ dns_check.spf_error }}</p>
+    {% else %}
+    <div class="spf-chain">
+        {% for rec in dns_check.spf_chain %}
+        <div class="spf-entry" style="margin-inline-start: {{ rec.depth }}rem;">
+            <strong>{{ rec.domain }}</strong>
+            <code>{{ rec.raw }}</code>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</section>
+{% else %}
+<section>
+    <dl>
+        <dt>Resolved IP</dt>
+        <dd>{% if dns_check.resolved_ip.is_empty() %}<em>Unable to resolve {{ hostname }}</em>{% else %}<code>{{ dns_check.resolved_ip }}</code>{% endif %}</dd>
+        <dt>PTR Hostname</dt>
+        <dd>{% if dns_check.ptr_hostname.is_empty() %}<em>—</em>{% else %}<code>{{ dns_check.ptr_hostname }}</code>{% endif %}</dd>
+        <dt>Status</dt>
+        <dd>
+            {% if dns_check.ptr_matches %}
+            <span class="dns-check-ok">✓ {{ dns_check.ptr_status }}</span>
+            {% else if dns_check.resolved_ip.is_empty() %}
+            <span class="dns-check-err">✗ {{ dns_check.ptr_status }}</span>
+            {% else %}
+            <span class="dns-check-warn">⚠ {{ dns_check.ptr_status }}</span>
+            {% endif %}
+        </dd>
+    </dl>
+</section>
+{% endif %}
+{% endblock %}

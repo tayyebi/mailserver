@@ -7,6 +7,10 @@
         <h1>{{ domain_name }}</h1>
     </hgroup>
     <p>Apply these records to Route 53 (or your DNS provider) to keep the domain aligned.</p>
+    <nav>
+        <a href="/domains/{{ domain_id }}/check?type=ptr">Check PTR →</a>
+        <a href="/domains/{{ domain_id }}/check?type=spf">Check SPF →</a>
+    </nav>
     <form method="post" action="/domains/{{ domain_id }}/dkim">
         <button type="submit">Generate DKIM key</button>
     </form>

@@ -309,14 +309,62 @@ a:focus-visible {
   border-radius: var(--radius-sm);
 }
 
+/* ── Hamburger toggle (CSS-only, visually hidden) ── */
+
+.nav-toggle {
+  position: absolute;
+  left: -9999px;
+  opacity: 0;
+  pointer-events: none;
+  inline-size: 0;
+  block-size: 0;
+}
+
+/* ── Hamburger button ── */
+
+.nav-burger {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  inline-size: 1.5rem;
+  block-size: 1.125rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.nav-burger span {
+  display: block;
+  inline-size: 100%;
+  block-size: 2px;
+  background: var(--color-bg);
+  border-radius: 1px;
+  transition: transform var(--transition-base), opacity var(--transition-base);
+}
+
+/* Animate burger to × when open */
+.nav-toggle:checked + header .nav-burger span:nth-child(1) {
+  transform: translateY(8px) rotate(45deg);
+}
+
+.nav-toggle:checked + header .nav-burger span:nth-child(2) {
+  opacity: 0;
+}
+
+.nav-toggle:checked + header .nav-burger span:nth-child(3) {
+  transform: translateY(-8px) rotate(-45deg);
+}
+
 /* ── Header / Navigation ── */
 
 header {
   background: var(--color-text);
   color: var(--color-bg);
-  padding: var(--space-md);
+  padding-block: var(--space-sm);
+  padding-inline: var(--space-md);
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-sm);
   position: sticky;
   inset-block-start: 0;
@@ -334,12 +382,32 @@ header > small {
   font-size: var(--font-size-xs);
   color: var(--color-text-muted);
   margin-block-end: 0;
+  display: none;
+}
+
+header > mark {
+  margin-inline-start: auto;
+  background: none;
+  color: var(--color-success);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 header nav {
+  display: none;
+  flex-direction: column;
+  inline-size: 100%;
+  gap: 0;
+  padding-block: var(--space-xs);
+  border-block-start: 1px solid var(--gray-900);
+  order: 10;
+}
+
+/* Show nav when hamburger is checked (does not overlay — expands header height) */
+.nav-toggle:checked + header nav {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-xs);
 }
 
 header nav a {
@@ -368,7 +436,6 @@ header nav a[aria-current="page"] {
 }
 
 header mark {
-  align-self: flex-start;
   background: none;
   color: var(--color-success);
   font-size: var(--font-size-xs);
@@ -1177,4 +1244,111 @@ img {
   max-inline-size: 1200px;
   margin-inline: auto;
   padding-inline: var(--space-md);
+}
+
+/* ── Webmail layout ── */
+
+.webmail-layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.webmail-folders {
+  background: var(--color-bg-subtle);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space-md);
+}
+
+.webmail-folders strong {
+  display: block;
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-subtle);
+  margin-block-end: var(--space-sm);
+}
+
+.webmail-folders ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.webmail-folders li {
+  margin-block-end: 2px;
+}
+
+.webmail-folders a {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding-block: var(--space-xs);
+  padding-inline: var(--space-sm);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  text-decoration: none;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.webmail-folders a:hover,
+.webmail-folders a[aria-current="page"] {
+  background: var(--color-bg-muted);
+  color: var(--color-text);
+}
+
+.webmail-folders mark {
+  margin-inline-start: auto;
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  padding-block: 1px;
+  padding-inline: var(--space-xs);
+  border-radius: 9999px;
+}
+
+.webmail-list {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+/* ── Pagination ── */
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  margin-block-start: var(--space-md);
+  font-size: var(--font-size-sm);
+}
+
+.pagination a {
+  padding-block: var(--space-xs);
+  padding-inline: var(--space-sm);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+/* ── DNS check ── */
+
+.dns-check-ok   { color: var(--color-success); font-weight: 600; }
+.dns-check-warn { color: var(--color-warning); font-weight: 600; }
+.dns-check-err  { color: var(--color-danger);  font-weight: 600; }
+
+.spf-chain {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.spf-entry {
+  background: var(--color-bg-subtle);
+  border: var(--border-width) solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm) var(--space-md);
+  font-size: var(--font-size-sm);
 }

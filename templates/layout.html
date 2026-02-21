@@ -8,9 +8,16 @@
 <link rel="stylesheet" href="/static/desktop.css" media="(min-width: 768px)">
 </head>
 <body>
+<input type="checkbox" id="nav-toggle" class="nav-toggle">
 <header>
+  <label for="nav-toggle" class="nav-burger" aria-label="Toggle navigation">
+    <span></span>
+    <span></span>
+    <span></span>
+  </label>
   <strong>Mailserver</strong>
   <small>Control Panel</small>
+  <mark>Online</mark>
   <nav>
     <a href="/"{% if nav_active == "Dashboard" %} aria-current="page"{% endif %}>Dashboard</a>
     <a href="/domains"{% if nav_active == "Domains" %} aria-current="page"{% endif %}>Domains</a>
@@ -25,7 +32,6 @@
     <a href="/configs"{% if nav_active == "Configs" %} aria-current="page"{% endif %}>Configs</a>
     <a href="/settings"{% if nav_active == "Settings" %} aria-current="page"{% endif %}>Settings</a>
   </nav>
-  <mark>Online</mark>
 </header>
 <main>
 {% if let Some(msg) = flash %}<output>{{ msg }}</output>{% endif %}
