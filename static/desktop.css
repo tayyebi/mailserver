@@ -6,14 +6,23 @@
   display: none;
 }
 
+/* ── Hide overlay on desktop ── */
+
+.nav-overlay,
+.nav-toggle:checked ~ .nav-overlay {
+  display: none;
+}
+
 /* ── Header: horizontal bar ── */
 
-header {
+header,
+.nav-toggle:checked ~ header {
   flex-wrap: nowrap;
   padding-block: 0;
   padding-inline: var(--space-lg);
   gap: var(--space-md);
   min-block-size: 3rem;
+  z-index: var(--z-sticky);
 }
 
 header > strong {
@@ -26,17 +35,41 @@ header > small {
   margin-block-end: 0;
 }
 
-/* Nav always visible on desktop, horizontal */
+/* Nav always visible on desktop, horizontal — reset sidebar styles */
 header nav,
-.nav-toggle:checked + header nav {
+.nav-toggle:checked ~ header nav {
+  position: static;
+  inline-size: auto;
+  block-size: auto;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  transform: none;
+  overflow: visible;
+  z-index: auto;
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
-  inline-size: auto;
   gap: var(--space-xs);
-  padding-block: 0;
-  border-block-start: none;
   order: 0;
+}
+
+header nav a {
+  padding-block: var(--space-xs);
+  padding-inline: var(--space-sm);
+  color: var(--color-text-muted);
+}
+
+header nav a:hover {
+  color: var(--color-bg);
+  background: var(--gray-900);
+}
+
+header nav a[aria-current="page"] {
+  color: var(--color-bg);
+  background: var(--gray-900);
+  font-weight: normal;
 }
 
 header > mark {

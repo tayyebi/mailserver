@@ -33,8 +33,8 @@
   --gray-900: #3d3c3a;
   
   /* Accent & Semantic */
-  --color-accent: #ec7211;
-  --color-accent-hover: #d4650f;
+  --color-accent: #475569;
+  --color-accent-hover: #334155;
   --color-accent-text: #ffffff;
   --color-danger: #d13212;
   --color-danger-hover: #b02a0f;
@@ -103,6 +103,9 @@
   --z-modal: 400;
   --z-popover: 500;
   --z-tooltip: 600;
+
+  /* Header */
+  --header-height: 3rem;
   
   /* Transitions */
   --transition-fast: 150ms ease;
@@ -343,16 +346,31 @@ a:focus-visible {
 }
 
 /* Animate burger to × when open */
-.nav-toggle:checked + header .nav-burger span:nth-child(1) {
+.nav-toggle:checked ~ header .nav-burger span:nth-child(1) {
   transform: translateY(8px) rotate(45deg);
 }
 
-.nav-toggle:checked + header .nav-burger span:nth-child(2) {
+.nav-toggle:checked ~ header .nav-burger span:nth-child(2) {
   opacity: 0;
 }
 
-.nav-toggle:checked + header .nav-burger span:nth-child(3) {
+.nav-toggle:checked ~ header .nav-burger span:nth-child(3) {
   transform: translateY(-8px) rotate(-45deg);
+}
+
+/* ── Overlay backdrop ── */
+
+.nav-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: calc(var(--z-fixed) - 1);
+  cursor: pointer;
+}
+
+.nav-toggle:checked ~ .nav-overlay {
+  display: block;
 }
 
 /* ── Header / Navigation ── */
@@ -360,15 +378,20 @@ a:focus-visible {
 header {
   background: var(--color-text);
   color: var(--color-bg);
-  padding-block: var(--space-sm);
   padding-inline: var(--space-md);
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-sm);
   position: sticky;
   inset-block-start: 0;
   z-index: var(--z-sticky);
+  block-size: var(--header-height);
+  min-block-size: var(--header-height);
+}
+
+/* Raise header above overlay when sidebar is open */
+.nav-toggle:checked ~ header {
+  z-index: calc(var(--z-fixed) + 1);
 }
 
 header > strong {
@@ -395,33 +418,46 @@ header > mark {
   letter-spacing: 0.06em;
 }
 
+/* ── Sidebar nav (CSS-only slide-in panel) ── */
+
 header nav {
-  display: none;
+  position: fixed;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: 16rem;
+  background: var(--color-bg);
+  border-inline-end: var(--border-width) solid var(--color-border);
+  box-shadow: var(--shadow-lg);
+  display: flex;
   flex-direction: column;
-  inline-size: 100%;
-  gap: 0;
-  padding-block: var(--space-xs);
-  border-block-start: 1px solid var(--gray-900);
-  order: 10;
+  gap: 2px;
+  padding-block-start: calc(var(--header-height) + var(--space-sm));
+  padding-block-end: var(--space-md);
+  padding-inline: var(--space-sm);
+  overflow-y: auto;
+  transform: translateX(-100%);
+  transition: transform var(--transition-slow);
+  z-index: var(--z-fixed);
 }
 
-/* Show nav when hamburger is checked (does not overlay — expands header height) */
-.nav-toggle:checked + header nav {
-  display: flex;
+/* Show sidebar when hamburger is checked */
+.nav-toggle:checked ~ header nav {
+  transform: translateX(0);
 }
 
 header nav a {
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
-  padding-block: var(--space-xs);
-  padding-inline: var(--space-sm);
+  padding-block: var(--space-sm);
+  padding-inline: var(--space-md);
   border-radius: var(--radius);
   transition: background var(--transition-fast), color var(--transition-fast);
+  text-decoration: none;
 }
 
 header nav a:hover {
-  color: var(--color-bg);
-  background: var(--gray-900);
+  color: var(--color-text);
+  background: var(--color-bg-subtle);
   text-decoration: none;
 }
 
@@ -431,8 +467,9 @@ header nav a:focus-visible {
 }
 
 header nav a[aria-current="page"] {
-  color: var(--color-bg);
-  background: var(--gray-900);
+  color: var(--color-accent);
+  background: var(--color-bg-muted);
+  font-weight: 600;
 }
 
 header mark {
