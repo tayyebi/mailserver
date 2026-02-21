@@ -442,10 +442,26 @@ pub fn generate_opendkim_tables(db: &Database) {
                 error!("[config] failed to create /data/dkim directory: {}", e);
             }
             match write_secure_file(&key_path, private_key) {
-                Ok(_) => debug!(
-                    "[config] wrote DKIM private key for domain={} to {} with secure permissions",
-                    domain, key_path
-                ),
+                Ok(_) => {
+                    debug!(
+                        "[config] wrote DKIM private key for domain={} to {} with secure permissions",
+                        domain, key_path
+                    );
+                    // Ensure opendkim (which drops privileges to the opendkim user via UserID in
+                    // opendkim.conf) can read the private key file.
+                    match Command::new("chown").args(["opendkim:opendkim", &key_path]).output() {
+                        Ok(o) if o.status.success() => debug!(
+                            "[config] set opendkim ownership on {}",
+                            key_path
+                        ),
+                        Ok(o) => warn!(
+                            "[config] chown opendkim:opendkim {} failed: {}",
+                            key_path,
+                            String::from_utf8_lossy(&o.stderr)
+                        ),
+                        Err(e) => warn!("[config] failed to chown {}: {}", key_path, e),
+                    }
+                }
                 Err(e) => error!(
                     "[config] failed to write DKIM private key for domain={}: {}",
                     domain, e
