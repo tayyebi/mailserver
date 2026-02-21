@@ -107,6 +107,23 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
                     }
                 }
 
+                // Check sender IP against enabled RBL hostnames and flag if listed
+                let rbl_hostnames = db.list_enabled_spambl_hostnames();
+                if !rbl_hostnames.is_empty() {
+                    if let Some(ip) = extract_sender_ip(&email_data) {
+                        for rbl_host in &rbl_hostnames {
+                            if check_rbl(&ip, rbl_host) {
+                                modified = inject_headers(&modified, "X-Spam-Flag: YES");
+                                info!(
+                                    "[filter] RBL hit for ip={} on {}, flagged as spam",
+                                    ip, rbl_host
+                                );
+                                break;
+                            }
+                        }
+                    }
+                }
+
                 if tracking {
                     let message_id = uuid::Uuid::new_v4().to_string();
                     let pixel_url = format!("{}{}", pixel_base_url, message_id);
@@ -526,6 +543,77 @@ fn strip_dkim_signatures(email: &str) -> String {
     result
 }
 
+/// Extract the sender's IP address from the first `Received` header of an email.
+/// Returns the IP in brackets `[x.x.x.x]` from the topmost Received header,
+/// which is the IP of the client that connected to our Postfix server.
+fn extract_sender_ip(email: &str) -> Option<String> {
+    let mut in_received = false;
+    let mut received_line = String::new();
+    for line in email.lines() {
+        if line.is_empty() {
+            break; // end of headers
+        }
+        if line.to_ascii_lowercase().starts_with("received:") {
+            in_received = true;
+            received_line = line.to_string();
+            continue;
+        }
+        if in_received {
+            // Folded header continuation (starts with whitespace)
+            if line.starts_with(' ') || line.starts_with('\t') {
+                received_line.push(' ');
+                received_line.push_str(line.trim());
+                continue;
+            }
+            // New header — stop
+            break;
+        }
+    }
+    if received_line.is_empty() {
+        return None;
+    }
+    // Extract the IP in brackets [x.x.x.x]
+    if let Some(start) = received_line.find('[') {
+        if let Some(end) = received_line[start + 1..].find(']') {
+            let ip = &received_line[start + 1..start + 1 + end];
+            // Reject IPv6 and loopback/private addresses
+            if ip.contains(':') || ip.starts_with("127.") || ip.starts_with("10.") || ip.starts_with("192.168.") {
+                return None;
+            }
+            // Reject RFC1918 172.16.0.0/12 range (172.16.x.x – 172.31.x.x)
+            if ip.starts_with("172.") {
+                if let Some(second) = ip.split('.').nth(1) {
+                    if let Ok(n) = second.parse::<u8>() {
+                        if (16..=31).contains(&n) {
+                            return None;
+                        }
+                    }
+                }
+            }
+            if ip.contains('.') {
+                return Some(ip.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Check if an IPv4 address is listed in a DNS-based RBL (Real-time Blackhole List).
+/// Performs a DNS A-record lookup for `<reversed-ip>.<rbl_host>`.
+/// Returns `true` if the lookup succeeds (IP is listed).
+fn check_rbl(ip: &str, rbl_host: &str) -> bool {
+    let parts: Vec<&str> = ip.split('.').collect();
+    if parts.len() != 4 {
+        return false;
+    }
+    let lookup = format!("{}.{}.{}.{}.{}", parts[3], parts[2], parts[1], parts[0], rbl_host);
+    use std::net::ToSocketAddrs;
+    (lookup.as_str(), 0u16)
+        .to_socket_addrs()
+        .map(|mut addrs| addrs.next().is_some())
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -681,5 +769,85 @@ mod tests {
             "Subject: InBody\r\n"
         );
         assert_eq!(extract_header(email, "Subject"), Some("InHeader".to_string()));
+    }
+
+    #[test]
+    fn extract_sender_ip_returns_public_ipv4() {
+        let email = concat!(
+            "Received: from mail.attacker.com (mail.attacker.com [1.2.3.4])\r\n",
+            "\tby mx.example.com (Postfix) with ESMTP id ABC123;\r\n",
+            "From: attacker@attacker.com\r\n",
+            "\r\n",
+            "Spam body.\r\n"
+        );
+        assert_eq!(extract_sender_ip(email), Some("1.2.3.4".to_string()));
+    }
+
+    #[test]
+    fn extract_sender_ip_ignores_loopback() {
+        let email = concat!(
+            "Received: from localhost (localhost [127.0.0.1])\r\n",
+            "\tby mx.example.com (Postfix) with ESMTP;\r\n",
+            "From: user@example.com\r\n",
+            "\r\n",
+            "Body.\r\n"
+        );
+        assert_eq!(extract_sender_ip(email), None);
+    }
+
+    #[test]
+    fn extract_sender_ip_ignores_private_rfc1918() {
+        let email_192 = concat!(
+            "Received: from relay.local (relay.local [192.168.1.100])\r\n",
+            "\tby mx.example.com (Postfix) with ESMTP;\r\n",
+            "From: user@example.com\r\n",
+            "\r\n",
+            "Body.\r\n"
+        );
+        assert_eq!(extract_sender_ip(email_192), None);
+
+        let email_172 = concat!(
+            "Received: from relay.local (relay.local [172.16.0.1])\r\n",
+            "\tby mx.example.com (Postfix) with ESMTP;\r\n",
+            "From: user@example.com\r\n",
+            "\r\n",
+            "Body.\r\n"
+        );
+        assert_eq!(extract_sender_ip(email_172), None);
+
+        let email_172_31 = concat!(
+            "Received: from relay.local (relay.local [172.31.255.1])\r\n",
+            "\tby mx.example.com (Postfix) with ESMTP;\r\n",
+            "From: user@example.com\r\n",
+            "\r\n",
+            "Body.\r\n"
+        );
+        assert_eq!(extract_sender_ip(email_172_31), None);
+
+        // 172.32.x.x is outside RFC1918 — should be returned
+        let email_172_32 = concat!(
+            "Received: from host.example.com (host.example.com [172.32.0.1])\r\n",
+            "\tby mx.example.com (Postfix) with ESMTP;\r\n",
+            "From: user@example.com\r\n",
+            "\r\n",
+            "Body.\r\n"
+        );
+        assert_eq!(extract_sender_ip(email_172_32), Some("172.32.0.1".to_string()));
+    }
+
+    #[test]
+    fn extract_sender_ip_returns_none_without_received_header() {
+        let email = concat!(
+            "From: user@example.com\r\n",
+            "\r\n",
+            "Body.\r\n"
+        );
+        assert_eq!(extract_sender_ip(email), None);
+    }
+
+    #[test]
+    fn check_rbl_returns_false_for_invalid_ip() {
+        assert!(!check_rbl("not-an-ip", "zen.spamhaus.org"));
+        assert!(!check_rbl("1.2.3", "zen.spamhaus.org"));
     }
 }

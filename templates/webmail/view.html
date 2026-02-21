@@ -3,6 +3,9 @@
 {% block content %}
 <h1>Email</h1>
 <p><a href="/webmail?account_id={{ account.id }}&folder={{ current_folder }}">← Back to {{ current_folder_name }}</a></p>
+{% if is_spam %}
+<div class="alert-spam" role="alert">⚠ This message has been flagged as spam.</div>
+{% endif %}
 <dl>
   <dt>From</dt><dd>{{ from }}</dd>
   <dt>To</dt><dd>{{ to }}</dd>

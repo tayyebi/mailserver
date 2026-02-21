@@ -70,7 +70,10 @@
           <td>{{ email.date }}</td>
           <td>{{ email.from }}</td>
           <td>{{ email.subject }}</td>
-          <td>{% if email.is_new %}<strong>New</strong>{% else %}Read{% endif %}</td>
+          <td>
+            {% if email.is_new %}<strong>New</strong>{% else %}Read{% endif %}
+            {% if email.is_spam %}<span class="badge-spam" title="Flagged as spam">⚠ Spam</span>{% endif %}
+          </td>
           <td>
             <a href="/webmail/view/{{ email.filename }}?account_id={{ sel.id }}&folder={{ current_folder }}" class="button-small" aria-label="View email: {{ email.subject }}">View</a>
             <form method="post" action="/webmail/delete/{{ email.filename }}" style="display:inline;">
