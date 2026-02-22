@@ -150,6 +150,7 @@ struct DnsTemplate<'a> {
     dkim_record: String,
     bimi_logo_url: String,
     has_bimi: bool,
+    dmarc_rua: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -490,6 +491,16 @@ pub async fn dns_info(
         .unwrap_or(false);
     let bimi_logo_url = format!("https://{}/bimi/{}/logo.svg", state.hostname, domain.domain);
 
+    let domain_name_for_dmarc = domain.domain.clone();
+    let dmarc_inbox = state
+        .blocking_db(move |db| db.get_dmarc_inbox_by_domain(&domain_name_for_dmarc))
+        .await;
+    let dmarc_rua = dmarc_inbox.and_then(|inbox| {
+        let username = inbox.account_username?;
+        let domain = inbox.account_domain?;
+        Some(format!("{}@{}", username, domain))
+    });
+
     let tmpl = DnsTemplate {
         nav_active: "Domains",
         flash: None,
@@ -500,6 +511,7 @@ pub async fn dns_info(
         dkim_record,
         bimi_logo_url,
         has_bimi,
+        dmarc_rua,
     };
     Html(tmpl.render().unwrap()).into_response()
 }
