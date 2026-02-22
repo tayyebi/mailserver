@@ -1,0 +1,50 @@
+{% extends "layout.html" %}
+{% block title %}DMARC Report Inboxes{% endblock %}
+{% block content %}
+<h1>DMARC Report Inboxes</h1>
+<p>Designate email accounts as DMARC report inboxes. These accounts will receive DMARC aggregate reports and you can visualize the results.</p>
+
+{% if let Some(msg) = flash %}
+<output>{{ msg }}</output>
+{% endif %}
+
+<h2>Add DMARC Inbox</h2>
+<form method="post" action="/dmarc">
+  <label for="account_id">Account:</label>
+  <select name="account_id" id="account_id" required>
+    <option value="">— Select account —</option>
+    {% for a in accounts %}
+    <option value="{{ a.id }}">{{ a.username }}@{{ a.domain_name.as_deref().unwrap_or("?") }}</option>
+    {% endfor %}
+  </select>
+  <label for="label">Label (optional):</label>
+  <input type="text" name="label" id="label" placeholder="e.g. Main DMARC inbox">
+  <button type="submit">Add</button>
+</form>
+
+<h2>Configured Inboxes</h2>
+{% if inboxes.is_empty() %}
+<p>No DMARC report inboxes configured yet.</p>
+{% else %}
+<table>
+  <thead>
+    <tr><th>Account</th><th>Label</th><th>Added</th><th>Actions</th></tr>
+  </thead>
+  <tbody>
+    {% for inbox in inboxes %}
+    <tr>
+      <td>{{ inbox.account_username.as_deref().unwrap_or("?") }}@{{ inbox.account_domain.as_deref().unwrap_or("?") }}</td>
+      <td>{{ inbox.label }}</td>
+      <td>{{ inbox.created_at }}</td>
+      <td>
+        <a href="/dmarc/{{ inbox.id }}/reports" class="button-small">View Reports</a>
+        <form method="post" action="/dmarc/{{ inbox.id }}/delete" style="display:inline;">
+          <button type="submit" class="button-danger button-small">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}
