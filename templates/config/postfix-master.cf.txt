@@ -6,6 +6,7 @@ smtp      inet  n       -       n       -       -       smtpd
 submission inet  n       -       n       -       -       smtpd
   -o syslog_name=postfix/submission
 {{ filter_submission }}  -o smtpd_tls_security_level=encrypt
+  -o smtpd_tls_auth_only=no
   -o smtpd_sasl_auth_enable=yes
   -o smtpd_sasl_type=dovecot
   -o smtpd_sasl_path=inet:127.0.0.1:12345
@@ -13,6 +14,7 @@ submission inet  n       -       n       -       -       smtpd
 smtps     inet  n       -       n       -       -       smtpd
   -o syslog_name=postfix/smtps
 {{ filter_smtps }}  -o smtpd_tls_wrappermode=yes
+  -o smtpd_tls_auth_only=no
   -o smtpd_sasl_auth_enable=yes
   -o smtpd_sasl_type=dovecot
   -o smtpd_sasl_path=inet:127.0.0.1:12345
