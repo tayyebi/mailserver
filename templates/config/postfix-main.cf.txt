@@ -26,7 +26,6 @@ smtpd_sasl_security_options = noanonymous
 smtpd_tls_cert_file = /data/ssl/cert.pem
 smtpd_tls_key_file = /data/ssl/key.pem
 smtpd_tls_security_level = may
-smtpd_tls_auth_only = yes
 smtp_tls_security_level = may
 
 # TLS protocol and cipher configuration for broader client compatibility

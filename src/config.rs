@@ -816,6 +816,65 @@ mod tests {
             "main.cf template must export DATABASE_URL so the pipe filter subprocess can connect to the database"
         );
     }
+
+    #[test]
+    fn main_cf_template_does_not_set_smtpd_tls_auth_only_globally() {
+        // smtpd_tls_auth_only=yes must NOT be set globally in main.cf.
+        // It hides AUTH in the first EHLO response on all ports, causing email clients
+        // to report "does not support the selected authentication method" when they
+        // check capabilities before STARTTLS.  The per-port overrides in master.cf
+        // handle this correctly: submission/smtps set it to no (AUTH always visible),
+        // while plain SMTP ports (25, 2525) set it to yes (TLS is optional there).
+        let template = load_template("postfix-main.cf.txt")
+            .expect("postfix-main.cf.txt template should be loadable");
+        assert!(
+            !template.contains("smtpd_tls_auth_only"),
+            "main.cf must not set smtpd_tls_auth_only globally; it is controlled per-port in master.cf"
+        );
+    }
+
+    #[test]
+    fn master_cf_submission_and_smtps_set_tls_auth_only_no() {
+        // The submission (587) and smtps (465) ports must advertise AUTH in their
+        // EHLO response regardless of whether STARTTLS has been negotiated.
+        // smtpd_tls_security_level=encrypt / smtpd_tls_wrappermode=yes already
+        // enforce TLS before any credentials are accepted, so advertising AUTH
+        // early is safe and necessary for clients that inspect the first EHLO.
+        let template = load_template("postfix-master.cf.txt")
+            .expect("postfix-master.cf.txt template should be loadable");
+        // submission (587): needs both encrypt enforcement and the explicit no override
+        assert!(
+            template.contains("smtpd_tls_security_level=encrypt")
+                && template.contains("-o smtpd_tls_auth_only=no"),
+            "master.cf submission entry must contain smtpd_tls_auth_only=no so AUTH is advertised in first EHLO"
+        );
+        // smtps (465): needs both wrappermode and the explicit no override
+        assert!(
+            template.contains("smtpd_tls_wrappermode=yes")
+                && template.contains("-o smtpd_tls_auth_only=no"),
+            "master.cf smtps entry must contain smtpd_tls_auth_only=no so AUTH is advertised immediately"
+        );
+        // Both ports must have the override: verify there are exactly two occurrences
+        let count = template.matches("-o smtpd_tls_auth_only=no").count();
+        assert_eq!(
+            count, 2,
+            "smtpd_tls_auth_only=no must appear exactly once for submission and once for smtps (found {})",
+            count
+        );
+    }
+
+    #[test]
+    fn master_cf_plain_smtp_ports_set_tls_auth_only_yes() {
+        // Port 25 (smtp) and 2525 (smtp-alt) use optional TLS (smtpd_tls_security_level=may).
+        // On these ports AUTH must stay hidden until STARTTLS is complete so that
+        // credentials are never sent over an unencrypted connection.
+        let template = load_template("postfix-master.cf.txt")
+            .expect("postfix-master.cf.txt template should be loadable");
+        assert!(
+            template.contains("-o smtpd_tls_auth_only=yes"),
+            "master.cf plain SMTP ports (25/2525) must set smtpd_tls_auth_only=yes to protect credentials on optional-TLS listeners"
+        );
+    }
 }
 
 // ── Certificate and DH parameter generation ──

@@ -3,9 +3,11 @@
 # service type  private unpriv  chroot  wakeup  maxproc command + args
 # ==========================================================================
 smtp      inet  n       -       n       -       -       smtpd
+  -o smtpd_tls_auth_only=yes
 submission inet  n       -       n       -       -       smtpd
   -o syslog_name=postfix/submission
 {{ filter_submission }}  -o smtpd_tls_security_level=encrypt
+  -o smtpd_tls_auth_only=no
   -o smtpd_sasl_auth_enable=yes
   -o smtpd_sasl_type=dovecot
   -o smtpd_sasl_path=inet:127.0.0.1:12345
@@ -13,12 +15,14 @@ submission inet  n       -       n       -       -       smtpd
 smtps     inet  n       -       n       -       -       smtpd
   -o syslog_name=postfix/smtps
 {{ filter_smtps }}  -o smtpd_tls_wrappermode=yes
+  -o smtpd_tls_auth_only=no
   -o smtpd_sasl_auth_enable=yes
   -o smtpd_sasl_type=dovecot
   -o smtpd_sasl_path=inet:127.0.0.1:12345
   -o smtpd_recipient_restrictions=permit_sasl_authenticated,reject
 2525      inet  n       -       n       -       -       smtpd
   -o syslog_name=postfix/smtp-alt
+  -o smtpd_tls_auth_only=yes
 127.0.0.1:10025 inet n - n - - smtpd
   -o syslog_name=postfix/reinject
   -o content_filter=
