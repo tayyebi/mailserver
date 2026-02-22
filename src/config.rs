@@ -257,35 +257,98 @@ pub fn generate_virtual_mailboxes(db: &Database) {
     }
 }
 
-pub fn generate_virtual_aliases(db: &Database) {
-    info!("[config] generating /etc/postfix/virtual_aliases");
-    let aliases = db.list_all_aliases_with_domain();
-    let forwardings = db.list_all_forwardings_with_domain();
-    let mut lines = generated_header();
+/// Build the ordered list of (source, destination) pairs for the virtual_aliases file.
+///
+/// Rules:
+/// 1. Catch-all entries (`@domain`) are placed **before** specific entries (`user@domain`).
+///    In LMDB the last-written value for a key wins, so specific entries — written last —
+///    always override any same-key catch-all.
+/// 2. For every account whose domain has a catch-all alias/forwarding but that does **not**
+///    already have an explicit alias or forwarding, an identity entry
+///    (`user@domain → user@domain`) is injected.  This prevents Postfix from falling
+///    through to the catch-all for real mailboxes (Postfix checks `virtual_alias_maps`
+///    before `virtual_mailbox_maps`; without the identity entry the catch-all matches
+///    first and mail is silently mis-routed).
+fn build_virtual_alias_entries(
+    aliases: &[crate::db::Alias],
+    forwardings: &[crate::db::Forwarding],
+    accounts: &[crate::db::Account],
+) -> Vec<(String, String)> {
+    let mut catch_all_entries: Vec<(String, String)> = Vec::new();
+    let mut specific_entries: Vec<(String, String)> = Vec::new();
+    let mut specific_sources: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
 
-    let mut active_count = 0;
-    for a in &aliases {
+    for a in aliases {
         if a.active {
-            lines.push_str(&format!(
-                "{} {}\n",
-                normalize_virtual_alias_source(&a.source, a.domain_name.as_deref()),
-                a.destination
-            ));
-            active_count += 1;
+            let source = normalize_virtual_alias_source(&a.source, a.domain_name.as_deref());
+            if source.starts_with('@') {
+                catch_all_entries.push((source, a.destination.clone()));
+            } else {
+                specific_sources.insert(source.clone());
+                specific_entries.push((source, a.destination.clone()));
+            }
         }
     }
 
     // Forwardings: when keep_copy is set, deliver to both the source mailbox and the external address
-    for f in &forwardings {
+    for f in forwardings {
         if f.active {
             let destination = if f.keep_copy {
                 format!("{}, {}", f.source, f.destination)
             } else {
                 f.destination.clone()
             };
-            lines.push_str(&format!("{} {}\n", f.source, destination));
-            active_count += 1;
+            if f.source.starts_with('@') {
+                catch_all_entries.push((f.source.clone(), destination));
+            } else {
+                specific_sources.insert(f.source.clone());
+                specific_entries.push((f.source.clone(), destination));
+            }
         }
+    }
+
+    // Collect the domains that have at least one catch-all entry.
+    // For each account in those domains that lacks a specific alias or forwarding,
+    // add an identity entry (user@domain → user@domain).  This stops Postfix from
+    // falling through to the catch-all when the real mailbox has no explicit alias,
+    // which would otherwise silently redirect mail to the catch-all destination.
+    let catch_all_domains: std::collections::HashSet<String> = catch_all_entries
+        .iter()
+        .filter_map(|(source, _)| source.strip_prefix('@').map(str::to_string))
+        .collect();
+
+    for a in accounts {
+        if a.active {
+            if let Some(ref domain) = a.domain_name {
+                if catch_all_domains.contains(domain) {
+                    let email = format!("{}@{}", a.username, domain);
+                    if !specific_sources.contains(&email) {
+                        specific_entries.push((email.clone(), email));
+                    }
+                }
+            }
+        }
+    }
+
+    // Catch-all entries first, then specific entries (explicit aliases last so they win).
+    let mut result = catch_all_entries;
+    result.extend(specific_entries);
+    result
+}
+
+pub fn generate_virtual_aliases(db: &Database) {
+    info!("[config] generating /etc/postfix/virtual_aliases");
+    let aliases = db.list_all_aliases_with_domain();
+    let forwardings = db.list_all_forwardings_with_domain();
+    let accounts = db.list_all_accounts_with_domain();
+
+    let entries = build_virtual_alias_entries(&aliases, &forwardings, &accounts);
+    let active_count = entries.len();
+    let mut lines = generated_header();
+
+    for (source, destination) in &entries {
+        lines.push_str(&format!("{} {}\n", source, destination));
     }
 
     // Add a comment if there are no active aliases or forwardings to make the file more informative
@@ -814,6 +877,183 @@ mod tests {
         assert!(
             template.contains("export_environment") && template.contains("DATABASE_URL"),
             "main.cf template must export DATABASE_URL so the pipe filter subprocess can connect to the database"
+        );
+    }
+
+    // ── build_virtual_alias_entries tests ──
+
+    use super::build_virtual_alias_entries;
+    use crate::db::{Account, Alias, Forwarding};
+
+    fn make_alias(source: &str, destination: &str, domain: &str) -> Alias {
+        Alias {
+            id: 1,
+            domain_id: 1,
+            source: source.to_string(),
+            destination: destination.to_string(),
+            active: true,
+            tracking_enabled: false,
+            sort_order: 0,
+            domain_name: Some(domain.to_string()),
+        }
+    }
+
+    fn make_forwarding(source: &str, destination: &str, keep_copy: bool) -> Forwarding {
+        Forwarding {
+            id: 1,
+            domain_id: 1,
+            source: source.to_string(),
+            destination: destination.to_string(),
+            active: true,
+            keep_copy,
+            domain_name: Some("example.com".to_string()),
+        }
+    }
+
+    fn make_account(username: &str, domain: &str) -> Account {
+        Account {
+            id: 1,
+            domain_id: 1,
+            username: username.to_string(),
+            password_hash: String::new(),
+            name: String::new(),
+            active: true,
+            quota: 0,
+            domain_name: Some(domain.to_string()),
+        }
+    }
+
+    #[test]
+    fn catch_all_entries_come_before_specific_entries() {
+        let aliases = vec![
+            make_alias("info@example.com", "info@other.com", "example.com"),
+            make_alias("*@example.com", "catchall@tyyi.net", "example.com"),
+        ];
+        let entries = build_virtual_alias_entries(&aliases, &[], &[]);
+        // Catch-all must appear before the specific entry
+        let sources: Vec<&str> = entries.iter().map(|(s, _)| s.as_str()).collect();
+        let catch_all_pos = sources.iter().position(|&s| s == "@example.com").unwrap();
+        let specific_pos = sources.iter().position(|&s| s == "info@example.com").unwrap();
+        assert!(
+            catch_all_pos < specific_pos,
+            "catch-all must be written before specific alias so the specific entry wins in LMDB"
+        );
+    }
+
+    #[test]
+    fn identity_entry_added_for_account_with_no_specific_alias_in_catch_all_domain() {
+        // globalcommercecouncil.com has a catch-all but info@ has no explicit alias.
+        // info@globalcommercecouncil.com should receive a self-referential identity entry
+        // so that Postfix delivers to its mailbox instead of the catch-all.
+        let aliases = vec![make_alias(
+            "*@globalcommercecouncil.com",
+            "m@tyyi.net",
+            "globalcommercecouncil.com",
+        )];
+        let accounts = vec![make_account("info", "globalcommercecouncil.com")];
+        let entries = build_virtual_alias_entries(&aliases, &[], &accounts);
+
+        let identity = entries
+            .iter()
+            .find(|(src, dst)| src == "info@globalcommercecouncil.com" && dst == "info@globalcommercecouncil.com");
+        assert!(
+            identity.is_some(),
+            "identity entry must be added for info@globalcommercecouncil.com to prevent catch-all interception"
+        );
+    }
+
+    #[test]
+    fn no_identity_entry_when_explicit_alias_already_exists() {
+        // info@example.com already has an explicit alias; no identity entry should be added.
+        let aliases = vec![
+            make_alias("*@example.com", "catchall@tyyi.net", "example.com"),
+            make_alias("info@example.com", "info@specific.com", "example.com"),
+        ];
+        let accounts = vec![make_account("info", "example.com")];
+        let entries = build_virtual_alias_entries(&aliases, &[], &accounts);
+
+        let info_entries: Vec<_> = entries
+            .iter()
+            .filter(|(src, _)| src == "info@example.com")
+            .collect();
+        assert_eq!(
+            info_entries.len(),
+            1,
+            "there should be exactly one entry for info@example.com (the explicit alias)"
+        );
+        assert_eq!(
+            info_entries[0].1, "info@specific.com",
+            "the entry must be the explicit alias destination, not an identity"
+        );
+    }
+
+    #[test]
+    fn no_identity_entry_for_account_in_domain_without_catch_all() {
+        // No catch-all for example.com; accounts there should not get identity entries.
+        let aliases = vec![make_alias("*@other.com", "catchall@tyyi.net", "other.com")];
+        let accounts = vec![make_account("info", "example.com")];
+        let entries = build_virtual_alias_entries(&aliases, &[], &accounts);
+
+        let has_identity = entries
+            .iter()
+            .any(|(src, dst)| src == "info@example.com" && dst == "info@example.com");
+        assert!(
+            !has_identity,
+            "no identity entry should be added when the account domain has no catch-all"
+        );
+    }
+
+    #[test]
+    fn forwarding_catch_all_also_triggers_identity_entries() {
+        // A catch-all defined as a Forwarding (not Alias) must also trigger identity entries.
+        let forwardings = vec![make_forwarding("@example.com", "forward@tyyi.net", false)];
+        let accounts = vec![make_account("bob", "example.com")];
+        let entries = build_virtual_alias_entries(&[], &forwardings, &accounts);
+
+        let identity = entries
+            .iter()
+            .find(|(src, dst)| src == "bob@example.com" && dst == "bob@example.com");
+        assert!(
+            identity.is_some(),
+            "forwarding catch-all must also trigger identity entries for mailbox accounts"
+        );
+    }
+
+    #[test]
+    fn inactive_alias_is_excluded_from_entries() {
+        let mut alias = make_alias("*@example.com", "catchall@tyyi.net", "example.com");
+        alias.active = false;
+        let entries = build_virtual_alias_entries(&[alias], &[], &[]);
+        assert!(entries.is_empty(), "inactive aliases must not appear in the output");
+    }
+
+    #[test]
+    fn keep_copy_forwarding_includes_both_source_and_destination() {
+        let fwd = make_forwarding("newsletter@example.com", "external@other.com", true);
+        let entries = build_virtual_alias_entries(&[], &[fwd], &[]);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0],
+            (
+                "newsletter@example.com".to_string(),
+                "newsletter@example.com, external@other.com".to_string()
+            ),
+            "keep_copy forwarding must deliver to both the source mailbox and the external address"
+        );
+    }
+
+    #[test]
+    fn inactive_account_does_not_receive_identity_entry() {
+        let aliases = vec![make_alias("*@example.com", "catchall@tyyi.net", "example.com")];
+        let mut account = make_account("alice", "example.com");
+        account.active = false;
+        let entries = build_virtual_alias_entries(&aliases, &[], &[account]);
+        let has_identity = entries
+            .iter()
+            .any(|(src, dst)| src == "alice@example.com" && dst == "alice@example.com");
+        assert!(
+            !has_identity,
+            "inactive accounts must not receive identity entries"
         );
     }
 }
