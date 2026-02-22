@@ -12,10 +12,10 @@
   <dt>Date</dt><dd>{{ date }}</dd>
   <dt>Subject</dt><dd>{{ subject }}</dd>
 </dl>
-<form method="post" action="/webmail/delete/{{ filename_b64 }}" style="display:inline;">
+<form method="post" action="/webmail/delete/{{ filename_b64 }}" class="form-inline">
   <input type="hidden" name="account_id" value="{{ account.id }}">
   <input type="hidden" name="folder" value="{{ current_folder }}">
   <button type="submit" class="button-danger button-small">Delete</button>
 </form>
-<pre style="background: #f5f5f5; padding: 1rem; overflow-x: auto; border: 1px solid #ddd; border-radius: 4px;">{{ body }}</pre>
+<pre>{{ body }}</pre>
 {% endblock %}

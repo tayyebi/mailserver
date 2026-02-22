@@ -3,17 +3,17 @@
 {% block content %}
 <h1>Mail Queue</h1>
 <p>Current Postfix queue from <code>postqueue -p</code>.</p>
-<div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1rem;">
+<div class="queue-actions">
   <form method="post" action="/queue/flush" onsubmit="return confirm('Flush the mail queue now?')">
     <button type="submit">Flush Queue</button>
   </form>
   <form method="post" action="/queue/purge" onsubmit="return confirm('Purge ALL messages from the queue? This cannot be undone.')">
-    <button type="submit" style="background:var(--del-color,#c00);color:#fff;">Purge Queue</button>
+    <button type="submit" class="button-danger">Purge Queue</button>
   </form>
 </div>
 
 {% if let Some(err) = error %}
-  <p style="color: #d00;"><strong>Error:</strong> <em>{{ err }}</em></p>
+  <p class="text-danger"><strong>Error:</strong> <em>{{ err }}</em></p>
 {% else if entries.is_empty() %}
   <p><em>Mail queue is empty.</em></p>
 {% else %}
@@ -41,12 +41,12 @@
             <div><small>{{ rcpt }}</small></div>
           {% endfor %}
         </td>
-        <td style="white-space:nowrap;">
-          <form method="post" action="/queue/{{ entry.id }}/flush" style="display:inline">
+        <td class="nowrap">
+          <form method="post" action="/queue/{{ entry.id }}/flush" class="form-inline">
             <button type="submit">Retry</button>
           </form>
-          <form method="post" action="/queue/{{ entry.id }}/delete" style="display:inline" onsubmit="return confirm('Delete message {{ entry.id }}?')">
-            <button type="submit" style="background:var(--del-color,#c00);color:#fff;">Delete</button>
+          <form method="post" action="/queue/{{ entry.id }}/delete" class="form-inline" onsubmit="return confirm('Delete message {{ entry.id }}?')">
+            <button type="submit" class="button-danger">Delete</button>
           </form>
         </td>
       </tr>

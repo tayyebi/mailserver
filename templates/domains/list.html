@@ -15,7 +15,7 @@
     <td>
         <a href="/domains/{{ d.id }}/edit">Edit</a>
         <a href="/domains/{{ d.id }}/dns">DNS</a>
-        <form method="post" action="/domains/{{ d.id }}/delete" style="display:inline" onsubmit="return confirm('Delete this domain?')"><button type="submit">Delete</button></form>
+        <form method="post" action="/domains/{{ d.id }}/delete" class="form-inline" onsubmit="return confirm('Delete this domain?')"><button type="submit">Delete</button></form>
     </td>
 </tr>
 {% endfor %}

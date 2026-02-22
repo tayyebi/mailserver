@@ -7,19 +7,19 @@
 <dl>
 <dt>Content Filter</dt>
 <dd>
-  {% if filter_enabled %}<mark style="color:var(--success)">Enabled</mark>{% else %}<mark style="color:var(--gray-400)">Disabled</mark>{% endif %}
+  {% if filter_enabled %}<mark class="mark-success">Enabled</mark>{% else %}<mark class="mark-muted">Disabled</mark>{% endif %}
   —
-  {% if filter_healthy %}<mark style="color:var(--success)">● Healthy</mark>{% else %}<mark style="color:var(--danger)">● Unavailable</mark>{% endif %}
+  {% if filter_healthy %}<mark class="mark-success">● Healthy</mark>{% else %}<mark class="mark-danger">● Unavailable</mark>{% endif %}
 </dd>
 <dt>Milter (OpenDKIM)</dt>
 <dd>
-  {% if milter_enabled %}<mark style="color:var(--success)">Enabled</mark>{% else %}<mark style="color:var(--gray-400)">Disabled</mark>{% endif %}
+  {% if milter_enabled %}<mark class="mark-success">Enabled</mark>{% else %}<mark class="mark-muted">Disabled</mark>{% endif %}
   —
-  {% if milter_healthy %}<mark style="color:var(--success)">● Healthy</mark>{% else %}<mark style="color:var(--danger)">● Unavailable</mark>{% endif %}
+  {% if milter_healthy %}<mark class="mark-success">● Healthy</mark>{% else %}<mark class="mark-danger">● Unavailable</mark>{% endif %}
 </dd>
 <dt>List-Unsubscribe Injection</dt>
 <dd>
-  {% if unsubscribe_enabled %}<mark style="color:var(--success)">Enabled</mark>{% else %}<mark style="color:var(--gray-400)">Disabled</mark>{% endif %}
+  {% if unsubscribe_enabled %}<mark class="mark-success">Enabled</mark>{% else %}<mark class="mark-muted">Disabled</mark>{% endif %}
 </dd>
 </dl>
 <form method="post" action="/settings/features">
@@ -92,11 +92,11 @@
 <p>When set, a POST request with JSON data will be sent to this URL each time an email is processed (incoming or outgoing). Leave blank to disable.</p>
 <form method="post" action="/settings/webhook">
   <label>Webhook URL (optional)<br>
-    <input type="url" name="webhook_url" value="{{ webhook_url }}" placeholder="https://example.com/webhook" style="width:100%;max-width:500px">
+    <input type="url" name="webhook_url" value="{{ webhook_url }}" placeholder="https://example.com/webhook">
   </label>
   <button type="submit">Save Webhook URL</button>
 </form>
-<form method="post" action="/settings/webhook/test" style="margin-top:0.5rem">
+<form method="post" action="/settings/webhook/test" class="form-compact">
   <button type="submit">Send Test Webhook</button>
   <small><em>💡 Save the URL above before testing.</em></small>
 </form>

@@ -37,7 +37,7 @@
             <td>{{ a.active_label }}</td>
             <td>
                 <a href="/aliases/{{ a.id }}/edit">Edit</a>
-                <form method="post" action="/aliases/{{ a.id }}/delete" style="display:inline" onsubmit="return confirm('Delete this alias?')"><button type="submit">Delete</button></form>
+                <form method="post" action="/aliases/{{ a.id }}/delete" class="form-inline" onsubmit="return confirm('Delete this alias?')"><button type="submit">Delete</button></form>
             </td>
         </tr>
         {% endfor %}

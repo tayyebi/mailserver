@@ -20,7 +20,7 @@
     {% else %}
     <div class="spf-chain">
         {% for rec in dns_check.spf_chain %}
-        <div class="spf-entry" style="margin-inline-start: {{ rec.depth }}rem;">
+        <div class="spf-entry" style="--spf-depth: {{ rec.depth }}">
             <strong>{{ rec.domain }}</strong>
             <code>{{ rec.raw }}</code>
         </div>

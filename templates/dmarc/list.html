@@ -38,7 +38,7 @@
       <td>{{ inbox.created_at }}</td>
       <td>
         <a href="/dmarc/{{ inbox.id }}/reports" class="button-small">View Reports</a>
-        <form method="post" action="/dmarc/{{ inbox.id }}/delete" style="display:inline;">
+        <form method="post" action="/dmarc/{{ inbox.id }}/delete" class="form-inline">
           <button type="submit" class="button-danger button-small">Remove</button>
         </form>
       </td>

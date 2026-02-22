@@ -85,7 +85,7 @@
                 <td>{{ b.banned_at }}</td>
                 <td>{% if b.permanent %}<mark>Permanent</mark>{% else %}{{ b.expires_at.as_deref().unwrap_or("—") }}{% endif %}</td>
                 <td>
-                    <form method="post" action="/fail2ban/unban/{{ b.id }}" style="display:inline" onsubmit="return confirm('Unban this IP?')">
+                    <form method="post" action="/fail2ban/unban/{{ b.id }}" class="form-inline" onsubmit="return confirm('Unban this IP?')">
                         <button type="submit">Unban</button>
                     </form>
                 </td>
@@ -143,7 +143,7 @@
                 <td>{{ w.description }}</td>
                 <td>{{ w.created_at }}</td>
                 <td>
-                    <form method="post" action="/fail2ban/whitelist/{{ w.id }}/delete" style="display:inline" onsubmit="return confirm('Remove from whitelist?')">
+                    <form method="post" action="/fail2ban/whitelist/{{ w.id }}/delete" class="form-inline" onsubmit="return confirm('Remove from whitelist?')">
                         <button type="submit">Remove</button>
                     </form>
                 </td>
@@ -188,7 +188,7 @@
                 <td>{{ b.description }}</td>
                 <td>{{ b.created_at }}</td>
                 <td>
-                    <form method="post" action="/fail2ban/blacklist/{{ b.id }}/delete" style="display:inline" onsubmit="return confirm('Remove from blacklist?')">
+                    <form method="post" action="/fail2ban/blacklist/{{ b.id }}/delete" class="form-inline" onsubmit="return confirm('Remove from blacklist?')">
                         <button type="submit">Remove</button>
                     </form>
                 </td>
