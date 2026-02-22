@@ -408,17 +408,7 @@ header > small {
   display: none;
 }
 
-header > mark {
-  margin-inline-start: auto;
-  background: none;
-  color: var(--color-success);
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-/* ── Sidebar nav (CSS-only slide-in panel) ── */
+/* ── Sidebar nav ── */
 
 header nav {
   position: fixed;
@@ -470,15 +460,6 @@ header nav a[aria-current="page"] {
   color: var(--color-accent);
   background: var(--color-bg-muted);
   font-weight: 600;
-}
-
-header mark {
-  background: none;
-  color: var(--color-success);
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
 }
 
 /* ── Main ── */
@@ -1296,6 +1277,176 @@ img {
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius);
   padding: var(--space-md);
+}
+
+/* ── Glassmorphic tokens ── */
+
+:root {
+  --glass-bg: rgba(255, 255, 255, 0.65);
+  --glass-border: rgba(255, 255, 255, 0.4);
+  --glass-blur: 14px;
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.10), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --sidebar-width: 220px;
+  --radius-xl: 14px;
+  --transition-spring: 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --glass-bg: rgba(20, 20, 24, 0.70);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+}
+
+:root[data-theme="dark"] {
+  --glass-bg: rgba(20, 20, 24, 0.70);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* ── Ambient background gradient ── */
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 50% at 15% 40%, rgba(71, 85, 105, 0.12) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 60% at 85% 15%, rgba(59, 130, 246, 0.08) 0%, transparent 60%),
+    radial-gradient(ellipse 55% 45% at 55% 85%, rgba(16, 185, 129, 0.07) 0%, transparent 65%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* ── Entrance animations ── */
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+main > section {
+  animation: fade-up 0.35s ease both;
+}
+
+main > section:nth-child(1) { animation-delay: 0.05s; }
+main > section:nth-child(2) { animation-delay: 0.12s; }
+main > section:nth-child(3) { animation-delay: 0.19s; }
+main > section:nth-child(4) { animation-delay: 0.26s; }
+main > section:nth-child(5) { animation-delay: 0.33s; }
+
+main > output {
+  animation: fade-in 0.25s ease both;
+}
+
+/* ── Glassmorphic article cards ── */
+
+article {
+  background: var(--glass-bg);
+  border: var(--border-width) solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--glass-shadow);
+  transition:
+    transform var(--transition-spring),
+    box-shadow var(--transition-base),
+    border-color var(--transition-base);
+}
+
+article:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.08);
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+/* ── Enhanced mark / badge ── */
+
+mark {
+  display: inline-block;
+  padding-block: 0.15em;
+  padding-inline: 0.55em;
+  border-radius: 100px;
+  background: rgba(29, 129, 2, 0.12);
+  color: var(--color-success);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+/* ── Stat card data number ── */
+
+article data {
+  transition: color var(--transition-base), transform var(--transition-spring);
+}
+
+article:hover data {
+  transform: scale(1.04);
+  display: block;
+}
+
+/* ── Page wrapper (sidebar + content) ── */
+
+.page-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-block-size: 0;
+}
+
+/* ── Smooth table rows ── */
+
+tbody tr {
+  transition: background var(--transition-fast);
+}
+
+/* ── Enhanced details/summary ── */
+
+details {
+  border-radius: var(--radius-md);
+  transition: background var(--transition-base);
+}
+
+details[open] {
+  background: var(--color-bg-subtle);
+  padding: var(--space-sm) var(--space-md);
+}
+
+details[open] > summary {
+  color: var(--color-accent-hover);
+}
+
+/* ── Focus ring enhancement ── */
+
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+  transition: outline-offset var(--transition-fast);
 }
 
 .webmail-folders strong {

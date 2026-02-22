@@ -18,7 +18,6 @@
   </label>
   <strong>Mailserver</strong>
   <small>Control Panel</small>
-  <mark>Online</mark>
   <nav>
     <a href="/"{% if nav_active == "Dashboard" %} aria-current="page"{% endif %}>Dashboard</a>
     <a href="/domains"{% if nav_active == "Domains" %} aria-current="page"{% endif %}>Domains</a>
@@ -37,10 +36,12 @@
     <a href="/settings"{% if nav_active == "Settings" %} aria-current="page"{% endif %}>Settings</a>
   </nav>
 </header>
+<div class="page-wrapper">
 <main>
 {% if let Some(msg) = flash %}<output>{{ msg }}</output>{% endif %}
 {% block content %}{% endblock %}
 </main>
 <footer><small>Mailserver Admin</small></footer>
+</div>
 </body>
 </html>
