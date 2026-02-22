@@ -1827,6 +1827,30 @@ impl Database {
         })
     }
 
+    pub fn get_dmarc_inbox_by_domain(&self, domain: &str) -> Option<DmarcInbox> {
+        debug!("[db] getting dmarc inbox for domain={}", domain);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        conn.query_opt(
+            "SELECT di.id, di.account_id, di.label, di.created_at, a.username, d.domain
+             FROM dmarc_inboxes di
+             JOIN accounts a ON di.account_id = a.id
+             JOIN domains d ON a.domain_id = d.id
+             WHERE d.domain = $1
+             LIMIT 1",
+            &[&domain],
+        )
+        .ok()
+        .flatten()
+        .map(|row| DmarcInbox {
+            id: row.get(0),
+            account_id: row.get(1),
+            label: row.get::<_, Option<String>>(2).unwrap_or_default(),
+            created_at: row.get::<_, Option<String>>(3).unwrap_or_default(),
+            account_username: row.get(4),
+            account_domain: row.get(5),
+        })
+    }
+
     pub fn create_dmarc_inbox(&self, account_id: i64, label: &str) -> Result<i64, String> {
         info!("[db] creating dmarc inbox account_id={}", account_id);
         let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
