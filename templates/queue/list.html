@@ -3,13 +3,55 @@
 {% block content %}
 <h1>Mail Queue</h1>
 <p>Current Postfix queue from <code>postqueue -p</code>.</p>
-<form method="post" action="/queue/flush" style="margin-bottom: 1rem;" onsubmit="return confirm('Flush the mail queue now?')">
-  <button type="submit">Flush Queue</button>
-</form>
+<div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1rem;">
+  <form method="post" action="/queue/flush" onsubmit="return confirm('Flush the mail queue now?')">
+    <button type="submit">Flush Queue</button>
+  </form>
+  <form method="post" action="/queue/purge" onsubmit="return confirm('Purge ALL messages from the queue? This cannot be undone.')">
+    <button type="submit" style="background:var(--del-color,#c00);color:#fff;">Purge Queue</button>
+  </form>
+</div>
 
 {% if let Some(err) = error %}
   <p style="color: #d00;"><strong>Error:</strong> <em>{{ err }}</em></p>
+{% else if entries.is_empty() %}
+  <p><em>Mail queue is empty.</em></p>
 {% else %}
-  <pre style="background: #f5f5f5; padding: 1rem; overflow-x: auto; border: 1px solid #ddd; border-radius: 4px;"><code>{{ queue_output }}</code></pre>
+  {% if !queue_summary.is_empty() %}<p><small>{{ queue_summary }}</small></p>{% endif %}
+  <table>
+    <thead>
+      <tr>
+        <th>Queue ID</th>
+        <th>Size</th>
+        <th>Arrival Time</th>
+        <th>Sender</th>
+        <th>Recipients</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for entry in entries %}
+      <tr>
+        <td><code>{{ entry.id }}</code></td>
+        <td>{{ entry.size }}</td>
+        <td><small>{{ entry.arrival_time }}</small></td>
+        <td><code>{{ entry.sender }}</code></td>
+        <td>
+          {% for rcpt in entry.recipients %}
+            <div><small>{{ rcpt }}</small></div>
+          {% endfor %}
+        </td>
+        <td style="white-space:nowrap;">
+          <form method="post" action="/queue/{{ entry.id }}/flush" style="display:inline">
+            <button type="submit">Retry</button>
+          </form>
+          <form method="post" action="/queue/{{ entry.id }}/delete" style="display:inline" onsubmit="return confirm('Delete message {{ entry.id }}?')">
+            <button type="submit" style="background:var(--del-color,#c00);color:#fff;">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
 {% endif %}
 {% endblock %}
