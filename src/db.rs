@@ -179,6 +179,15 @@ pub struct WebhookLog {
     pub created_at: String,
 }
 
+#[derive(Clone, Serialize)]
+pub struct DmarcInbox {
+    pub id: i64,
+    pub account_id: i64,
+    pub label: String,
+    pub created_at: String,
+    pub account_username: Option<String>,
+    pub account_domain: Option<String>,
+}
 
 fn load_available_migrations() -> Vec<(String, String)> {
     let mut migrations = Vec::new();
@@ -1763,5 +1772,80 @@ impl Database {
                 created_at: row.get(9),
             })
             .collect()
+    }
+
+    // ── DMARC inbox methods ──
+
+    pub fn list_dmarc_inboxes(&self) -> Vec<DmarcInbox> {
+        debug!("[db] listing dmarc inboxes");
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let rows = conn
+            .query(
+                "SELECT di.id, di.account_id, di.label, di.created_at, a.username, d.domain
+                 FROM dmarc_inboxes di
+                 JOIN accounts a ON di.account_id = a.id
+                 LEFT JOIN domains d ON a.domain_id = d.id
+                 ORDER BY di.id ASC",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list dmarc inboxes: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| DmarcInbox {
+                id: row.get(0),
+                account_id: row.get(1),
+                label: row.get::<_, Option<String>>(2).unwrap_or_default(),
+                created_at: row.get::<_, Option<String>>(3).unwrap_or_default(),
+                account_username: row.get(4),
+                account_domain: row.get(5),
+            })
+            .collect()
+    }
+
+    pub fn get_dmarc_inbox(&self, id: i64) -> Option<DmarcInbox> {
+        debug!("[db] getting dmarc inbox id={}", id);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        conn.query_opt(
+            "SELECT di.id, di.account_id, di.label, di.created_at, a.username, d.domain
+             FROM dmarc_inboxes di
+             JOIN accounts a ON di.account_id = a.id
+             LEFT JOIN domains d ON a.domain_id = d.id
+             WHERE di.id = $1",
+            &[&id],
+        )
+        .ok()
+        .flatten()
+        .map(|row| DmarcInbox {
+            id: row.get(0),
+            account_id: row.get(1),
+            label: row.get::<_, Option<String>>(2).unwrap_or_default(),
+            created_at: row.get::<_, Option<String>>(3).unwrap_or_default(),
+            account_username: row.get(4),
+            account_domain: row.get(5),
+        })
+    }
+
+    pub fn create_dmarc_inbox(&self, account_id: i64, label: &str) -> Result<i64, String> {
+        info!("[db] creating dmarc inbox account_id={}", account_id);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let ts = now();
+        conn.query_one(
+            "INSERT INTO dmarc_inboxes (account_id, label, created_at)
+             VALUES ($1, $2, $3) RETURNING id",
+            &[&account_id, &label, &ts],
+        )
+        .map(|row| row.get(0))
+        .map_err(|e| {
+            error!("[db] failed to create dmarc inbox: {}", e);
+            e.to_string()
+        })
+    }
+
+    pub fn delete_dmarc_inbox(&self, id: i64) {
+        warn!("[db] deleting dmarc inbox id={}", id);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let _ = conn.execute("DELETE FROM dmarc_inboxes WHERE id = $1", &[&id]);
     }
 }

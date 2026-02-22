@@ -3,6 +3,7 @@ pub mod aliases;
 pub mod bimi;
 pub mod configs;
 pub mod dashboard;
+pub mod dmarc;
 pub mod domains;
 pub mod fail2ban;
 pub mod forwarding;
@@ -89,4 +90,7 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/spambl", get(spambl::list))
         .route("/spambl/toggle", post(spambl::toggle))
         .route("/webhooks", get(webhook::list))
+        .route("/dmarc", get(dmarc::list).post(dmarc::create))
+        .route("/dmarc/:id/delete", post(dmarc::delete))
+        .route("/dmarc/:id/reports", get(dmarc::reports))
 }

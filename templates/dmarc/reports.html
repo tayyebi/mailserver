@@ -1,0 +1,127 @@
+{% extends "layout.html" %}
+{% block title %}DMARC Reports{% endblock %}
+{% block content %}
+<h1>DMARC Reports</h1>
+<p><a href="/dmarc">← Back to DMARC Inboxes</a></p>
+<p>
+  Inbox: <strong>{{ inbox.account_username.as_deref().unwrap_or("?") }}@{{ inbox.account_domain.as_deref().unwrap_or("?") }}</strong>
+  {% if !inbox.label.is_empty() %} — {{ inbox.label }}{% endif %}
+</p>
+
+{% if reports.is_empty() %}
+<p>No DMARC aggregate reports found in this inbox. Make sure the account's mailbox contains DMARC report emails with XML attachments (.xml, .xml.gz, or .zip).</p>
+{% else %}
+{% for report in reports %}
+<details open>
+  <summary>
+    <strong>{{ report.email_subject }}</strong>
+    <span style="font-weight:normal;margin-left:1rem;color:#666;">{{ report.email_date }}</span>
+  </summary>
+  <div style="padding:1rem 0 1rem 1rem;">
+
+    <h3>Report Metadata</h3>
+    <dl>
+      <dt>Reporting Organisation</dt><dd>{{ report.meta.org_name }}</dd>
+      <dt>Contact Email</dt><dd>{{ report.meta.email }}</dd>
+      <dt>Report ID</dt><dd><code>{{ report.meta.report_id }}</code></dd>
+      <dt>Date Range</dt><dd>{{ report.meta.date_begin }} — {{ report.meta.date_end }}</dd>
+    </dl>
+
+    <h3>Policy Published</h3>
+    <dl>
+      <dt>Domain</dt><dd>{{ report.policy.domain }}</dd>
+      <dt>DKIM Alignment</dt><dd>{{ report.policy.adkim }}</dd>
+      <dt>SPF Alignment</dt><dd>{{ report.policy.aspf }}</dd>
+      <dt>Policy (p)</dt><dd>{{ report.policy.p }}</dd>
+      <dt>Subdomain Policy (sp)</dt><dd>{{ report.policy.sp }}</dd>
+      <dt>Percentage</dt><dd>{{ report.policy.pct }}%</dd>
+    </dl>
+
+    <h3>Records ({{ report.records.len() }})</h3>
+    {% if report.records.is_empty() %}
+    <p>No records.</p>
+    {% else %}
+    <table>
+      <thead>
+        <tr>
+          <th>Source IP</th>
+          <th>Count</th>
+          <th>Disposition</th>
+          <th>DKIM</th>
+          <th>SPF</th>
+          <th>Header From</th>
+          <th>Auth DKIM</th>
+          <th>Auth SPF</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for rec in report.records %}
+        <tr>
+          <td><code>{{ rec.source_ip }}</code></td>
+          <td>{{ rec.count }}</td>
+          <td>
+            {% if rec.disposition == "none" %}
+            <span style="color:green;">none</span>
+            {% else if rec.disposition == "quarantine" %}
+            <span style="color:orange;">quarantine</span>
+            {% else if rec.disposition == "reject" %}
+            <span style="color:red;">reject</span>
+            {% else %}
+            {{ rec.disposition }}
+            {% endif %}
+          </td>
+          <td>
+            {% if rec.dkim_result == "pass" %}
+            <span style="color:green;">✓ pass</span>
+            {% else %}
+            <span style="color:red;">✗ {{ rec.dkim_result }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if rec.spf_result == "pass" %}
+            <span style="color:green;">✓ pass</span>
+            {% else %}
+            <span style="color:red;">✗ {{ rec.spf_result }}</span>
+            {% endif %}
+          </td>
+          <td>{{ rec.header_from }}</td>
+          <td>
+            {{ rec.auth_dkim_domain }}
+            {% if !rec.auth_dkim_result.is_empty() %}
+            —
+            {% if rec.auth_dkim_result == "pass" %}
+            <span style="color:green;">✓ pass</span>
+            {% else %}
+            <span style="color:red;">✗ {{ rec.auth_dkim_result }}</span>
+            {% endif %}
+            {% endif %}
+          </td>
+          <td>
+            {{ rec.auth_spf_domain }}
+            {% if !rec.auth_spf_result.is_empty() %}
+            —
+            {% if rec.auth_spf_result == "pass" %}
+            <span style="color:green;">✓ pass</span>
+            {% else %}
+            <span style="color:red;">✗ {{ rec.auth_spf_result }}</span>
+            {% endif %}
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</details>
+{% endfor %}
+{% endif %}
+
+{% if !logs.is_empty() %}
+<details>
+  <summary>Verbose Log</summary>
+  <pre>{% for line in logs %}{{ line }}
+{% endfor %}</pre>
+</details>
+{% endif %}
+{% endblock %}
