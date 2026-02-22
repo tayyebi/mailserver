@@ -460,10 +460,6 @@ struct EmailMetadata {
 }
 
 fn send_webhook(webhook_url: &str, db_url: &str, meta: &EmailMetadata, modified: bool, sender: &str, subject: &str) {
-    if webhook_url.is_empty() {
-        return;
-    }
-
     let timestamp = chrono::Utc::now().to_rfc3339();
     let payload = serde_json::json!({
         "event": "email_processed",
@@ -481,46 +477,51 @@ fn send_webhook(webhook_url: &str, db_url: &str, meta: &EmailMetadata, modified:
     });
     let request_body = payload.to_string();
 
-    debug!("[filter] sending webhook to {}", webhook_url);
-    let start = std::time::Instant::now();
+    let (response_status, response_body, error, duration_ms) = if webhook_url.is_empty() {
+        (None, String::new(), String::new(), 0i64)
+    } else {
+        debug!("[filter] sending webhook to {}", webhook_url);
+        let start = std::time::Instant::now();
 
-    let (response_status, response_body, error) =
-        match reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
-            .build()
-        {
-            Ok(client) => match client.post(webhook_url).json(&payload).send() {
-                Ok(resp) => {
-                    let status = resp.status().as_u16() as i32;
-                    let body = resp.text().unwrap_or_default();
-                    // Truncate response body to 2 KB for storage (char-boundary safe)
-                    let body_truncated = if body.len() > 2048 {
-                        let mut end = 2048;
-                        while !body.is_char_boundary(end) { end -= 1; }
-                        body[..end].to_string()
-                    } else {
-                        body
-                    };
-                    info!(
-                        "[filter] webhook delivered to {} status={}",
-                        webhook_url, status
-                    );
-                    (Some(status), body_truncated, String::new())
-                }
+        let (response_status, response_body, error) =
+            match reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
+            {
+                Ok(client) => match client.post(webhook_url).json(&payload).send() {
+                    Ok(resp) => {
+                        let status = resp.status().as_u16() as i32;
+                        let body = resp.text().unwrap_or_default();
+                        // Truncate response body to 2 KB for storage (char-boundary safe)
+                        let body_truncated = if body.len() > 2048 {
+                            let mut end = 2048;
+                            while !body.is_char_boundary(end) { end -= 1; }
+                            body[..end].to_string()
+                        } else {
+                            body
+                        };
+                        info!(
+                            "[filter] webhook delivered to {} status={}",
+                            webhook_url, status
+                        );
+                        (Some(status), body_truncated, String::new())
+                    }
+                    Err(e) => {
+                        warn!("[filter] webhook delivery failed to {}: {}", webhook_url, e);
+                        (None, String::new(), e.to_string())
+                    }
+                },
                 Err(e) => {
-                    warn!("[filter] webhook delivery failed to {}: {}", webhook_url, e);
+                    warn!("[filter] failed to build HTTP client for webhook: {}", e);
                     (None, String::new(), e.to_string())
                 }
-            },
-            Err(e) => {
-                warn!("[filter] failed to build HTTP client for webhook: {}", e);
-                (None, String::new(), e.to_string())
-            }
-        };
+            };
 
-    let duration_ms = start.elapsed().as_millis() as i64;
+        let duration_ms = start.elapsed().as_millis() as i64;
+        (response_status, response_body, error, duration_ms)
+    };
 
-    // Log the execution to the database (best-effort — don't let logging failures surface).
+    // Always log the email processing event to the database (best-effort — don't let logging failures surface).
     if let Ok(db) = std::panic::catch_unwind(|| Database::open(db_url)) {
         db.log_webhook(
             webhook_url,
