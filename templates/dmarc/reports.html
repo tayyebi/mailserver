@@ -15,9 +15,9 @@
 <details open>
   <summary>
     <strong>{{ report.email_subject }}</strong>
-    <span style="font-weight:normal;margin-left:1rem;color:#666;">{{ report.email_date }}</span>
+    <span class="report-date">{{ report.email_date }}</span>
   </summary>
-  <div style="padding:1rem 0 1rem 1rem;">
+  <div class="report-body">
 
     <h3>Report Metadata</h3>
     <dl>
@@ -61,27 +61,27 @@
           <td>{{ rec.count }}</td>
           <td>
             {% if rec.disposition == "none" %}
-            <span style="color:green;">none</span>
+            <span class="status-pass">none</span>
             {% else if rec.disposition == "quarantine" %}
-            <span style="color:orange;">quarantine</span>
+            <span class="status-warn">quarantine</span>
             {% else if rec.disposition == "reject" %}
-            <span style="color:red;">reject</span>
+            <span class="status-fail">reject</span>
             {% else %}
             {{ rec.disposition }}
             {% endif %}
           </td>
           <td>
             {% if rec.dkim_result == "pass" %}
-            <span style="color:green;">✓ pass</span>
+            <span class="status-pass">✓ pass</span>
             {% else %}
-            <span style="color:red;">✗ {{ rec.dkim_result }}</span>
+            <span class="status-fail">✗ {{ rec.dkim_result }}</span>
             {% endif %}
           </td>
           <td>
             {% if rec.spf_result == "pass" %}
-            <span style="color:green;">✓ pass</span>
+            <span class="status-pass">✓ pass</span>
             {% else %}
-            <span style="color:red;">✗ {{ rec.spf_result }}</span>
+            <span class="status-fail">✗ {{ rec.spf_result }}</span>
             {% endif %}
           </td>
           <td>{{ rec.header_from }}</td>
@@ -90,9 +90,9 @@
             {% if !rec.auth_dkim_result.is_empty() %}
             —
             {% if rec.auth_dkim_result == "pass" %}
-            <span style="color:green;">✓ pass</span>
+            <span class="status-pass">✓ pass</span>
             {% else %}
-            <span style="color:red;">✗ {{ rec.auth_dkim_result }}</span>
+            <span class="status-fail">✗ {{ rec.auth_dkim_result }}</span>
             {% endif %}
             {% endif %}
           </td>
@@ -101,9 +101,9 @@
             {% if !rec.auth_spf_result.is_empty() %}
             —
             {% if rec.auth_spf_result == "pass" %}
-            <span style="color:green;">✓ pass</span>
+            <span class="status-pass">✓ pass</span>
             {% else %}
-            <span style="color:red;">✗ {{ rec.auth_spf_result }}</span>
+            <span class="status-fail">✗ {{ rec.auth_spf_result }}</span>
             {% endif %}
             {% endif %}
           </td>

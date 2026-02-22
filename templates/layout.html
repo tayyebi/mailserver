@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Mailserver{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/static/style.css">
 <link rel="stylesheet" href="/static/desktop.css" media="(min-width: 768px)">
 </head>
@@ -18,7 +21,6 @@
   </label>
   <strong>Mailserver</strong>
   <small>Control Panel</small>
-  <mark>Online</mark>
   <nav>
     <a href="/"{% if nav_active == "Dashboard" %} aria-current="page"{% endif %}>Dashboard</a>
     <a href="/domains"{% if nav_active == "Domains" %} aria-current="page"{% endif %}>Domains</a>
@@ -37,10 +39,12 @@
     <a href="/settings"{% if nav_active == "Settings" %} aria-current="page"{% endif %}>Settings</a>
   </nav>
 </header>
+<div class="page-wrapper">
 <main>
 {% if let Some(msg) = flash %}<output>{{ msg }}</output>{% endif %}
 {% block content %}{% endblock %}
 </main>
 <footer><small>Mailserver Admin</small></footer>
+</div>
 </body>
 </html>

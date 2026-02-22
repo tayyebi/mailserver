@@ -14,22 +14,22 @@
 <tr>
     <td><strong>{{ row.email }}</strong></td>
     <td>{{ row.name }}</td>
-    <td>{% if row.active %}<mark>Active</mark>{% else %}<mark style="background: var(--gray-300);">Inactive</mark>{% endif %}</td>
+    <td>{% if row.active %}<mark>Active</mark>{% else %}<mark class="mark-muted">Inactive</mark>{% endif %}</td>
     <td>{{ row.quota_display }}</td>
-    <td><code style="font-size: 0.85em; word-break: break-all;">{{ row.mailbox_path }}</code></td>
+    <td><code>{{ row.mailbox_path }}</code></td>
     <td>
         <a href="/accounts/{{ row.id }}/edit">Edit</a>
-        <form method="post" action="/accounts/{{ row.id }}/delete" style="display:inline" onsubmit="return confirm('Delete this account?')"><button type="submit">Delete</button></form>
+        <form method="post" action="/accounts/{{ row.id }}/delete" class="form-inline" onsubmit="return confirm('Delete this account?')"><button type="submit">Delete</button></form>
     </td>
 </tr>
 {% endfor %}
 </tbody>
 </table>
 
-<div style="margin-top: 20px; text-align: center;">
+<div class="pagination-wrap">
     {% if total_pages > 1 %}
     <p>Page {{ current_page }} of {{ total_pages }} ({{ total_count }} total)</p>
-    <div style="margin: 10px 0;">
+    <div class="pagination-links">
         {% if current_page > 1 %}
             <a href="/accounts?page=1">First</a>
             <a href="/accounts?page={{ current_page - 1 }}">Previous</a>

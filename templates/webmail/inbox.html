@@ -41,7 +41,7 @@
             {% for child in group.children %}
             <li>
               <a href="/webmail?account_id={{ sel.id }}&folder={{ child.name }}"
-                 style="padding-inline-start: calc(var(--space-sm) + {{ child.depth }}rem);"
+                 class="webmail-folder-link" style="--folder-depth: {{ child.depth }}"
                  {% if child.name == current_folder %}aria-current="page"{% endif %}>
                 {{ child.display_name }}
               </a>
@@ -76,7 +76,7 @@
           </td>
           <td>
             <a href="/webmail/view/{{ email.filename }}?account_id={{ sel.id }}&folder={{ current_folder }}" class="button-small" aria-label="View email: {{ email.subject }}">View</a>
-            <form method="post" action="/webmail/delete/{{ email.filename }}" style="display:inline;">
+            <form method="post" action="/webmail/delete/{{ email.filename }}" class="form-inline">
               <input type="hidden" name="account_id" value="{{ sel.id }}">
               <input type="hidden" name="folder" value="{{ current_folder }}">
               <button type="submit" class="button-danger button-small">Delete</button>
