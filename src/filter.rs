@@ -190,6 +190,20 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
     //    Recipient and domain details were logged when suppressed was set above.
     if suppressed {
         info!("[filter] email suppressed — not reinjecting (see earlier log for recipient/domain)");
+        let email_was_modified = modified != email_data;
+        let meta = EmailMetadata {
+            sender: sender.to_string(),
+            recipients: recipients.to_vec(),
+            subject: subject.clone(),
+            from: from_header.clone(),
+            to: to_header.clone(),
+            cc: cc_header.clone(),
+            date: date_header.clone(),
+            message_id: message_id_header.clone(),
+            size_bytes,
+            suppressed: true,
+        };
+        send_webhook(&webhook_url, db_url, &meta, email_was_modified, &meta.sender, &meta.subject);
         return;
     }
 
@@ -206,6 +220,7 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
         date: date_header.clone(),
         message_id: message_id_header.clone(),
         size_bytes,
+        suppressed: false,
     };
 
     // Spawn the webhook thread early so it can start in parallel with the reinject.
@@ -457,6 +472,7 @@ struct EmailMetadata {
     date: String,
     message_id: String,
     size_bytes: usize,
+    suppressed: bool,
 }
 
 fn send_webhook(webhook_url: &str, db_url: &str, meta: &EmailMetadata, modified: bool, sender: &str, subject: &str) {
@@ -474,6 +490,7 @@ fn send_webhook(webhook_url: &str, db_url: &str, meta: &EmailMetadata, modified:
         "message_id": meta.message_id,
         "size_bytes": meta.size_bytes,
         "modified": modified,
+        "suppressed": meta.suppressed,
     });
     let request_body = payload.to_string();
 
