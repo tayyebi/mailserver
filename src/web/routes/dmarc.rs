@@ -65,6 +65,7 @@ pub struct DmarcRecord {
 pub struct DmarcReport {
     pub email_subject: String,
     pub email_date: String,
+    #[allow(dead_code)]
     pub email_filename: String,
     pub meta: DmarcReportMeta,
     pub policy: DmarcPolicy,
@@ -406,6 +407,7 @@ pub struct AddDmarcInboxForm {
 
 #[derive(Deserialize)]
 pub struct InboxQuery {
+    #[allow(dead_code)]
     pub inbox_id: Option<i64>,
 }
 
