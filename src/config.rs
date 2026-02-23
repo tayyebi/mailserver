@@ -448,22 +448,45 @@ fn normalize_virtual_alias_source(source: &str, domain: Option<&str>) -> String 
     trimmed.to_string()
 }
 
+/// Build the list of (normalized_from_address, allowed_sasl_login) pairs for sender_login_maps.
+///
+/// The destination account of an alias — regardless of which domain it lives on — is granted
+/// the right to use the alias source address as the MAIL FROM (envelope sender) address.
+/// This correctly handles cross-domain catch-alls: e.g. `*@gordarg.com → m@tyyi.net` grants
+/// `m@tyyi.net` the ability to send FROM any `*@gordarg.com` address, not the other way around.
+fn build_sender_login_entries(
+    aliases: &[crate::db::Alias],
+    accounts: &[crate::db::Account],
+) -> Vec<(String, String)> {
+    // Build a fast-lookup set of all active account emails (any domain).
+    let active_accounts: std::collections::HashSet<String> = accounts
+        .iter()
+        .filter(|a| a.active)
+        .filter_map(|a| a.domain_name.as_ref().map(|d| format!("{}@{}", a.username, d)))
+        .collect();
+
+    aliases
+        .iter()
+        .filter(|a| a.active && active_accounts.contains(&a.destination))
+        .map(|a| (normalize_virtual_alias_source(&a.source, None), a.destination.clone()))
+        .collect()
+}
+
 pub fn generate_sender_login_maps(db: &Database) {
     info!("[config] generating /etc/postfix/sender_login_maps");
-    let entries = db.get_sender_login_map();
+    let aliases = db.list_all_aliases_with_domain();
+    let accounts = db.list_all_accounts_with_domain();
+    let entries = build_sender_login_entries(&aliases, &accounts);
 
-    // Group by alias source: normalize wildcards (*@domain → @domain) so Postfix
-    // can use them for wildcard lookups in smtpd_sender_login_maps.
+    // Group by normalized alias source so Postfix wildcard lookups work (@domain format).
     let mut map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
-    for (alias_source, account_email) in &entries {
-        let normalized_source = normalize_virtual_alias_source(alias_source, None);
+    for (normalized_source, account_email) in entries {
         map.entry(normalized_source)
             .or_default()
-            .push(account_email.clone());
+            .push(account_email);
     }
 
     // Also allow each account to send as itself
-    let accounts = db.list_all_accounts_with_domain();
     for a in &accounts {
         if a.active {
             if let Some(ref domain) = a.domain_name {
@@ -1031,6 +1054,7 @@ mod tests {
     // ── build_virtual_alias_entries tests ──
 
     use super::build_recipient_bcc_entries;
+    use super::build_sender_login_entries;
     use super::build_virtual_alias_entries;
     use crate::db::{Account, Alias, Forwarding};
 
@@ -1265,6 +1289,69 @@ mod tests {
         assert!(
             !has_identity,
             "inactive accounts must not receive identity entries"
+        );
+    }
+
+    // ── build_sender_login_entries tests ──
+
+    #[test]
+    fn sender_login_same_domain_catch_all() {
+        // *@example.com → user@example.com: user@example.com can send FROM *@example.com
+        let alias = make_alias("*@example.com", "user@example.com", "example.com");
+        let account = make_account("user", "example.com");
+        let entries = build_sender_login_entries(&[alias], &[account]);
+        assert!(
+            entries.iter().any(|(src, login)| src == "@example.com" && login == "user@example.com"),
+            "same-domain catch-all destination must be granted FROM rights for the wildcard"
+        );
+    }
+
+    #[test]
+    fn sender_login_cross_domain_catch_all() {
+        // *@gordarg.com → m@tyyi.net: m@tyyi.net lives on a different domain but must
+        // still be able to send FROM any *@gordarg.com address.
+        let alias = make_alias("*@gordarg.com", "m@tyyi.net", "gordarg.com");
+        let account = make_account("m", "tyyi.net");
+        let entries = build_sender_login_entries(&[alias], &[account]);
+        assert!(
+            entries.iter().any(|(src, login)| src == "@gordarg.com" && login == "m@tyyi.net"),
+            "cross-domain catch-all destination must be granted FROM rights for the wildcard"
+        );
+    }
+
+    #[test]
+    fn sender_login_cross_domain_specific_alias() {
+        // info@example.com → admin@otherdomain.com: cross-domain specific alias
+        let alias = make_alias("info@example.com", "admin@otherdomain.com", "example.com");
+        let account = make_account("admin", "otherdomain.com");
+        let entries = build_sender_login_entries(&[alias], &[account]);
+        assert!(
+            entries.iter().any(|(src, login)| src == "info@example.com" && login == "admin@otherdomain.com"),
+            "cross-domain specific alias destination must be granted FROM rights for the alias source"
+        );
+    }
+
+    #[test]
+    fn sender_login_inactive_destination_account_excluded() {
+        // The destination account is inactive: no FROM rights should be granted.
+        let alias = make_alias("*@example.com", "inactive@example.com", "example.com");
+        let mut account = make_account("inactive", "example.com");
+        account.active = false;
+        let entries = build_sender_login_entries(&[alias], &[account]);
+        assert!(
+            entries.is_empty(),
+            "alias pointing to an inactive account must not appear in sender_login_maps"
+        );
+    }
+
+    #[test]
+    fn sender_login_external_destination_excluded() {
+        // The destination is an external address with no local account: no entry.
+        let alias = make_alias("*@example.com", "external@gmail.com", "example.com");
+        let entries = build_sender_login_entries(&[alias], &[]);
+        assert!(
+            entries.is_empty(),
+            "alias pointing to a non-local address must not appear in sender_login_maps"
         );
     }
 }
