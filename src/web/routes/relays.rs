@@ -174,10 +174,16 @@ pub async fn update(
     let name = form.name.clone();
     let host = form.host.clone();
     let username = form.username.as_deref().filter(|s| !s.is_empty()).map(str::to_string);
-    let password = form.password.as_deref().filter(|s| !s.is_empty()).map(str::to_string);
+    let new_password = form.password.as_deref().filter(|s| !s.is_empty()).map(str::to_string);
 
     state
         .blocking_db(move |db| {
+            // Preserve the existing password when the form field is left blank
+            let final_password: Option<String> = if new_password.is_some() {
+                new_password
+            } else {
+                db.get_outbound_relay(id).and_then(|r| r.password)
+            };
             db.update_outbound_relay(
                 id,
                 &name,
@@ -185,7 +191,7 @@ pub async fn update(
                 port,
                 &auth_type,
                 username.as_deref(),
-                password.as_deref(),
+                final_password.as_deref(),
                 active,
             )
         })
