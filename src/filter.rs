@@ -4,7 +4,7 @@ use std::sync::mpsc;
 
 use crate::db::Database;
 
-pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_url: &str, unsubscribe_base_url: &str) {
+pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_url: &str, unsubscribe_base_url: &str, incoming: bool) {
     info!(
         "[filter] starting content filter sender={}, recipients={}",
         sender,
@@ -206,6 +206,7 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
         date: date_header.clone(),
         message_id: message_id_header.clone(),
         size_bytes,
+        direction: if incoming { "incoming".to_string() } else { "outgoing".to_string() },
     };
 
     // Spawn the webhook thread early so it can start in parallel with the reinject.
@@ -457,6 +458,7 @@ struct EmailMetadata {
     date: String,
     message_id: String,
     size_bytes: usize,
+    direction: String,
 }
 
 fn send_webhook(webhook_url: &str, db_url: &str, meta: &EmailMetadata, modified: bool, sender: &str, subject: &str) {
@@ -464,6 +466,7 @@ fn send_webhook(webhook_url: &str, db_url: &str, meta: &EmailMetadata, modified:
     let payload = serde_json::json!({
         "event": "email_processed",
         "timestamp": timestamp,
+        "direction": meta.direction,
         "sender": meta.sender,
         "recipients": meta.recipients,
         "subject": meta.subject,
@@ -950,5 +953,39 @@ mod tests {
     fn check_rbl_returns_false_for_invalid_ip() {
         assert!(!check_rbl("not-an-ip", "zen.spamhaus.org"));
         assert!(!check_rbl("1.2.3", "zen.spamhaus.org"));
+    }
+
+    #[test]
+    fn email_metadata_direction_outgoing() {
+        let meta = EmailMetadata {
+            sender: "sender@example.com".to_string(),
+            recipients: vec!["recipient@example.com".to_string()],
+            subject: "Test".to_string(),
+            from: "sender@example.com".to_string(),
+            to: "recipient@example.com".to_string(),
+            cc: String::new(),
+            date: String::new(),
+            message_id: String::new(),
+            size_bytes: 0,
+            direction: "outgoing".to_string(),
+        };
+        assert_eq!(meta.direction, "outgoing");
+    }
+
+    #[test]
+    fn email_metadata_direction_incoming() {
+        let meta = EmailMetadata {
+            sender: "external@remote.com".to_string(),
+            recipients: vec!["local@example.com".to_string()],
+            subject: "Test".to_string(),
+            from: "external@remote.com".to_string(),
+            to: "local@example.com".to_string(),
+            cc: String::new(),
+            date: String::new(),
+            message_id: String::new(),
+            size_bytes: 0,
+            direction: "incoming".to_string(),
+        };
+        assert_eq!(meta.direction, "incoming");
     }
 }

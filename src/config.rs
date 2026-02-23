@@ -210,14 +210,21 @@ pub fn generate_postfix_master_cf(db: &Database) {
         ""
     };
 
+    let filter_smtp_line = if filter_enabled {
+        "  -o content_filter=pixelfilter-in:local\n"
+    } else {
+        ""
+    };
+
     let filter_service = if filter_enabled {
-        "# Pixel filter service\npixelfilter unix -   y   n   -   10  pipe\n  flags=hq user=postfix argv=/usr/local/bin/mailserver filter -f ${sender} -- ${recipient}\n"
+        "# Pixel filter service\npixelfilter unix -   y   n   -   10  pipe\n  flags=hq user=postfix argv=/usr/local/bin/mailserver filter -f ${sender} -- ${recipient}\npixelfilter-in unix -   y   n   -   10  pipe\n  flags=hq user=postfix argv=/usr/local/bin/mailserver filter --incoming -f ${sender} -- ${recipient}\n"
     } else {
         "# Pixel filter service disabled via feature settings\n"
     };
 
     let config = template
         .replace("{{ generated_at }}", &generated_at())
+        .replace("{{ filter_smtp }}", filter_smtp_line)
         .replace("{{ filter_submission }}", filter_line)
         .replace("{{ filter_smtps }}", filter_line)
         .replace("{{ filter_service }}", filter_service);
@@ -956,6 +963,35 @@ mod tests {
         assert!(
             template.contains("smtp      unix  -       -       n       -       -       smtp"),
             "master.cf template must include the smtp unix transport for outbound mail delivery"
+        );
+    }
+
+    #[test]
+    fn master_cf_template_has_filter_smtp_placeholder() {
+        let template = load_template("postfix-master.cf.txt")
+            .expect("postfix-master.cf.txt template should be loadable");
+        assert!(
+            template.contains("{{ filter_smtp }}"),
+            "master.cf template must include {{ filter_smtp }} placeholder for incoming smtp (port 25) filter"
+        );
+    }
+
+    #[test]
+    fn master_cf_template_filter_smtp_placeholder_is_on_smtp_inet_service() {
+        let template = load_template("postfix-master.cf.txt")
+            .expect("postfix-master.cf.txt template should be loadable");
+        // The smtp inet line must appear before the filter_smtp placeholder
+        let smtp_inet_pos = template.find("smtp      inet").expect("smtp inet service must exist");
+        let filter_smtp_pos = template.find("{{ filter_smtp }}").expect("{{ filter_smtp }} placeholder must exist");
+        assert!(
+            smtp_inet_pos < filter_smtp_pos,
+            "{{ filter_smtp }} placeholder must appear after the smtp inet service line"
+        );
+        // And before the submission service
+        let submission_pos = template.find("submission inet").expect("submission inet service must exist");
+        assert!(
+            filter_smtp_pos < submission_pos,
+            "{{ filter_smtp }} placeholder must appear before the submission inet service line"
         );
     }
 
