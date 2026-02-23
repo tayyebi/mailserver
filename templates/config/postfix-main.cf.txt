@@ -15,6 +15,7 @@ virtual_transport = lmtp:inet:127.0.0.1:24
 virtual_mailbox_domains = lmdb:/etc/postfix/virtual_domains
 virtual_mailbox_maps = lmdb:/etc/postfix/vmailbox
 virtual_alias_maps = lmdb:/etc/postfix/virtual_aliases
+recipient_bcc_maps = lmdb:/etc/postfix/recipient_bcc
 
 # SASL auth via Dovecot
 smtpd_sasl_type = dovecot

@@ -121,6 +121,7 @@ pub fn generate_all_configs(db: &Database, hostname: &str) {
     generate_virtual_domains(db);
     generate_virtual_mailboxes(db);
     generate_virtual_aliases(db);
+    generate_recipient_bcc_maps(db);
     generate_sender_login_maps(db);
     generate_transport_maps(db);
     generate_sasl_passwd(db);
@@ -306,19 +307,22 @@ fn build_virtual_alias_entries(
         }
     }
 
-    // Forwardings: when keep_copy is set, deliver to both the source mailbox and the external address
+    // Forwardings: keep_copy entries are handled via recipient_bcc_maps so that local
+    // mailbox delivery is not bypassed by the alias map (Postfix drops self-referential
+    // alias destinations as loops in virtual-mailbox domains).
     for f in forwardings {
         if f.active {
-            let destination = if f.keep_copy {
-                format!("{}, {}", f.source, f.destination)
-            } else {
-                f.destination.clone()
-            };
+            if f.keep_copy && !f.source.starts_with('@') {
+                // Skip: local delivery uses virtual_mailbox_maps; the external copy is
+                // handled by recipient_bcc_maps.  Omitting from specific_sources lets
+                // the accounts loop add an identity entry for catch-all protection.
+                continue;
+            }
             if f.source.starts_with('@') {
-                catch_all_entries.push((f.source.clone(), destination));
+                catch_all_entries.push((f.source.clone(), f.destination.clone()));
             } else {
                 specific_sources.insert(f.source.clone());
-                specific_entries.push((f.source.clone(), destination));
+                specific_entries.push((f.source.clone(), f.destination.clone()));
             }
         }
     }
@@ -381,6 +385,43 @@ pub fn generate_virtual_aliases(db: &Database) {
             "[config] failed to write /etc/postfix/virtual_aliases: {}",
             e
         ),
+    }
+}
+
+/// Build (source → destination) pairs for the recipient_bcc_maps file.
+/// Each active keep_copy=true forwarding (non-catch-all) contributes one entry.
+/// Multiple destinations for the same source are comma-joined into one BCC value.
+fn build_recipient_bcc_entries(forwardings: &[crate::db::Forwarding]) -> Vec<(String, String)> {
+    let mut bcc_map: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
+    for f in forwardings {
+        if f.active && f.keep_copy && !f.source.starts_with('@') {
+            bcc_map
+                .entry(f.source.clone())
+                .or_default()
+                .push(f.destination.clone());
+        }
+    }
+    bcc_map
+        .into_iter()
+        .map(|(source, dests)| (source, dests.join(", ")))
+        .collect()
+}
+
+pub fn generate_recipient_bcc_maps(db: &Database) {
+    info!("[config] generating /etc/postfix/recipient_bcc");
+    let forwardings = db.list_all_forwardings_with_domain();
+    let entries = build_recipient_bcc_entries(&forwardings);
+    let mut lines = generated_header();
+    for (source, bcc) in &entries {
+        lines.push_str(&format!("{} {}\n", source, bcc));
+    }
+    match write_secure_file("/etc/postfix/recipient_bcc", &lines) {
+        Ok(_) => debug!(
+            "[config] wrote /etc/postfix/recipient_bcc with secure permissions ({} entries)",
+            entries.len()
+        ),
+        Err(e) => error!("[config] failed to write /etc/postfix/recipient_bcc: {}", e),
     }
 }
 
@@ -669,6 +710,7 @@ pub fn postmap_files() {
         "/etc/postfix/virtual_domains",
         "/etc/postfix/vmailbox",
         "/etc/postfix/virtual_aliases",
+        "/etc/postfix/recipient_bcc",
         "/etc/postfix/sender_login_maps",
         "/etc/postfix/transport_maps",
         "/etc/postfix/sasl_passwd",
@@ -952,6 +994,7 @@ mod tests {
 
     // ── build_virtual_alias_entries tests ──
 
+    use super::build_recipient_bcc_entries;
     use super::build_virtual_alias_entries;
     use crate::db::{Account, Alias, Forwarding};
 
@@ -1098,17 +1141,79 @@ mod tests {
     }
 
     #[test]
-    fn keep_copy_forwarding_includes_both_source_and_destination() {
+    fn keep_copy_forwarding_is_excluded_from_virtual_aliases() {
+        // keep_copy=true forwardings must NOT appear in virtual_aliases to avoid the
+        // Postfix loop-detection issue (self-referential alias destinations are dropped
+        // in virtual-mailbox domains).  Local delivery happens via virtual_mailbox_maps;
+        // the external copy is handled by recipient_bcc_maps.
         let fwd = make_forwarding("newsletter@example.com", "external@other.com", true);
         let entries = build_virtual_alias_entries(&[], &[fwd], &[]);
-        assert_eq!(entries.len(), 1);
+        assert!(
+            entries.is_empty(),
+            "keep_copy forwarding must not appear in virtual_alias_maps"
+        );
+    }
+
+    #[test]
+    fn keep_copy_non_catch_all_forwarding_appears_in_recipient_bcc_entries() {
+        let fwd = make_forwarding("newsletter@example.com", "external@other.com", true);
+        let bcc_entries = build_recipient_bcc_entries(&[fwd]);
+        assert_eq!(bcc_entries.len(), 1);
         assert_eq!(
-            entries[0],
+            bcc_entries[0],
             (
                 "newsletter@example.com".to_string(),
-                "newsletter@example.com, external@other.com".to_string()
+                "external@other.com".to_string()
             ),
-            "keep_copy forwarding must deliver to both the source mailbox and the external address"
+            "keep_copy forwarding must produce a recipient_bcc_maps entry for the external address"
+        );
+    }
+
+    #[test]
+    fn non_keep_copy_forwarding_does_not_appear_in_recipient_bcc_entries() {
+        let fwd = make_forwarding("newsletter@example.com", "external@other.com", false);
+        let bcc_entries = build_recipient_bcc_entries(&[fwd]);
+        assert!(
+            bcc_entries.is_empty(),
+            "non-keep_copy forwarding must not appear in recipient_bcc_maps"
+        );
+    }
+
+    #[test]
+    fn multiple_keep_copy_destinations_are_comma_joined_in_bcc_entry() {
+        let fwd1 = make_forwarding("newsletter@example.com", "addr1@other.com", true);
+        let mut fwd2 = make_forwarding("newsletter@example.com", "addr2@other.com", true);
+        fwd2.id = 2;
+        let bcc_entries = build_recipient_bcc_entries(&[fwd1, fwd2]);
+        assert_eq!(
+            bcc_entries.len(),
+            1,
+            "multiple keep_copy destinations for the same source must be merged into one BCC entry"
+        );
+        let (source, bcc) = &bcc_entries[0];
+        assert_eq!(source, "newsletter@example.com");
+        assert!(
+            bcc.contains("addr1@other.com") && bcc.contains("addr2@other.com"),
+            "all keep_copy destinations must appear in the BCC value; got: {}",
+            bcc
+        );
+    }
+
+    #[test]
+    fn keep_copy_forwarding_in_catch_all_domain_allows_identity_entry() {
+        // When a keep_copy forwarding exists but the domain also has a catch-all,
+        // the source address must NOT be in specific_sources (so that the accounts
+        // loop can add an identity entry to prevent the catch-all from intercepting mail).
+        let catchall = make_alias("*@example.com", "catchall@tyyi.net", "example.com");
+        let fwd = make_forwarding("newsletter@example.com", "external@other.com", true);
+        let account = make_account("newsletter", "example.com");
+        let entries = build_virtual_alias_entries(&[catchall], &[fwd], &[account]);
+        let identity = entries
+            .iter()
+            .find(|(src, dst)| src == "newsletter@example.com" && dst == "newsletter@example.com");
+        assert!(
+            identity.is_some(),
+            "an identity entry must be added for the keep_copy source to prevent catch-all interception"
         );
     }
 
