@@ -172,3 +172,39 @@ pub struct FeatureToggleForm {
     #[serde(default)]
     pub unsubscribe_enabled: Option<String>,
 }
+
+#[derive(Deserialize)]
+pub struct RelayForm {
+    pub name: String,
+    pub host: String,
+    #[serde(default)]
+    pub port: Option<i32>,
+    #[serde(default)]
+    pub auth_type: String,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct RelayEditForm {
+    pub name: String,
+    pub host: String,
+    #[serde(default)]
+    pub port: Option<i32>,
+    #[serde(default)]
+    pub auth_type: String,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub active: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct RelayAssignmentForm {
+    pub assignment_type: String,
+    pub pattern: String,
+}

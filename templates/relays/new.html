@@ -1,0 +1,30 @@
+{% extends "layout.html" %}
+{% block title %}Add Outbound Relay{% endblock %}
+{% block content %}
+<h1>Add Outbound Relay</h1>
+<aside>
+    <h2>About outbound relays</h2>
+    <p>An outbound relay forwards your mail through an external SMTP server. This is useful when your server IP is blocked or when using a transactional mail provider.</p>
+    <p><small>After creating the relay, assign it to domains, accounts, or aliases on the edit page.</small></p>
+</aside>
+<form method="post" action="/relays">
+<label>Name<br><input type="text" name="name" placeholder="My relay" required></label>
+<small>A friendly label to identify this relay.</small>
+<label>Host<br><input type="text" name="host" placeholder="smtp.sendgrid.net" required></label>
+<small>The hostname or IP address of the relay SMTP server.</small>
+<label>Port<br><input type="number" name="port" placeholder="587" value="587" min="1" max="65535"></label>
+<small>SMTP port (587 for STARTTLS, 465 for SSL, 25 for plain).</small>
+<label>Authentication<br>
+<select name="auth_type">
+    <option value="none">None</option>
+    <option value="plain">Plain</option>
+    <option value="login">Login</option>
+</select></label>
+<small>Select the authentication method required by the relay.</small>
+<label>Username<br><input type="text" name="username" placeholder="apikey"></label>
+<small>Leave blank if authentication is not required.</small>
+<label>Password<br><input type="password" name="password" placeholder=""></label>
+<small>Leave blank if authentication is not required.</small>
+<button type="submit">Create</button>
+</form>
+{% endblock %}

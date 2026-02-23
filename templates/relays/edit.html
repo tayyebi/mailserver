@@ -1,0 +1,69 @@
+{% extends "layout.html" %}
+{% block title %}Edit Relay{% endblock %}
+{% block content %}
+<h1>Edit Relay: {{ relay.name }}</h1>
+<aside>
+    <h2>Assignments</h2>
+    <p>Assign this relay to a <strong>domain</strong> (e.g. <code>example.com</code>), an <strong>account</strong> (e.g. <code>user@example.com</code>), or an <strong>alias</strong> source address.</p>
+    <p><small>Toggle <strong>Active</strong> to pause this relay without losing its settings.</small></p>
+</aside>
+<form method="post" action="/relays/{{ relay.id }}">
+<label>Name<br><input type="text" name="name" value="{{ relay.name }}" required></label>
+<label>Host<br><input type="text" name="host" value="{{ relay.host }}" required></label>
+<label>Port<br><input type="number" name="port" value="{{ relay.port }}" min="1" max="65535"></label>
+<label>Authentication<br>
+<select name="auth_type">
+    <option value="none"{% if relay.auth_type == "none" %} selected{% endif %}>None</option>
+    <option value="plain"{% if relay.auth_type == "plain" %} selected{% endif %}>Plain</option>
+    <option value="login"{% if relay.auth_type == "login" %} selected{% endif %}>Login</option>
+</select></label>
+<label>Username<br><input type="text" name="username" value="{{ relay.username.as_deref().unwrap_or("") }}"></label>
+<label>Password<br><input type="password" name="password" placeholder="Leave blank to keep current password"></label>
+<small>Leave the password field blank to keep the existing password unchanged.</small>
+<label><input type="checkbox" name="active" value="on"{% if relay.active %} checked{% endif %}> Active</label>
+<button type="submit">Save</button>
+</form>
+
+<hr>
+
+<section>
+    <h2>Assignments</h2>
+    <p>Mail from the following senders will be routed through this relay.</p>
+    <table>
+        <thead>
+            <tr><th>Type</th><th>Pattern</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+        {% if assignments.is_empty() %}
+            <tr><td colspan="3">No assignments yet — add one below.</td></tr>
+        {% else %}
+            {% for a in assignments %}
+            <tr>
+                <td>{{ a.assignment_type }}</td>
+                <td><code>{{ a.pattern }}</code></td>
+                <td>
+                    <form method="post" action="/relays/{{ relay.id }}/assignments/{{ a.id }}/delete" class="form-inline" onsubmit="return confirm('Remove this assignment?')"><button type="submit">Remove</button></form>
+                </td>
+            </tr>
+            {% endfor %}
+        {% endif %}
+        </tbody>
+    </table>
+</section>
+
+<section>
+    <h3>Add assignment</h3>
+    <form method="post" action="/relays/{{ relay.id }}/assignments">
+    <label>Type<br>
+    <select name="assignment_type">
+        <option value="domain">Domain</option>
+        <option value="account">Account</option>
+        <option value="alias">Alias</option>
+    </select></label>
+    <small>Domain: all mail from that domain. Account: a specific email account. Alias: a specific alias source address.</small>
+    <label>Pattern<br><input type="text" name="pattern" placeholder="example.com or user@example.com" required></label>
+    <small>Enter a domain name (e.g. <code>example.com</code>) or a full email address (e.g. <code>user@example.com</code>).</small>
+    <button type="submit">Add</button>
+    </form>
+</section>
+{% endblock %}

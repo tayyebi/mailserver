@@ -189,6 +189,27 @@ pub struct DmarcInbox {
     pub account_domain: Option<String>,
 }
 
+#[derive(Clone, Serialize)]
+pub struct OutboundRelay {
+    pub id: i64,
+    pub name: String,
+    pub host: String,
+    pub port: i32,
+    pub auth_type: String,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub active: bool,
+}
+
+#[derive(Clone, Serialize)]
+pub struct OutboundRelayAssignment {
+    pub id: i64,
+    pub relay_id: i64,
+    pub assignment_type: String,
+    pub pattern: String,
+    pub relay_name: Option<String>,
+}
+
 fn load_available_migrations() -> Vec<(String, String)> {
     let mut migrations = Vec::new();
     let paths = vec!["migrations", "/app/migrations"];
@@ -1871,5 +1892,236 @@ impl Database {
         warn!("[db] deleting dmarc inbox id={}", id);
         let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
         let _ = conn.execute("DELETE FROM dmarc_inboxes WHERE id = $1", &[&id]);
+    }
+
+    // ── Outbound Relay methods ──
+
+    pub fn list_outbound_relays(&self) -> Vec<OutboundRelay> {
+        debug!("[db] listing outbound relays");
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let rows = conn
+            .query(
+                "SELECT id, name, host, port, auth_type, username, password, active
+                 FROM outbound_relays ORDER BY name",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list outbound relays: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| OutboundRelay {
+                id: row.get(0),
+                name: row.get(1),
+                host: row.get(2),
+                port: row.get(3),
+                auth_type: row.get(4),
+                username: row.get(5),
+                password: row.get(6),
+                active: row.get(7),
+            })
+            .collect()
+    }
+
+    pub fn get_outbound_relay(&self, id: i64) -> Option<OutboundRelay> {
+        debug!("[db] getting outbound relay id={}", id);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        conn.query_opt(
+            "SELECT id, name, host, port, auth_type, username, password, active
+             FROM outbound_relays WHERE id = $1",
+            &[&id],
+        )
+        .ok()
+        .flatten()
+        .map(|row| OutboundRelay {
+            id: row.get(0),
+            name: row.get(1),
+            host: row.get(2),
+            port: row.get(3),
+            auth_type: row.get(4),
+            username: row.get(5),
+            password: row.get(6),
+            active: row.get(7),
+        })
+    }
+
+    pub fn create_outbound_relay(
+        &self,
+        name: &str,
+        host: &str,
+        port: i32,
+        auth_type: &str,
+        username: Option<&str>,
+        password: Option<&str>,
+    ) -> Result<i64, String> {
+        info!("[db] creating outbound relay name={} host={}:{}", name, host, port);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let ts = now();
+        let row = conn
+            .query_one(
+                "INSERT INTO outbound_relays (name, host, port, auth_type, username, password, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                 RETURNING id",
+                &[&name, &host, &port, &auth_type, &username, &password, &ts, &ts],
+            )
+            .map_err(|e| {
+                error!("[db] failed to create outbound relay {}: {}", name, e);
+                e.to_string()
+            })?;
+        let id: i64 = row.get(0);
+        info!("[db] outbound relay created: {} (id={})", name, id);
+        Ok(id)
+    }
+
+    pub fn update_outbound_relay(
+        &self,
+        id: i64,
+        name: &str,
+        host: &str,
+        port: i32,
+        auth_type: &str,
+        username: Option<&str>,
+        password: Option<&str>,
+        active: bool,
+    ) {
+        info!("[db] updating outbound relay id={} name={} host={}:{} active={}", id, name, host, port, active);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let _ = conn.execute(
+            "UPDATE outbound_relays
+             SET name = $1, host = $2, port = $3, auth_type = $4, username = $5, password = $6, active = $7, updated_at = $8
+             WHERE id = $9",
+            &[&name, &host, &port, &auth_type, &username, &password, &active, &now(), &id],
+        );
+    }
+
+    pub fn delete_outbound_relay(&self, id: i64) {
+        warn!("[db] deleting outbound relay id={}", id);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let _ = conn.execute("DELETE FROM outbound_relays WHERE id = $1", &[&id]);
+    }
+
+    pub fn list_relay_assignments(&self, relay_id: i64) -> Vec<OutboundRelayAssignment> {
+        debug!("[db] listing assignments for relay id={}", relay_id);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let rows = conn
+            .query(
+                "SELECT a.id, a.relay_id, a.assignment_type, a.pattern, r.name
+                 FROM outbound_relay_assignments a
+                 JOIN outbound_relays r ON a.relay_id = r.id
+                 WHERE a.relay_id = $1
+                 ORDER BY a.assignment_type, a.pattern",
+                &[&relay_id],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list relay assignments: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| OutboundRelayAssignment {
+                id: row.get(0),
+                relay_id: row.get(1),
+                assignment_type: row.get(2),
+                pattern: row.get(3),
+                relay_name: row.get(4),
+            })
+            .collect()
+    }
+
+    pub fn list_all_relay_assignments(&self) -> Vec<OutboundRelayAssignment> {
+        debug!("[db] listing all relay assignments");
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let rows = conn
+            .query(
+                "SELECT a.id, a.relay_id, a.assignment_type, a.pattern, r.name
+                 FROM outbound_relay_assignments a
+                 JOIN outbound_relays r ON a.relay_id = r.id
+                 ORDER BY a.assignment_type, a.pattern",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list all relay assignments: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| OutboundRelayAssignment {
+                id: row.get(0),
+                relay_id: row.get(1),
+                assignment_type: row.get(2),
+                pattern: row.get(3),
+                relay_name: row.get(4),
+            })
+            .collect()
+    }
+
+    pub fn create_relay_assignment(
+        &self,
+        relay_id: i64,
+        assignment_type: &str,
+        pattern: &str,
+    ) -> Result<i64, String> {
+        info!("[db] creating relay assignment relay_id={} type={} pattern={}", relay_id, assignment_type, pattern);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let row = conn
+            .query_one(
+                "INSERT INTO outbound_relay_assignments (relay_id, assignment_type, pattern, created_at)
+                 VALUES ($1, $2, $3, $4)
+                 RETURNING id",
+                &[&relay_id, &assignment_type, &pattern, &now()],
+            )
+            .map_err(|e| {
+                error!("[db] failed to create relay assignment: {}", e);
+                e.to_string()
+            })?;
+        let id: i64 = row.get(0);
+        info!("[db] relay assignment created id={}", id);
+        Ok(id)
+    }
+
+    pub fn delete_relay_assignment(&self, id: i64) {
+        warn!("[db] deleting relay assignment id={}", id);
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let _ = conn.execute("DELETE FROM outbound_relay_assignments WHERE id = $1", &[&id]);
+    }
+
+    /// Returns all active relay assignments joined with relay info for config generation.
+    pub fn get_active_relay_assignments_with_relay(&self) -> Vec<(OutboundRelay, OutboundRelayAssignment)> {
+        debug!("[db] getting active relay assignments with relay info");
+        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let rows = conn
+            .query(
+                "SELECT r.id, r.name, r.host, r.port, r.auth_type, r.username, r.password, r.active,
+                        a.id, a.relay_id, a.assignment_type, a.pattern
+                 FROM outbound_relay_assignments a
+                 JOIN outbound_relays r ON a.relay_id = r.id
+                 WHERE r.active = TRUE
+                 ORDER BY a.assignment_type, a.pattern",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to get active relay assignments: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| {
+                let relay = OutboundRelay {
+                    id: row.get(0),
+                    name: row.get(1),
+                    host: row.get(2),
+                    port: row.get(3),
+                    auth_type: row.get(4),
+                    username: row.get(5),
+                    password: row.get(6),
+                    active: row.get(7),
+                };
+                let assignment = OutboundRelayAssignment {
+                    id: row.get(8),
+                    relay_id: row.get(9),
+                    assignment_type: row.get(10),
+                    pattern: row.get(11),
+                    relay_name: Some(relay.name.clone()),
+                };
+                (relay, assignment)
+            })
+            .collect()
     }
 }

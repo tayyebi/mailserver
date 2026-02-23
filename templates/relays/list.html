@@ -1,0 +1,36 @@
+{% extends "layout.html" %}
+{% block title %}Outbound Relays{% endblock %}
+{% block content %}
+<section>
+    <hgroup>
+        <small>Outbound mail routing</small>
+        <h1>Outbound Relays</h1>
+    </hgroup>
+    <p>Configure SMTP relays to route outbound mail through external servers. Assign relays to specific domains, accounts, or aliases.</p>
+    <a href="/relays/new"><strong>Add relay</strong></a>
+</section>
+<table>
+    <thead>
+        <tr><th>Name</th><th>Host</th><th>Port</th><th>Auth</th><th>Status</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+    {% if relays.is_empty() %}
+        <tr><td colspan="6">No outbound relays configured yet.</td></tr>
+    {% else %}
+        {% for r in relays %}
+        <tr>
+            <td>{{ r.name }}</td>
+            <td>{{ r.host }}</td>
+            <td>{{ r.port }}</td>
+            <td>{{ r.auth_type }}</td>
+            <td>{% if r.active %}<mark>Active</mark>{% else %}<mark class="mark-muted">Disabled</mark>{% endif %}</td>
+            <td>
+                <a href="/relays/{{ r.id }}/edit">Edit</a>
+                <form method="post" action="/relays/{{ r.id }}/delete" class="form-inline" onsubmit="return confirm('Delete this relay and all its assignments?')"><button type="submit">Delete</button></form>
+            </td>
+        </tr>
+        {% endfor %}
+    {% endif %}
+    </tbody>
+</table>
+{% endblock %}
