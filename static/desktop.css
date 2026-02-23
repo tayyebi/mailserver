@@ -17,7 +17,7 @@ body {
 
 /* ── Header becomes the left sidebar ── */
 
-header,
+body > header,
 .nav-toggle:checked ~ header {
   position: sticky;
   inset-block-start: 0;
@@ -43,7 +43,7 @@ header,
 
 /* ── Sidebar brand area ── */
 
-header > strong {
+body > header > strong {
   display: block;
   font-size: var(--font-size-sm);
   font-weight: 700;
@@ -54,7 +54,7 @@ header > strong {
   padding-inline: var(--space-xs);
 }
 
-header > small {
+body > header > small {
   display: block;
   font-size: var(--font-size-xs);
   color: var(--color-text-subtle);
@@ -64,7 +64,7 @@ header > small {
 
 /* ── Sidebar nav ── */
 
-header nav,
+body > header nav,
 .nav-toggle:checked ~ header nav {
   position: static;
   inline-size: 100%;
@@ -82,7 +82,7 @@ header nav,
   flex: 1;
 }
 
-header nav a {
+body > header nav a {
   display: flex;
   align-items: center;
   padding-block: var(--space-sm);
@@ -101,7 +101,7 @@ header nav a {
   overflow: hidden;
 }
 
-header nav a::before {
+body > header nav a::before {
   content: '';
   position: absolute;
   inset-block: 0;
@@ -113,30 +113,30 @@ header nav a::before {
   transition: transform var(--transition-spring);
 }
 
-header nav a:hover {
+body > header nav a:hover {
   color: var(--color-text);
   background: rgba(71, 85, 105, 0.10);
   transform: translateX(2px);
   text-decoration: none;
 }
 
-header nav a:hover::before {
+body > header nav a:hover::before {
   transform: scaleY(0.5);
 }
 
-header nav a:focus-visible {
+body > header nav a:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
 
-header nav a[aria-current="page"] {
+body > header nav a[aria-current="page"] {
   color: var(--color-accent);
   background: rgba(71, 85, 105, 0.12);
   font-weight: 600;
   transform: translateX(3px);
 }
 
-header nav a[aria-current="page"]::before {
+body > header nav a[aria-current="page"]::before {
   transform: scaleY(1);
 }
 
