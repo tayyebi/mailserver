@@ -9,6 +9,7 @@ pub mod fail2ban;
 pub mod forwarding;
 pub mod pixel;
 pub mod queue;
+pub mod relays;
 pub mod settings;
 pub mod spambl;
 pub mod tracking;
@@ -93,4 +94,11 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/dmarc", get(dmarc::list).post(dmarc::create))
         .route("/dmarc/:id/delete", post(dmarc::delete))
         .route("/dmarc/:id/reports", get(dmarc::reports))
+        .route("/relays/new", get(relays::new_form))
+        .route("/relays", get(relays::list).post(relays::create))
+        .route("/relays/:id/edit", get(relays::edit_form))
+        .route("/relays/:id/delete", post(relays::delete))
+        .route("/relays/:id", post(relays::update))
+        .route("/relays/:id/assignments", post(relays::add_assignment))
+        .route("/relays/:id/assignments/:aid/delete", post(relays::remove_assignment))
 }

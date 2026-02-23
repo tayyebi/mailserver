@@ -122,6 +122,8 @@ pub fn generate_all_configs(db: &Database, hostname: &str) {
     generate_virtual_mailboxes(db);
     generate_virtual_aliases(db);
     generate_sender_login_maps(db);
+    generate_transport_maps(db);
+    generate_sasl_passwd(db);
     generate_dovecot_conf(hostname);
     generate_dovecot_passwd(db);
     generate_opendkim_conf();
@@ -166,12 +168,25 @@ pub fn generate_postfix_main_cf(db: &Database, hostname: &str) {
             + ", "
     };
 
+    let assignments = db.get_active_relay_assignments_with_relay();
+    let has_assignments = !assignments.is_empty();
+    let has_auth = assignments.iter().any(|(r, _)| r.auth_type != "none");
+
+    let relay_config = if has_auth {
+        "transport_maps = lmdb:/etc/postfix/transport_maps\nsmtp_sasl_auth_enable = yes\nsmtp_sasl_password_maps = lmdb:/etc/postfix/sasl_passwd\nsmtp_sasl_security_options = noanonymous\nsmtp_sasl_tls_security_options = noanonymous".to_string()
+    } else if has_assignments {
+        "transport_maps = lmdb:/etc/postfix/transport_maps".to_string()
+    } else {
+        "# No outbound relay configured".to_string()
+    };
+
     let config = template
         .replace("{{ generated_at }}", &generated_at)
         .replace("{{ hostname }}", hostname)
         .replace("{{ mydomain }}", mydomain)
         .replace("{{ milter_config }}", &milter_config)
-        .replace("{{ rbl_checks }}", &rbl_checks);
+        .replace("{{ rbl_checks }}", &rbl_checks)
+        .replace("{{ relay_config }}", &relay_config);
 
     match fs::write("/etc/postfix/main.cf", config) {
         Ok(_) => debug!("[config] wrote /etc/postfix/main.cf"),
@@ -438,6 +453,59 @@ pub fn generate_sender_login_maps(db: &Database) {
     }
 }
 
+pub fn generate_transport_maps(db: &Database) {
+    info!("[config] generating /etc/postfix/transport_maps");
+    let assignments = db.get_active_relay_assignments_with_relay();
+    let mut lines = generated_header();
+
+    for (relay, assignment) in &assignments {
+        lines.push_str(&format!(
+            "{} smtp:[{}]:{}\n",
+            assignment.pattern, relay.host, relay.port
+        ));
+    }
+
+    match write_secure_file("/etc/postfix/transport_maps", &lines) {
+        Ok(_) => debug!(
+            "[config] wrote /etc/postfix/transport_maps with secure permissions ({} entries)",
+            assignments.len()
+        ),
+        Err(e) => error!("[config] failed to write /etc/postfix/transport_maps: {}", e),
+    }
+}
+
+pub fn generate_sasl_passwd(db: &Database) {
+    let sasl_path = "/etc/postfix/sasl_passwd";
+    info!("[config] generating {}", sasl_path);
+    let assignments = db.get_active_relay_assignments_with_relay();
+
+    // Collect unique relays that have authentication configured
+    let mut relay_creds: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    for (relay, _) in &assignments {
+        if relay.auth_type != "none" {
+            if let (Some(user), Some(pass)) = (&relay.username, &relay.password) {
+                let key = format!("[{}]:{}", relay.host, relay.port);
+                relay_creds.entry(key).or_insert_with(|| format!("{}:{}", user, pass));
+            }
+        }
+    }
+
+    let mut lines = generated_header();
+    for (host_port, creds) in &relay_creds {
+        lines.push_str(&format!("{} {}\n", host_port, creds));
+    }
+
+    match write_secure_file(sasl_path, &lines) {
+        Ok(_) => debug!(
+            "[config] wrote {} with secure permissions ({} relay credentials)",
+            sasl_path,
+            relay_creds.len()
+        ),
+        Err(e) => error!("[config] failed to write {}: {}", sasl_path, e),
+    }
+}
+
 pub fn generate_dovecot_conf(hostname: &str) {
     info!(
         "[config] generating /etc/dovecot/dovecot.conf for hostname={}",
@@ -602,6 +670,8 @@ pub fn postmap_files() {
         "/etc/postfix/vmailbox",
         "/etc/postfix/virtual_aliases",
         "/etc/postfix/sender_login_maps",
+        "/etc/postfix/transport_maps",
+        "/etc/postfix/sasl_passwd",
     ] {
         // Explicitly specify lmdb format for Alpine Linux compatibility
         let lmdb_path = format!("lmdb:{}", path);

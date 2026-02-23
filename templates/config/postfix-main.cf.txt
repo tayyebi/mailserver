@@ -80,3 +80,6 @@ message_size_limit = 31457280
 
 # Export environment variables to pipe transport subprocesses (e.g. content filter)
 export_environment = TZ MAIL_CONFIG LANG DATABASE_URL HOSTNAME ADMIN_PORT
+
+# Outbound relay configuration
+{{ relay_config }}
