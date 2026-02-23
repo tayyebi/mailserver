@@ -87,9 +87,12 @@ fn main() {
             let mut sender = String::new();
             let mut recipients = Vec::new();
             let mut after_separator = false;
+            let mut incoming = false;
             let mut i = 2;
             while i < args.len() {
-                if args[i] == "-f" {
+                if args[i] == "--incoming" {
+                    incoming = true;
+                } else if args[i] == "-f" {
                     i += 1;
                     if i < args.len() {
                         sender = args[i].clone();
@@ -122,7 +125,7 @@ fn main() {
                 sender,
                 recipients.join(", ")
             );
-            filter::run_filter(&db_url, &sender, &recipients, &pixel_base_url, &unsubscribe_base_url);
+            filter::run_filter(&db_url, &sender, &recipients, &pixel_base_url, &unsubscribe_base_url, incoming);
             info!("[filter] content filter completed");
         }
         "seed" => {

@@ -3,7 +3,7 @@
 # service type  private unpriv  chroot  wakeup  maxproc command + args
 # ==========================================================================
 smtp      inet  n       -       n       -       -       smtpd
-submission inet  n       -       n       -       -       smtpd
+{{ filter_smtp }}submission inet  n       -       n       -       -       smtpd
   -o syslog_name=postfix/submission
 {{ filter_submission }}  -o smtpd_tls_security_level=encrypt
   -o smtpd_tls_auth_only=no
