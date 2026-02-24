@@ -51,7 +51,7 @@ fn generated_at() -> String {
 
 /// Write content to a file with secure permissions (0600 - owner read/write only)
 /// This is used for sensitive files like DKIM private keys and password databases
-///
+/// 
 /// Defense in depth approach:
 /// 1. mode(0o600) sets permissions on newly created files
 /// 2. set_permissions() ensures correct permissions even if file already existed
@@ -61,24 +61,24 @@ fn generated_at() -> String {
 fn write_secure_file(path: &str, content: &str) -> std::io::Result<()> {
     use std::fs::{OpenOptions, Permissions};
     use std::os::unix::fs::PermissionsExt;
-
+    
     let mut file = OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
-        .mode(0o600) // Sets permissions for newly created files
+        .mode(0o600)  // Sets permissions for newly created files
         .open(path)?;
-
+    
     file.write_all(content.as_bytes())?;
-
+    
     // Ensure data is flushed to disk
     file.sync_all()?;
-
+    
     // Explicitly set permissions to ensure they're correct even if file existed
     // This is necessary because .mode() only affects newly created files
     let permissions = Permissions::from_mode(0o600);
     std::fs::set_permissions(path, permissions)?;
-
+    
     Ok(())
 }
 
@@ -97,11 +97,9 @@ fn write_secure_file(path: &str, content: &str) -> std::io::Result<()> {
 fn set_dovecot_passwd_permissions(path: &str) -> std::io::Result<()> {
     use std::fs::Permissions;
     use std::os::unix::fs::PermissionsExt;
-
+    
     std::fs::set_permissions(path, Permissions::from_mode(0o640))?;
-    let output = Command::new("chown")
-        .args(["root:dovecot", path])
-        .output()?;
+    let output = Command::new("chown").args(["root:dovecot", path]).output()?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(std::io::Error::other(format!(
@@ -109,7 +107,7 @@ fn set_dovecot_passwd_permissions(path: &str) -> std::io::Result<()> {
             path, output.status, stderr
         )));
     }
-
+    
     Ok(())
 }
 
@@ -146,10 +144,7 @@ pub fn generate_postfix_main_cf(db: &Database, hostname: &str) {
     let template = match load_template("postfix-main.cf.txt") {
         Ok(t) => t,
         Err(e) => {
-            error!(
-                "[config] failed to load postfix-main.cf.txt template: {}",
-                e
-            );
+            error!("[config] failed to load postfix-main.cf.txt template: {}", e);
             return;
         }
     };
@@ -163,8 +158,7 @@ pub fn generate_postfix_main_cf(db: &Database, hostname: &str) {
     let milter_config = if milter_enabled {
         r#"smtpd_milters = inet:127.0.0.1:8891
 non_smtpd_milters = inet:127.0.0.1:8891
-milter_default_action = accept"#
-            .to_string()
+milter_default_action = accept"#.to_string()
     } else {
         "# milter disabled via feature settings".to_string()
     };
@@ -192,8 +186,7 @@ milter_default_action = accept"#
 smtp_sasl_auth_enable = yes
 smtp_sasl_password_maps = lmdb:/etc/postfix/sasl_passwd
 smtp_sasl_security_options = noanonymous
-smtp_sasl_tls_security_options = noanonymous"#
-            .to_string()
+smtp_sasl_tls_security_options = noanonymous"#.to_string()
     } else if has_assignments {
         "transport_maps = lmdb:/etc/postfix/transport_maps".to_string()
     } else {
@@ -219,15 +212,13 @@ pub fn generate_postfix_master_cf(_db: &Database) {
     let template = match load_template("postfix-master.cf.txt") {
         Ok(t) => t,
         Err(e) => {
-            error!(
-                "[config] failed to load postfix-master.cf.txt template: {}",
-                e
-            );
+            error!("[config] failed to load postfix-master.cf.txt template: {}", e);
             return;
         }
     };
 
-    let config = template.replace("{{ generated_at }}", &generated_at());
+    let config = template
+        .replace("{{ generated_at }}", &generated_at());
 
     match fs::write("/etc/postfix/master.cf", config) {
         Ok(_) => debug!("[config] wrote /etc/postfix/master.cf"),
@@ -302,7 +293,8 @@ fn build_virtual_alias_entries(
 ) -> Vec<(String, String)> {
     let mut catch_all_entries: Vec<(String, String)> = Vec::new();
     let mut specific_entries: Vec<(String, String)> = Vec::new();
-    let mut specific_sources: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut specific_sources: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
 
     for a in aliases {
         if a.active {
@@ -469,22 +461,13 @@ fn build_sender_login_entries(
     let active_accounts: std::collections::HashSet<String> = accounts
         .iter()
         .filter(|a| a.active)
-        .filter_map(|a| {
-            a.domain_name
-                .as_ref()
-                .map(|d| format!("{}@{}", a.username, d))
-        })
+        .filter_map(|a| a.domain_name.as_ref().map(|d| format!("{}@{}", a.username, d)))
         .collect();
 
     aliases
         .iter()
         .filter(|a| a.active && active_accounts.contains(&a.destination))
-        .map(|a| {
-            (
-                normalize_virtual_alias_source(&a.source, None),
-                a.destination.clone(),
-            )
-        })
+        .map(|a| (normalize_virtual_alias_source(&a.source, None), a.destination.clone()))
         .collect()
 }
 
@@ -560,10 +543,7 @@ pub fn generate_transport_maps(db: &Database) {
             "[config] wrote /etc/postfix/transport_maps with secure permissions ({} entries)",
             assignments.len()
         ),
-        Err(e) => error!(
-            "[config] failed to write /etc/postfix/transport_maps: {}",
-            e
-        ),
+        Err(e) => error!("[config] failed to write /etc/postfix/transport_maps: {}", e),
     }
 }
 
@@ -579,9 +559,7 @@ pub fn generate_sasl_passwd(db: &Database) {
         if relay.auth_type != "none" {
             if let (Some(user), Some(pass)) = (&relay.username, &relay.password) {
                 let key = format!("[{}]:{}", relay.host, relay.port);
-                relay_creds
-                    .entry(key)
-                    .or_insert_with(|| format!("{}:{}", user, pass));
+                relay_creds.entry(key).or_insert_with(|| format!("{}:{}", user, pass));
             }
         }
     }
@@ -654,13 +632,8 @@ pub fn generate_dovecot_passwd(db: &Database) {
                     "[config] failed to set /etc/dovecot/passwd ownership/permissions ({}), falling back to mode 0644",
                     e
                 );
-                if let Err(e2) =
-                    std::fs::set_permissions(passwd_path, Permissions::from_mode(0o644))
-                {
-                    error!(
-                        "[config] failed to apply fallback permissions for /etc/dovecot/passwd: {}",
-                        e2
-                    );
+                if let Err(e2) = std::fs::set_permissions(passwd_path, Permissions::from_mode(0o644)) {
+                    error!("[config] failed to apply fallback permissions for /etc/dovecot/passwd: {}", e2);
                     return;
                 }
             }
@@ -731,13 +704,11 @@ localhost
                     );
                     // Ensure opendkim (which drops privileges to the opendkim user via UserID in
                     // opendkim.conf) can read the private key file.
-                    match Command::new("chown")
-                        .args(["opendkim:opendkim", &key_path])
-                        .output()
-                    {
-                        Ok(o) if o.status.success() => {
-                            debug!("[config] set opendkim ownership on {}", key_path)
-                        }
+                    match Command::new("chown").args(["opendkim:opendkim", &key_path]).output() {
+                        Ok(o) if o.status.success() => debug!(
+                            "[config] set opendkim ownership on {}",
+                            key_path
+                        ),
                         Ok(o) => warn!(
                             "[config] chown opendkim:opendkim {} failed: {}",
                             key_path,
@@ -753,16 +724,8 @@ localhost
             }
 
             use std::fmt::Write;
-            let _ = writeln!(
-                key_table,
-                "{}._domainkey.{} {}:{}:{}",
-                selector, domain, domain, selector, key_path
-            );
-            let _ = writeln!(
-                signing_table,
-                "*@{} {}._domainkey.{}",
-                domain, selector, domain
-            );
+            let _ = writeln!(key_table, "{}._domainkey.{} {}:{}:{}", selector, domain, domain, selector, key_path);
+            let _ = writeln!(signing_table, "*@{} {}._domainkey.{}", domain, selector, domain);
             let _ = writeln!(trusted_hosts, "{}", domain);
 
             dkim_count += 1;
@@ -904,10 +867,7 @@ pub fn restart_container() -> Result<(), String> {
     let socket_path = "/var/run/docker.sock";
     if !Path::new(socket_path).exists() {
         error!("[config] Docker socket not found at {}", socket_path);
-        return Err(
-            "Docker socket not found. Ensure /var/run/docker.sock is mounted into the container."
-                .to_string(),
-        );
+        return Err("Docker socket not found. Ensure /var/run/docker.sock is mounted into the container.".to_string());
     }
 
     // Read our own container ID from /proc/self/mountinfo or hostname
@@ -915,18 +875,13 @@ pub fn restart_container() -> Result<(), String> {
         "Could not determine container ID from /proc/self/mountinfo or hostname. This feature requires running in a standard Docker environment.".to_string()
     })?;
 
-    info!(
-        "[config] sending restart request for container {}",
-        container_id
-    );
+    info!("[config] sending restart request for container {}", container_id);
 
     // Use curl to talk to the Docker socket
     let result = Command::new("curl")
         .args([
-            "--unix-socket",
-            socket_path,
-            "-X",
-            "POST",
+            "--unix-socket", socket_path,
+            "-X", "POST",
             &format!("http://localhost/containers/{}/restart", container_id),
         ])
         .output();
@@ -978,10 +933,7 @@ fn read_container_id() -> Option<String> {
     if let Ok(hostname) = std::env::var("HOSTNAME") {
         let hostname = hostname.trim().to_string();
         if hostname.len() == 12 && hostname.chars().all(|c| c.is_ascii_hexdigit()) {
-            debug!(
-                "[config] using HOSTNAME env var as container ID: {}",
-                hostname
-            );
+            debug!("[config] using HOSTNAME env var as container ID: {}", hostname);
             return Some(hostname);
         }
     }
@@ -1002,9 +954,9 @@ fn extract_container_id_from_path(line: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use super::normalize_virtual_alias_source;
     use super::extract_container_id_from_path;
     use super::load_template;
-    use super::normalize_virtual_alias_source;
 
     #[test]
     fn normalize_virtual_alias_source_rewrites_catch_all_patterns() {
@@ -1070,20 +1022,14 @@ mod tests {
         let template = load_template("postfix-master.cf.txt")
             .expect("postfix-master.cf.txt template should be loadable");
         // The smtp inet line must appear before the filter configuration
-        let smtp_inet_pos = template
-            .find("smtp      inet")
-            .expect("smtp inet service must exist");
-        let filter_smtp_pos = template
-            .find("content_filter=pixelfilter-in:local")
-            .expect("content_filter configuration must exist");
+        let smtp_inet_pos = template.find("smtp      inet").expect("smtp inet service must exist");
+        let filter_smtp_pos = template.find("content_filter=pixelfilter-in:local").expect("content_filter configuration must exist");
         assert!(
             smtp_inet_pos < filter_smtp_pos,
             "content_filter configuration must appear after the smtp inet service line"
         );
         // And before the submission service
-        let submission_pos = template
-            .find("submission inet")
-            .expect("submission inet service must exist");
+        let submission_pos = template.find("submission inet").expect("submission inet service must exist");
         assert!(
             filter_smtp_pos < submission_pos,
             "content_filter configuration must appear before the submission inet service line"
@@ -1198,10 +1144,7 @@ mod tests {
         // Catch-all must appear before the specific entry
         let sources: Vec<&str> = entries.iter().map(|(s, _)| s.as_str()).collect();
         let catch_all_pos = sources.iter().position(|&s| s == "@example.com").unwrap();
-        let specific_pos = sources
-            .iter()
-            .position(|&s| s == "info@example.com")
-            .unwrap();
+        let specific_pos = sources.iter().position(|&s| s == "info@example.com").unwrap();
         assert!(
             catch_all_pos < specific_pos,
             "catch-all must be written before specific alias so the specific entry wins in LMDB"
@@ -1221,9 +1164,9 @@ mod tests {
         let accounts = vec![make_account("info", "globalcommercecouncil.com")];
         let entries = build_virtual_alias_entries(&aliases, &[], &accounts);
 
-        let identity = entries.iter().find(|(src, dst)| {
-            src == "info@globalcommercecouncil.com" && dst == "info@globalcommercecouncil.com"
-        });
+        let identity = entries
+            .iter()
+            .find(|(src, dst)| src == "info@globalcommercecouncil.com" && dst == "info@globalcommercecouncil.com");
         assert!(
             identity.is_some(),
             "identity entry must be added for info@globalcommercecouncil.com to prevent catch-all interception"
@@ -1292,10 +1235,7 @@ mod tests {
         let mut alias = make_alias("*@example.com", "catchall@tyyi.net", "example.com");
         alias.active = false;
         let entries = build_virtual_alias_entries(&[alias], &[], &[]);
-        assert!(
-            entries.is_empty(),
-            "inactive aliases must not appear in the output"
-        );
+        assert!(entries.is_empty(), "inactive aliases must not appear in the output");
     }
 
     #[test]
@@ -1377,11 +1317,7 @@ mod tests {
 
     #[test]
     fn inactive_account_does_not_receive_identity_entry() {
-        let aliases = vec![make_alias(
-            "*@example.com",
-            "catchall@tyyi.net",
-            "example.com",
-        )];
+        let aliases = vec![make_alias("*@example.com", "catchall@tyyi.net", "example.com")];
         let mut account = make_account("alice", "example.com");
         account.active = false;
         let entries = build_virtual_alias_entries(&aliases, &[], &[account]);
@@ -1403,9 +1339,7 @@ mod tests {
         let account = make_account("user", "example.com");
         let entries = build_sender_login_entries(&[alias], &[account]);
         assert!(
-            entries
-                .iter()
-                .any(|(src, login)| src == "@example.com" && login == "user@example.com"),
+            entries.iter().any(|(src, login)| src == "@example.com" && login == "user@example.com"),
             "same-domain catch-all destination must be granted FROM rights for the wildcard"
         );
     }
@@ -1418,9 +1352,7 @@ mod tests {
         let account = make_account("m", "tyyi.net");
         let entries = build_sender_login_entries(&[alias], &[account]);
         assert!(
-            entries
-                .iter()
-                .any(|(src, login)| src == "@gordarg.com" && login == "m@tyyi.net"),
+            entries.iter().any(|(src, login)| src == "@gordarg.com" && login == "m@tyyi.net"),
             "cross-domain catch-all destination must be granted FROM rights for the wildcard"
         );
     }
@@ -1476,27 +1408,23 @@ pub fn generate_tls_certificate(hostname: &str, force: bool) -> Result<(), Strin
         info!("[config] existing TLS certificate and key found, skipping certificate generation");
         return Ok(());
     }
-    info!(
-        "[config] generating self-signed TLS certificate for hostname={}",
-        hostname
-    );
-
+    info!("[config] generating self-signed TLS certificate for hostname={}", hostname);
+    
     // Sanitize hostname for use in certificate subject
-    let safe_hostname: String = hostname
-        .chars()
+    let safe_hostname: String = hostname.chars()
         .filter(|c| c.is_alphanumeric() || *c == '.' || *c == '-')
         .collect();
-
+    
     if safe_hostname.is_empty() {
         return Err("hostname is empty or contains only invalid characters".to_string());
     }
-
+    
     // Create SSL directory if it doesn't exist
     if let Err(e) = fs::create_dir_all("/data/ssl") {
         error!("[config] failed to create /data/ssl directory: {}", e);
         return Err(format!("failed to create SSL directory: {}", e));
     }
-
+    
     let template = match load_template("openssl.cnf.txt") {
         Ok(t) => t,
         Err(e) => {
@@ -1504,56 +1432,41 @@ pub fn generate_tls_certificate(hostname: &str, force: bool) -> Result<(), Strin
             return Err(format!("failed to load OpenSSL template: {}", e));
         }
     };
-
+    
     // Create OpenSSL config file with SAN extension
     // Modern TLS clients require Subject Alternative Name (SAN) to be present
     let openssl_config = template.replace("{{ hostname }}", &safe_hostname);
-
+    
     // Use a unique temporary file to avoid race conditions
     // Note: In Docker container context, /tmp is isolated and single-process
     let uuid = uuid::Uuid::new_v4();
     let config_path = format!("/tmp/openssl-cert-{}.cnf", uuid);
-
+    
     if let Err(e) = fs::write(&config_path, &openssl_config) {
         error!("[config] failed to write OpenSSL config file: {}", e);
         return Err(format!("failed to write OpenSSL config: {}", e));
     }
-
+    
     // Generate certificate with SAN extension
     let result = Command::new("openssl")
         .args([
-            "req",
-            "-new",
-            "-newkey",
-            "rsa:2048",
-            "-days",
-            "3650",
-            "-nodes",
-            "-x509",
-            "-config",
-            &config_path,
-            "-keyout",
-            "/data/ssl/key.pem",
-            "-out",
-            "/data/ssl/cert.pem",
+            "req", "-new", "-newkey", "rsa:2048", "-days", "3650",
+            "-nodes", "-x509",
+            "-config", &config_path,
+            "-keyout", "/data/ssl/key.pem",
+            "-out", "/data/ssl/cert.pem",
         ])
         .output();
-
+    
     // Clean up config file
     if let Err(e) = fs::remove_file(&config_path) {
-        warn!(
-            "[config] failed to clean up temporary OpenSSL config file: {}",
-            e
-        );
+        warn!("[config] failed to clean up temporary OpenSSL config file: {}", e);
     }
-
+    
     match result {
         Ok(output) if output.status.success() => {
             // Set secure permissions on the private key
-            match Command::new("chmod")
-                .args(["600", "/data/ssl/key.pem"])
-                .output()
-            {
+            match Command::new("chmod").args(["600", "/data/ssl/key.pem"]).output() {
                 Ok(o) if o.status.success() => debug!("[config] set key.pem permissions to 600"),
                 Ok(o) => warn!("[config] chmod 600 key.pem exited with status {}", o.status),
                 Err(e) => warn!("[config] failed to set key.pem permissions: {}", e),
@@ -1575,32 +1488,26 @@ pub fn generate_tls_certificate(hostname: &str, force: bool) -> Result<(), Strin
 
 pub fn generate_dh_parameters() -> Result<(), String> {
     let dh_path = "/usr/share/dovecot/dh.pem";
-
+    
     // Check if DH parameters already exist
     if Path::new(dh_path).exists() {
-        info!(
-            "[config] DH parameters already exist at {}, skipping generation",
-            dh_path
-        );
+        info!("[config] DH parameters already exist at {}, skipping generation", dh_path);
         return Ok(());
     }
-
+    
     info!("[config] generating Diffie-Hellman parameters (this may take a while)");
-
+    
     // Create dovecot directory if it doesn't exist
     if let Err(e) = fs::create_dir_all("/usr/share/dovecot") {
-        error!(
-            "[config] failed to create /usr/share/dovecot directory: {}",
-            e
-        );
+        error!("[config] failed to create /usr/share/dovecot directory: {}", e);
         return Err(format!("failed to create directory: {}", e));
     }
-
+    
     // Generate DH parameters
     let result = Command::new("openssl")
         .args(["dhparam", "-out", dh_path, "2048"])
         .output();
-
+    
     match result {
         Ok(output) if output.status.success() => {
             info!("[config] DH parameters generated successfully");
@@ -1619,17 +1526,14 @@ pub fn generate_dh_parameters() -> Result<(), String> {
 }
 
 pub fn generate_all_certificates(hostname: &str, force: bool) -> Result<(), String> {
-    info!(
-        "[config] generating all certificates and DH parameters for hostname={}",
-        hostname
-    );
-
+    info!("[config] generating all certificates and DH parameters for hostname={}", hostname);
+    
     // Generate TLS certificate
     generate_tls_certificate(hostname, force)?;
-
+    
     // Generate DH parameters
     generate_dh_parameters()?;
-
+    
     info!("[config] all certificates and DH parameters generated successfully");
     Ok(())
 }

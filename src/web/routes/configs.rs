@@ -3,8 +3,8 @@ use axum::{extract::State, response::Html};
 use log::{debug, error};
 use std::fs;
 
-use crate::web::auth::AuthAdmin;
 use crate::web::AppState;
+use crate::web::auth::AuthAdmin;
 
 #[derive(Template)]
 #[template(path = "configs/view.html")]
@@ -47,7 +47,10 @@ pub async fn page(auth: AuthAdmin, State(_state): State<AppState>) -> Html<Strin
     for (name, path) in config_paths {
         let (content, error) = match fs::read_to_string(path) {
             Ok(content) => (content, None),
-            Err(e) => (String::new(), Some(format!("Error reading file: {}", e))),
+            Err(e) => (
+                String::new(),
+                Some(format!("Error reading file: {}", e)),
+            ),
         };
 
         config_files.push(ConfigFile {

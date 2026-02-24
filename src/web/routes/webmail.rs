@@ -236,10 +236,7 @@ fn read_emails(maildir_base: &str, folder: &str, logs: &mut Vec<String>) -> Vec<
                     "Warning: Failed to create directory {}: {}",
                     dir_path, e
                 ));
-                warn!(
-                    "[web] failed to create maildir directory {}: {}",
-                    dir_path, e
-                );
+                warn!("[web] failed to create maildir directory {}: {}", dir_path, e);
             }
         }
     }
@@ -316,7 +313,10 @@ fn read_emails(maildir_base: &str, folder: &str, logs: &mut Vec<String>) -> Vec<
                     "Directory {} not found or not readable: {}",
                     dir_path, e
                 ));
-                debug!("[web] maildir directory {} not accessible: {}", dir_path, e);
+                debug!(
+                    "[web] maildir directory {} not accessible: {}",
+                    dir_path, e
+                );
             }
         }
     }
@@ -420,8 +420,14 @@ pub async fn inbox(
                 selected_account = Some(acct);
             }
         } else {
-            logs.push(format!("Account ID {} not found in database", account_id));
-            warn!("[web] account id={} not found for webmail", account_id);
+            logs.push(format!(
+                "Account ID {} not found in database",
+                account_id
+            ));
+            warn!(
+                "[web] account id={} not found for webmail",
+                account_id
+            );
         }
     } else {
         logs.push("No account selected".to_string());
@@ -437,11 +443,7 @@ pub async fn inbox(
     let current_page = query.page.unwrap_or(1).max(1).min(total_pages);
     let start = (current_page - 1) * PAGE_SIZE;
     let end = (start + PAGE_SIZE).min(total);
-    let emails = all_emails
-        .into_iter()
-        .skip(start)
-        .take(end - start)
-        .collect();
+    let emails = all_emails.into_iter().skip(start).take(end - start).collect();
 
     let prev_page = if current_page > 1 {
         Some(current_page - 1)
@@ -647,10 +649,7 @@ pub async fn delete_email(
     Path(filename_b64): Path<String>,
     Form(form): Form<DeleteForm>,
 ) -> Response {
-    info!(
-        "[web] POST /webmail/delete/{} — deleting email",
-        filename_b64
-    );
+    info!("[web] POST /webmail/delete/{} — deleting email", filename_b64);
 
     let acct = match state
         .blocking_db(move |db| db.get_account_with_domain(form.account_id))
@@ -844,10 +843,7 @@ pub async fn send_email(
             send_log.push("Building email message...".to_string());
             let mut builder = lettre::Message::builder()
                 .from(from_addr.parse().unwrap_or_else(|e| {
-                    send_log.push(format!(
-                        "Warning: could not parse from address '{}': {}, using fallback",
-                        from_addr, e
-                    ));
+                    send_log.push(format!("Warning: could not parse from address '{}': {}, using fallback", from_addr, e));
                     "noreply@localhost".parse().unwrap()
                 }))
                 .to(match form.to.parse() {
@@ -872,10 +868,7 @@ pub async fn send_email(
             for addr in form.cc.split(',').map(str::trim).filter(|s| !s.is_empty()) {
                 match addr.parse() {
                     Ok(a) => builder = builder.cc(a),
-                    Err(e) => send_log.push(format!(
-                        "Warning: skipping invalid CC address '{}': {}",
-                        addr, e
-                    )),
+                    Err(e) => send_log.push(format!("Warning: skipping invalid CC address '{}': {}", addr, e)),
                 }
             }
 
@@ -883,10 +876,7 @@ pub async fn send_email(
             for addr in form.bcc.split(',').map(str::trim).filter(|s| !s.is_empty()) {
                 match addr.parse() {
                     Ok(a) => builder = builder.bcc(a),
-                    Err(e) => send_log.push(format!(
-                        "Warning: skipping invalid BCC address '{}': {}",
-                        addr, e
-                    )),
+                    Err(e) => send_log.push(format!("Warning: skipping invalid BCC address '{}': {}", addr, e)),
                 }
             }
 
@@ -894,10 +884,7 @@ pub async fn send_email(
             if !form.reply_to.trim().is_empty() {
                 match form.reply_to.trim().parse() {
                     Ok(a) => builder = builder.reply_to(a),
-                    Err(e) => send_log.push(format!(
-                        "Warning: invalid Reply-To address '{}': {}",
-                        form.reply_to, e
-                    )),
+                    Err(e) => send_log.push(format!("Warning: invalid Reply-To address '{}': {}", form.reply_to, e)),
                 }
             }
 
@@ -919,8 +906,10 @@ pub async fn send_email(
                 };
                 if let Some(val) = priority_value {
                     if let Ok(header_name) = HeaderName::new_from_ascii("X-Priority".to_string()) {
-                        builder =
-                            builder.raw_header(HeaderValue::new(header_name, val.to_string()));
+                        builder = builder.raw_header(HeaderValue::new(
+                            header_name,
+                            val.to_string(),
+                        ));
                     }
                 }
             }
@@ -928,12 +917,7 @@ pub async fn send_email(
             // Add custom headers (one per line, format: "Header-Name: value")
             {
                 use lettre::message::header::{HeaderName, HeaderValue};
-                for line in form
-                    .custom_headers
-                    .lines()
-                    .map(str::trim)
-                    .filter(|l| !l.is_empty())
-                {
+                for line in form.custom_headers.lines().map(str::trim).filter(|l| !l.is_empty()) {
                     if let Some((name, value)) = line.split_once(':') {
                         let name = name.trim();
                         let value = sanitize_header_value(value.trim());
@@ -947,10 +931,7 @@ pub async fn send_email(
                                     send_log.push(format!("Custom header: {}: {}", name, value));
                                 }
                                 Err(e) => {
-                                    send_log.push(format!(
-                                        "Warning: invalid header name '{}': {}",
-                                        name, e
-                                    ));
+                                    send_log.push(format!("Warning: invalid header name '{}': {}", name, e));
                                 }
                             }
                         }
@@ -959,16 +940,9 @@ pub async fn send_email(
             }
 
             let body_format = form.body_format.as_str();
-            send_log.push(format!(
-                "Body format: {}",
-                if body_format.is_empty() {
-                    "plain"
-                } else {
-                    body_format
-                }
-            ));
-            use lettre::message::header::ContentType;
+            send_log.push(format!("Body format: {}", if body_format.is_empty() { "plain" } else { body_format }));
             use lettre::message::{MultiPart, SinglePart};
+            use lettre::message::header::ContentType;
 
             let email = match body_format {
                 "html" => {
@@ -1011,9 +985,7 @@ pub async fn send_email(
                             ),
                     ) {
                         Ok(email) => {
-                            send_log.push(
-                                "Email message built successfully (plain + HTML)".to_string(),
-                            );
+                            send_log.push("Email message built successfully (plain + HTML)".to_string());
                             email
                         }
                         Err(e) => {
@@ -1032,25 +1004,27 @@ pub async fn send_email(
                     }
                 }
                 // "plain" or any unrecognised value — default to plain text
-                _ => match builder.body(form.body.clone()) {
-                    Ok(email) => {
-                        send_log.push("Email message built successfully (plain text)".to_string());
-                        email
+                _ => {
+                    match builder.body(form.body.clone()) {
+                        Ok(email) => {
+                            send_log.push("Email message built successfully (plain text)".to_string());
+                            email
+                        }
+                        Err(e) => {
+                            send_log.push(format!("Failed to build email: {}", e));
+                            error!("[web] failed to build email: {}", e);
+                            flash = Some(format!("Failed to build email: {}", e));
+                            let tmpl = ComposeTemplate {
+                                nav_active: "Webmail",
+                                flash: flash.as_deref(),
+                                accounts,
+                                selected_account: Some(acct.clone()),
+                                send_log,
+                            };
+                            return Html(tmpl.render().unwrap());
+                        }
                     }
-                    Err(e) => {
-                        send_log.push(format!("Failed to build email: {}", e));
-                        error!("[web] failed to build email: {}", e);
-                        flash = Some(format!("Failed to build email: {}", e));
-                        let tmpl = ComposeTemplate {
-                            nav_active: "Webmail",
-                            flash: flash.as_deref(),
-                            accounts,
-                            selected_account: Some(acct.clone()),
-                            send_log,
-                        };
-                        return Html(tmpl.render().unwrap());
-                    }
-                },
+                }
             };
 
             send_log.push("Connecting to SMTP server at 127.0.0.1:25...".to_string());
@@ -1136,21 +1110,9 @@ mod tests {
     #[test]
     fn group_folders_flat_no_children() {
         let folders = vec![
-            WebmailFolder {
-                name: String::new(),
-                display_name: "INBOX".into(),
-                depth: 0,
-            },
-            WebmailFolder {
-                name: ".Sent".into(),
-                display_name: "Sent".into(),
-                depth: 0,
-            },
-            WebmailFolder {
-                name: ".Drafts".into(),
-                display_name: "Drafts".into(),
-                depth: 0,
-            },
+            WebmailFolder { name: String::new(), display_name: "INBOX".into(), depth: 0 },
+            WebmailFolder { name: ".Sent".into(), display_name: "Sent".into(), depth: 0 },
+            WebmailFolder { name: ".Drafts".into(), display_name: "Drafts".into(), depth: 0 },
         ];
         let groups = group_folders(folders, "");
         assert_eq!(groups.len(), 3);
@@ -1160,21 +1122,9 @@ mod tests {
     #[test]
     fn group_folders_nests_child_under_parent() {
         let folders = vec![
-            WebmailFolder {
-                name: String::new(),
-                display_name: "INBOX".into(),
-                depth: 0,
-            },
-            WebmailFolder {
-                name: ".Archive".into(),
-                display_name: "Archive".into(),
-                depth: 0,
-            },
-            WebmailFolder {
-                name: ".Archive.2023".into(),
-                display_name: "2023".into(),
-                depth: 1,
-            },
+            WebmailFolder { name: String::new(), display_name: "INBOX".into(), depth: 0 },
+            WebmailFolder { name: ".Archive".into(), display_name: "Archive".into(), depth: 0 },
+            WebmailFolder { name: ".Archive.2023".into(), display_name: "2023".into(), depth: 1 },
         ];
         let groups = group_folders(folders, "");
         assert_eq!(groups.len(), 2);
@@ -1186,16 +1136,8 @@ mod tests {
     #[test]
     fn group_folders_marks_open_for_current_folder() {
         let folders = vec![
-            WebmailFolder {
-                name: ".Archive".into(),
-                display_name: "Archive".into(),
-                depth: 0,
-            },
-            WebmailFolder {
-                name: ".Archive.2023".into(),
-                display_name: "2023".into(),
-                depth: 1,
-            },
+            WebmailFolder { name: ".Archive".into(), display_name: "Archive".into(), depth: 0 },
+            WebmailFolder { name: ".Archive.2023".into(), display_name: "2023".into(), depth: 1 },
         ];
         let groups = group_folders(folders, ".Archive.2023");
         let archive = groups.iter().find(|g| g.folder.name == ".Archive").unwrap();
@@ -1205,29 +1147,14 @@ mod tests {
     #[test]
     fn group_folders_nests_grandchild_under_root_ancestor() {
         let folders = vec![
-            WebmailFolder {
-                name: ".Archive".into(),
-                display_name: "Archive".into(),
-                depth: 0,
-            },
-            WebmailFolder {
-                name: ".Archive.2023".into(),
-                display_name: "2023".into(),
-                depth: 1,
-            },
-            WebmailFolder {
-                name: ".Archive.2023.Q1".into(),
-                display_name: "Q1".into(),
-                depth: 2,
-            },
+            WebmailFolder { name: ".Archive".into(), display_name: "Archive".into(), depth: 0 },
+            WebmailFolder { name: ".Archive.2023".into(), display_name: "2023".into(), depth: 1 },
+            WebmailFolder { name: ".Archive.2023.Q1".into(), display_name: "Q1".into(), depth: 2 },
         ];
         let groups = group_folders(folders, "");
         // Grandchild is nested under the root ancestor group's children
         let archive = groups.iter().find(|g| g.folder.name == ".Archive").unwrap();
         assert_eq!(archive.children.len(), 2);
-        assert!(archive
-            .children
-            .iter()
-            .any(|c| c.name == ".Archive.2023.Q1"));
+        assert!(archive.children.iter().any(|c| c.name == ".Archive.2023.Q1"));
     }
 }

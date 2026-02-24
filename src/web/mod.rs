@@ -32,7 +32,7 @@ impl AppState {
         // because the synchronous postgres crate uses its own internal runtime which conflicts with
         // tokio's blocking thread pool context.
         let (tx, rx) = tokio::sync::oneshot::channel();
-
+        
         std::thread::spawn(move || {
             let result = f(&db);
             let _ = tx.send(result);
@@ -135,42 +135,35 @@ pub(crate) fn fire_webhook(state: &AppState, event: &str, details: serde_json::V
         debug!("[webhook] firing {} to {}", event, webhook_url);
         let start = std::time::Instant::now();
 
-        let (response_status, response_body, error) = match reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
-            .build()
-        {
-            Ok(client) => match client.post(&webhook_url).json(&payload).send() {
-                Ok(resp) => {
-                    let status = resp.status().as_u16() as i32;
-                    let body = resp.text().unwrap_or_default();
-                    let body_truncated = if body.len() > 2048 {
-                        let mut end = 2048;
-                        while !body.is_char_boundary(end) {
-                            end -= 1;
-                        }
-                        body[..end].to_string()
-                    } else {
-                        body
-                    };
-                    info!(
-                        "[webhook] {} delivered to {} status={}",
-                        event, webhook_url, status
-                    );
-                    (Some(status), body_truncated, String::new())
-                }
+        let (response_status, response_body, error) =
+            match reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
+            {
+                Ok(client) => match client.post(&webhook_url).json(&payload).send() {
+                    Ok(resp) => {
+                        let status = resp.status().as_u16() as i32;
+                        let body = resp.text().unwrap_or_default();
+                        let body_truncated = if body.len() > 2048 {
+                            let mut end = 2048;
+                            while !body.is_char_boundary(end) { end -= 1; }
+                            body[..end].to_string()
+                        } else {
+                            body
+                        };
+                        info!("[webhook] {} delivered to {} status={}", event, webhook_url, status);
+                        (Some(status), body_truncated, String::new())
+                    }
+                    Err(e) => {
+                        warn!("[webhook] {} delivery failed to {}: {}", event, webhook_url, e);
+                        (None, String::new(), e.to_string())
+                    }
+                },
                 Err(e) => {
-                    warn!(
-                        "[webhook] {} delivery failed to {}: {}",
-                        event, webhook_url, e
-                    );
+                    warn!("[webhook] failed to build HTTP client: {}", e);
                     (None, String::new(), e.to_string())
                 }
-            },
-            Err(e) => {
-                warn!("[webhook] failed to build HTTP client: {}", e);
-                (None, String::new(), e.to_string())
-            }
-        };
+            };
 
         let duration_ms = start.elapsed().as_millis() as i64;
 

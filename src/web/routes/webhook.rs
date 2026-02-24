@@ -8,9 +8,9 @@ use log::{debug, info, warn};
 use serde::Deserialize;
 
 use crate::db::WebhookLog;
+use crate::web::AppState;
 use crate::web::auth::AuthAdmin;
 use crate::web::forms::WebhookSettingsForm;
-use crate::web::AppState;
 
 const PAGE_SIZE: i64 = 50;
 
@@ -98,9 +98,7 @@ pub async fn list(
         .into_iter()
         .map(|r| {
             let success = r.error.is_empty()
-                && r.response_status
-                    .map(|s| s >= 200 && s < 300)
-                    .unwrap_or(false);
+                && r.response_status.map(|s| s >= 200 && s < 300).unwrap_or(false);
             WebhookLogRow {
                 id: r.id,
                 url: r.url,
@@ -161,7 +159,10 @@ pub async fn update_webhook(
     state
         .blocking_db(move |db| db.set_setting("webhook_url", &url_for_db))
         .await;
-    info!("[web] webhook_url updated by user={}", auth.admin.username);
+    info!(
+        "[web] webhook_url updated by user={}",
+        auth.admin.username
+    );
     let tmpl = ErrorTemplate {
         nav_active: "Webhooks",
         flash: None,
@@ -175,7 +176,10 @@ pub async fn update_webhook(
     Html(tmpl.render().unwrap()).into_response()
 }
 
-pub async fn test_webhook(auth: AuthAdmin, State(state): State<AppState>) -> Response {
+pub async fn test_webhook(
+    auth: AuthAdmin,
+    State(state): State<AppState>,
+) -> Response {
     info!(
         "[web] POST /webhooks/test — webhook test by username={}",
         auth.admin.username
@@ -237,9 +241,7 @@ pub async fn test_webhook(auth: AuthAdmin, State(state): State<AppState>) -> Res
             let body = resp.text().unwrap_or_default();
             let body_truncated = if body.len() > 2048 {
                 let mut end = 2048;
-                while !body.is_char_boundary(end) {
-                    end -= 1;
-                }
+                while !body.is_char_boundary(end) { end -= 1; }
                 body[..end].to_string()
             } else {
                 body

@@ -8,8 +8,8 @@ use log::{debug, error, warn};
 use std::path::Path as FsPath;
 use std::process::Command;
 
-use crate::web::auth::AuthAdmin;
 use crate::web::AppState;
+use crate::web::auth::AuthAdmin;
 
 const POSTQUEUE_PATHS: [&str; 2] = ["/usr/sbin/postqueue", "/usr/bin/postqueue"];
 const POSTSUPER_PATHS: [&str; 2] = ["/usr/sbin/postsuper", "/usr/bin/postsuper"];
@@ -83,10 +83,7 @@ pub fn parse_queue_output(output: &str) -> Vec<QueueEntry> {
             current = Some(QueueEntry {
                 id: caps[1].to_string(),
                 size: caps[2].parse().unwrap_or_else(|_| {
-                    warn!(
-                        "[queue] failed to parse size for queue entry '{}'; defaulting to 0",
-                        &caps[1]
-                    );
+                    warn!("[queue] failed to parse size for queue entry '{}'; defaulting to 0", &caps[1]);
                     0
                 }),
                 arrival_time: caps[3].to_string(),
@@ -106,7 +103,9 @@ pub fn parse_queue_output(output: &str) -> Vec<QueueEntry> {
 /// Returns `true` only when the queue ID is a valid Postfix hex queue ID
 /// (alphanumeric, max 20 chars) to prevent command injection.
 fn is_valid_queue_id(id: &str) -> bool {
-    !id.is_empty() && id.len() <= 20 && id.chars().all(|c| c.is_ascii_alphanumeric())
+    !id.is_empty()
+        && id.len() <= 20
+        && id.chars().all(|c| c.is_ascii_alphanumeric())
 }
 
 fn same_origin(headers: &HeaderMap) -> bool {
@@ -260,21 +259,23 @@ pub async fn purge(auth: AuthAdmin, headers: HeaderMap) -> Response {
     }
 
     match find_postsuper_bin() {
-        Some(postsuper_bin) => match Command::new(postsuper_bin).args(["-d", "ALL"]).output() {
-            Ok(output) if output.status.success() => {
-                debug!("[web] queue purge command completed successfully");
+        Some(postsuper_bin) => {
+            match Command::new(postsuper_bin).args(["-d", "ALL"]).output() {
+                Ok(output) if output.status.success() => {
+                    debug!("[web] queue purge command completed successfully");
+                }
+                Ok(output) => {
+                    error!(
+                        "[web] queue purge failed with status {}: {}",
+                        output.status,
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                }
+                Err(e) => {
+                    error!("[web] failed to run queue purge command: {}", e);
+                }
             }
-            Ok(output) => {
-                error!(
-                    "[web] queue purge failed with status {}: {}",
-                    output.status,
-                    String::from_utf8_lossy(&output.stderr)
-                );
-            }
-            Err(e) => {
-                error!("[web] failed to run queue purge command: {}", e);
-            }
-        },
+        }
         None => error!("[web] postsuper binary not found; queue purge unavailable"),
     }
 
@@ -302,22 +303,24 @@ pub async fn delete_message(
     }
 
     match find_postsuper_bin() {
-        Some(postsuper_bin) => match Command::new(postsuper_bin).args(["-d", &id]).output() {
-            Ok(output) if output.status.success() => {
-                debug!("[web] deleted queue message {}", id);
+        Some(postsuper_bin) => {
+            match Command::new(postsuper_bin).args(["-d", &id]).output() {
+                Ok(output) if output.status.success() => {
+                    debug!("[web] deleted queue message {}", id);
+                }
+                Ok(output) => {
+                    error!(
+                        "[web] queue delete {} failed with status {}: {}",
+                        id,
+                        output.status,
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                }
+                Err(e) => {
+                    error!("[web] failed to run postsuper for message {}: {}", id, e);
+                }
             }
-            Ok(output) => {
-                error!(
-                    "[web] queue delete {} failed with status {}: {}",
-                    id,
-                    output.status,
-                    String::from_utf8_lossy(&output.stderr)
-                );
-            }
-            Err(e) => {
-                error!("[web] failed to run postsuper for message {}: {}", id, e);
-            }
-        },
+        }
         None => error!("[web] postsuper binary not found; message delete unavailable"),
     }
 
@@ -348,22 +351,24 @@ pub async fn flush_message(
     }
 
     match find_postqueue_bin() {
-        Some(postqueue_bin) => match Command::new(postqueue_bin).args(["-i", &id]).output() {
-            Ok(output) if output.status.success() => {
-                debug!("[web] flushed queue message {}", id);
+        Some(postqueue_bin) => {
+            match Command::new(postqueue_bin).args(["-i", &id]).output() {
+                Ok(output) if output.status.success() => {
+                    debug!("[web] flushed queue message {}", id);
+                }
+                Ok(output) => {
+                    error!(
+                        "[web] queue flush-message {} failed with status {}: {}",
+                        id,
+                        output.status,
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                }
+                Err(e) => {
+                    error!("[web] failed to run postqueue -i for message {}: {}", id, e);
+                }
             }
-            Ok(output) => {
-                error!(
-                    "[web] queue flush-message {} failed with status {}: {}",
-                    id,
-                    output.status,
-                    String::from_utf8_lossy(&output.stderr)
-                );
-            }
-            Err(e) => {
-                error!("[web] failed to run postqueue -i for message {}: {}", id, e);
-            }
-        },
+        }
         None => error!("[web] postqueue binary not found; message flush unavailable"),
     }
 
@@ -391,10 +396,7 @@ mod tests {
     fn same_origin_rejects_mismatched_origin() {
         let mut headers = HeaderMap::new();
         headers.insert(header::HOST, HeaderValue::from_static("mail.example.com"));
-        headers.insert(
-            header::ORIGIN,
-            HeaderValue::from_static("https://evil.example"),
-        );
+        headers.insert(header::ORIGIN, HeaderValue::from_static("https://evil.example"));
 
         assert!(!same_origin(&headers));
     }
@@ -458,19 +460,13 @@ EF7F57AAAD*    1172 Sat Feb 21 17:03:33  m@tyyi.net
         assert_eq!(entries[0].recipients, vec!["tayyebimohammadreza@gmail.com"]);
 
         assert_eq!(entries[1].id, "74C8A7AC47");
-        assert_eq!(
-            entries[1].recipients,
-            vec!["mohammadreza.tayyebi@abrnoc.com"]
-        );
+        assert_eq!(entries[1].recipients, vec!["mohammadreza.tayyebi@abrnoc.com"]);
 
         assert_eq!(entries[2].id, "8389B9CA3B");
         assert_eq!(entries[2].size, 121656);
         assert_eq!(
             entries[2].recipients,
-            vec![
-                "lucindasmith7291@gmail.com",
-                "marcusrodriguez5042@gmail.com"
-            ]
+            vec!["lucindasmith7291@gmail.com", "marcusrodriguez5042@gmail.com"]
         );
     }
 

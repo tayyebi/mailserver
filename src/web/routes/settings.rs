@@ -8,10 +8,10 @@ use axum::{
 use log::{debug, error, info, warn};
 
 use crate::db::Admin;
+use crate::web::AppState;
 use crate::web::auth::AuthAdmin;
 use crate::web::fire_webhook;
 use crate::web::forms::{FeatureToggleForm, PasswordForm, TotpEnableForm};
-use crate::web::AppState;
 
 // ── Templates ──
 
@@ -62,11 +62,7 @@ struct ErrorTemplate<'a> {
 fn check_filter_health() -> bool {
     // The content filter is a pipe transport invoked by Postfix on demand.
     // It is healthy if the mailserver binary exists and is executable.
-    let paths = [
-        "/usr/local/bin/mailserver",
-        "./target/release/mailserver",
-        "./target/debug/mailserver",
-    ];
+    let paths = ["/usr/local/bin/mailserver", "./target/release/mailserver", "./target/debug/mailserver"];
     paths.iter().any(|p| std::path::Path::new(p).exists())
 }
 
@@ -83,18 +79,10 @@ fn check_milter_health() -> bool {
 fn read_cert_info() -> (String, String, String, String, String) {
     let cert_path = "/data/ssl/cert.pem";
     if !std::path::Path::new(cert_path).exists() {
-        return (
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-        );
+        return (String::new(), String::new(), String::new(), String::new(), String::new());
     }
     let output = std::process::Command::new("openssl")
-        .args([
-            "x509", "-in", cert_path, "-noout", "-subject", "-issuer", "-dates", "-serial",
-        ])
+        .args(["x509", "-in", cert_path, "-noout", "-subject", "-issuer", "-dates", "-serial"])
         .output();
     match output {
         Ok(o) if o.status.success() => {
@@ -119,13 +107,7 @@ fn read_cert_info() -> (String, String, String, String, String) {
             }
             (subject, issuer, not_before, not_after, serial)
         }
-        _ => (
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-        ),
+        _ => (String::new(), String::new(), String::new(), String::new(), String::new()),
     }
 }
 
@@ -179,8 +161,7 @@ pub async fn page(auth: AuthAdmin, State(state): State<AppState>) -> Html<String
         }
     }
 
-    let (cert_subject, cert_issuer, cert_not_before, cert_not_after, cert_serial) =
-        read_cert_info();
+    let (cert_subject, cert_issuer, cert_not_before, cert_not_after, cert_serial) = read_cert_info();
 
     // Load feature toggle states from DB (default: enabled)
     let filter_enabled = state
@@ -369,10 +350,7 @@ pub async fn change_password(
     let hash = match crate::auth::hash_password(&form.new_password) {
         Ok(h) => h,
         Err(e) => {
-            error!(
-                "[web] failed to hash new password for username={}: {}",
-                auth.admin.username, e
-            );
+            error!("[web] failed to hash new password for username={}: {}", auth.admin.username, e);
             let tmpl = ErrorTemplate {
                 nav_active: "Settings",
                 flash: None,
@@ -394,11 +372,7 @@ pub async fn change_password(
         "[web] password changed successfully for username={}",
         auth.admin.username
     );
-    fire_webhook(
-        &state,
-        "settings.password_changed",
-        serde_json::json!({"username": auth.admin.username}),
-    );
+    fire_webhook(&state, "settings.password_changed", serde_json::json!({"username": auth.admin.username}));
     let tmpl = ErrorTemplate {
         nav_active: "Settings",
         flash: None,
@@ -463,11 +437,7 @@ pub async fn enable_2fa(
         "[web] 2FA enabled successfully for username={}",
         auth.admin.username
     );
-    fire_webhook(
-        &state,
-        "settings.2fa_enabled",
-        serde_json::json!({"username": auth.admin.username}),
-    );
+    fire_webhook(&state, "settings.2fa_enabled", serde_json::json!({"username": auth.admin.username}));
     let tmpl = ErrorTemplate {
         nav_active: "Settings",
         flash: None,
@@ -494,11 +464,7 @@ pub async fn disable_2fa(auth: AuthAdmin, State(state): State<AppState>) -> Resp
         "[web] 2FA disabled successfully for username={}",
         auth.admin.username
     );
-    fire_webhook(
-        &state,
-        "settings.2fa_disabled",
-        serde_json::json!({"username": auth.admin.username}),
-    );
+    fire_webhook(&state, "settings.2fa_disabled", serde_json::json!({"username": auth.admin.username}));
     let tmpl = ErrorTemplate {
         nav_active: "Settings",
         flash: None,
@@ -512,41 +478,34 @@ pub async fn disable_2fa(auth: AuthAdmin, State(state): State<AppState>) -> Resp
     Html(tmpl.render().unwrap()).into_response()
 }
 
-pub async fn regenerate_tls(auth: AuthAdmin, State(state): State<AppState>) -> Response {
+pub async fn regenerate_tls(
+    auth: AuthAdmin,
+    State(state): State<AppState>,
+) -> Response {
     info!("[web] POST /settings/tls/regenerate — regenerating self-signed TLS certificate by username={}", auth.admin.username);
     let hostname = &state.hostname;
-
+    
     match crate::config::generate_all_certificates(hostname, true) {
         Ok(_) => {
-            info!(
-                "[web] TLS certificates and DH parameters regenerated successfully for hostname={}",
-                hostname
-            );
+            info!("[web] TLS certificates and DH parameters regenerated successfully for hostname={}", hostname);
             crate::config::reload_services();
             let tmpl = ErrorTemplate {
-                nav_active: "Settings",
-                flash: None,
+                nav_active: "Settings", flash: None,
                 status_code: 200,
                 status_text: "OK",
-                title: "Success",
-                message:
-                    "TLS certificates and DH parameters regenerated. Services have been reloaded.",
-                back_url: "/settings",
-                back_label: "Back to Settings",
+                title: "Success", message: "TLS certificates and DH parameters regenerated. Services have been reloaded.",
+                back_url: "/settings", back_label: "Back to Settings",
             };
             Html(tmpl.render().unwrap()).into_response()
         }
         Err(e) => {
             error!("[web] failed to regenerate TLS certificates: {}", e);
             let tmpl = ErrorTemplate {
-                nav_active: "Settings",
-                flash: None,
+                nav_active: "Settings", flash: None,
                 status_code: 500,
                 status_text: "Error",
-                title: "Error",
-                message: &format!("Failed to regenerate TLS certificates: {}", e),
-                back_url: "/settings",
-                back_label: "Back to Settings",
+                title: "Error", message: &format!("Failed to regenerate TLS certificates: {}", e),
+                back_url: "/settings", back_label: "Back to Settings",
             };
             Html(tmpl.render().unwrap()).into_response()
         }
@@ -554,40 +513,27 @@ pub async fn regenerate_tls(auth: AuthAdmin, State(state): State<AppState>) -> R
 }
 
 pub async fn download_cert(auth: AuthAdmin) -> Response {
-    debug!(
-        "[web] GET /settings/tls/cert.pem — certificate download by username={}",
-        auth.admin.username
-    );
+    debug!("[web] GET /settings/tls/cert.pem — certificate download by username={}", auth.admin.username);
     let cert_path = "/data/ssl/cert.pem";
     match std::fs::read(cert_path) {
         Ok(data) => {
-            info!(
-                "[web] certificate downloaded by username={}",
-                auth.admin.username
-            );
+            info!("[web] certificate downloaded by username={}", auth.admin.username);
             (
                 [
                     (header::CONTENT_TYPE, "application/x-pem-file"),
-                    (
-                        header::CONTENT_DISPOSITION,
-                        "attachment; filename=\"cert.pem\"",
-                    ),
+                    (header::CONTENT_DISPOSITION, "attachment; filename=\"cert.pem\""),
                 ],
                 data,
-            )
-                .into_response()
+            ).into_response()
         }
         Err(e) => {
             error!("[web] failed to read certificate file: {}", e);
             let tmpl = ErrorTemplate {
-                nav_active: "Settings",
-                flash: None,
+                nav_active: "Settings", flash: None,
                 status_code: 404,
                 status_text: "Not Found",
-                title: "Error",
-                message: "Certificate file not found.",
-                back_url: "/settings",
-                back_label: "Back to Settings",
+                title: "Error", message: "Certificate file not found.",
+                back_url: "/settings", back_label: "Back to Settings",
             };
             Html(tmpl.render().unwrap()).into_response()
         }
@@ -683,40 +629,27 @@ pub async fn restart_container(auth: AuthAdmin) -> Response {
 }
 
 pub async fn download_key(auth: AuthAdmin) -> Response {
-    debug!(
-        "[web] GET /settings/tls/key.pem — private key download by username={}",
-        auth.admin.username
-    );
+    debug!("[web] GET /settings/tls/key.pem — private key download by username={}", auth.admin.username);
     let key_path = "/data/ssl/key.pem";
     match std::fs::read(key_path) {
         Ok(data) => {
-            info!(
-                "[web] private key downloaded by username={}",
-                auth.admin.username
-            );
+            info!("[web] private key downloaded by username={}", auth.admin.username);
             (
                 [
                     (header::CONTENT_TYPE, "application/x-pem-file"),
-                    (
-                        header::CONTENT_DISPOSITION,
-                        "attachment; filename=\"key.pem\"",
-                    ),
+                    (header::CONTENT_DISPOSITION, "attachment; filename=\"key.pem\""),
                 ],
                 data,
-            )
-                .into_response()
+            ).into_response()
         }
         Err(e) => {
             error!("[web] failed to read private key file: {}", e);
             let tmpl = ErrorTemplate {
-                nav_active: "Settings",
-                flash: None,
+                nav_active: "Settings", flash: None,
                 status_code: 404,
                 status_text: "Not Found",
-                title: "Error",
-                message: "Private key file not found.",
-                back_url: "/settings",
-                back_label: "Back to Settings",
+                title: "Error", message: "Private key file not found.",
+                back_url: "/settings", back_label: "Back to Settings",
             };
             Html(tmpl.render().unwrap()).into_response()
         }

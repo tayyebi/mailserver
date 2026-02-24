@@ -7,9 +7,9 @@ use axum::{
 };
 use log::{debug, error, info, warn};
 
+use crate::web::AppState;
 use crate::web::auth::AuthAdmin;
 use crate::web::forms::SpamblToggleForm;
-use crate::web::AppState;
 
 fn same_origin(headers: &HeaderMap) -> bool {
     let host = match headers.get(header::HOST).and_then(|v| v.to_str().ok()) {

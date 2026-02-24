@@ -13,7 +13,10 @@ pub fn routes() -> Router<AppState> {
     Router::new().route("/bimi/:domain/logo.svg", get(bimi_logo_handler))
 }
 
-async fn bimi_logo_handler(State(state): State<AppState>, Path(domain): Path<String>) -> Response {
+async fn bimi_logo_handler(
+    State(state): State<AppState>,
+    Path(domain): Path<String>,
+) -> Response {
     debug!("[web] GET /bimi/{}/logo.svg — BIMI logo requested", domain);
 
     let domain_log = domain.clone();

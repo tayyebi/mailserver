@@ -43,10 +43,8 @@ fn dovecot_auth_re() -> &'static Regex {
 
 fn dovecot_invalid_re() -> &'static Regex {
     DOVECOT_INVALID.get_or_init(|| {
-        Regex::new(
-            r"dovecot: (imap|pop3)-login: .+Disconnected.+too many invalid.+rip=([0-9a-fA-F.:]+)",
-        )
-        .expect("Invalid regex")
+        Regex::new(r"dovecot: (imap|pop3)-login: .+Disconnected.+too many invalid.+rip=([0-9a-fA-F.:]+)")
+            .expect("Invalid regex")
     })
 }
 
@@ -124,7 +122,10 @@ fn handle_auth_failure(db: &Database, failure: &AuthFailure) {
 
     // Check if already banned
     if db.is_ip_banned(&failure.ip) {
-        debug!("[fail2ban] IP {} already banned, skipping", failure.ip);
+        debug!(
+            "[fail2ban] IP {} already banned, skipping",
+            failure.ip
+        );
         return;
     }
 
@@ -152,8 +153,7 @@ fn handle_auth_failure(db: &Database, failure: &AuthFailure) {
     }
 
     // Count recent attempts within the find_time window
-    let recent_count =
-        db.count_recent_attempts(&failure.ip, &failure.service, setting.find_time_minutes);
+    let recent_count = db.count_recent_attempts(&failure.ip, &failure.service, setting.find_time_minutes);
 
     info!(
         "[fail2ban] IP {} service {} has {} attempts in last {} min (threshold: {})",
@@ -179,7 +179,10 @@ fn handle_auth_failure(db: &Database, failure: &AuthFailure) {
                 );
             }
             Err(e) => {
-                error!("[fail2ban] failed to ban IP {}: {}", failure.ip, e);
+                error!(
+                    "[fail2ban] failed to ban IP {}: {}",
+                    failure.ip, e
+                );
             }
         }
     }
@@ -200,10 +203,7 @@ pub fn start_watcher(db: Database) {
             std::thread::sleep(Duration::from_secs(2));
         }
 
-        info!(
-            "[fail2ban] log file found, starting to monitor {}",
-            MAIL_LOG_PATH
-        );
+        info!("[fail2ban] log file found, starting to monitor {}", MAIL_LOG_PATH);
 
         loop {
             match tail_log_file(&db) {
@@ -351,8 +351,7 @@ mod tests {
 
     #[test]
     fn parse_normal_log_line_returns_none() {
-        let line =
-            "Feb 18 10:15:23 mail postfix/smtpd[1234]: connect from mail.example.com[1.2.3.4]";
+        let line = "Feb 18 10:15:23 mail postfix/smtpd[1234]: connect from mail.example.com[1.2.3.4]";
         assert!(parse_log_line(line).is_none());
     }
 
