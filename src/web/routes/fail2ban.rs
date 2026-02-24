@@ -7,10 +7,12 @@ use axum::{
 };
 use log::{debug, error, info, warn};
 
-use crate::web::AppState;
 use crate::web::auth::AuthAdmin;
 use crate::web::fire_webhook;
-use crate::web::forms::{Fail2banBanForm, Fail2banGlobalToggleForm, Fail2banListForm, Fail2banSettingForm};
+use crate::web::forms::{
+    Fail2banBanForm, Fail2banGlobalToggleForm, Fail2banListForm, Fail2banSettingForm,
+};
+use crate::web::AppState;
 
 fn same_origin(headers: &HeaderMap) -> bool {
     let host = match headers.get(header::HOST).and_then(|v| v.to_str().ok()) {
@@ -110,8 +112,14 @@ pub async fn overview(auth: AuthAdmin, State(state): State<AppState>) -> Html<St
     let log_fut = state.blocking_db(|db| db.list_fail2ban_log(50));
     let enabled_fut = state.blocking_db(|db| db.is_fail2ban_enabled());
 
-    let (settings, banned, whitelist, blacklist, log_entries, fail2ban_enabled) =
-        tokio::join!(settings_fut, banned_fut, whitelist_fut, blacklist_fut, log_fut, enabled_fut);
+    let (settings, banned, whitelist, blacklist, log_entries, fail2ban_enabled) = tokio::join!(
+        settings_fut,
+        banned_fut,
+        whitelist_fut,
+        blacklist_fut,
+        log_fut,
+        enabled_fut
+    );
 
     let banned_count = banned.len() as i64;
     let whitelist_count = whitelist.len();
@@ -168,7 +176,11 @@ pub async fn toggle_system(
         .await;
 
     info!("[web] fail2ban system toggled to: {}", value);
-    fire_webhook(&state, "fail2ban.toggled", serde_json::json!({"enabled": enabled}));
+    fire_webhook(
+        &state,
+        "fail2ban.toggled",
+        serde_json::json!({"enabled": enabled}),
+    );
     Redirect::to("/fail2ban").into_response()
 }
 
@@ -181,7 +193,9 @@ pub async fn edit_setting_form(
         "[web] GET /fail2ban/settings/{} — edit form for username={}",
         id, auth.admin.username
     );
-    let setting = state.blocking_db(move |db| db.get_fail2ban_setting(id)).await;
+    let setting = state
+        .blocking_db(move |db| db.get_fail2ban_setting(id))
+        .await;
     match setting {
         Some(setting) => {
             let tmpl = EditSettingTemplate {
@@ -243,7 +257,13 @@ pub async fn update_setting(
     let enabled = form.enabled.as_deref() == Some("on");
     state
         .blocking_db(move |db| {
-            db.update_fail2ban_setting(id, form.max_attempts, form.ban_duration_minutes, form.find_time_minutes, enabled)
+            db.update_fail2ban_setting(
+                id,
+                form.max_attempts,
+                form.ban_duration_minutes,
+                form.find_time_minutes,
+                enabled,
+            )
         })
         .await;
 
@@ -293,7 +313,11 @@ pub async fn ban_ip(
         .await
         .ok();
 
-    fire_webhook(&state, "fail2ban.ip_banned", serde_json::json!({"ip": ip_for_webhook, "service": service_for_webhook}));
+    fire_webhook(
+        &state,
+        "fail2ban.ip_banned",
+        serde_json::json!({"ip": ip_for_webhook, "service": service_for_webhook}),
+    );
     Redirect::to("/fail2ban").into_response()
 }
 
@@ -314,7 +338,11 @@ pub async fn unban_ip(
     }
 
     state.blocking_db(move |db| db.unban_ip(id)).await;
-    fire_webhook(&state, "fail2ban.ip_unbanned", serde_json::json!({"id": id}));
+    fire_webhook(
+        &state,
+        "fail2ban.ip_unbanned",
+        serde_json::json!({"id": id}),
+    );
     Redirect::to("/fail2ban").into_response()
 }
 
@@ -370,7 +398,9 @@ pub async fn remove_whitelist(
         return StatusCode::FORBIDDEN.into_response();
     }
 
-    state.blocking_db(move |db| db.remove_from_whitelist(id)).await;
+    state
+        .blocking_db(move |db| db.remove_from_whitelist(id))
+        .await;
     Redirect::to("/fail2ban").into_response()
 }
 
@@ -426,7 +456,9 @@ pub async fn remove_blacklist(
         return StatusCode::FORBIDDEN.into_response();
     }
 
-    state.blocking_db(move |db| db.remove_from_blacklist(id)).await;
+    state
+        .blocking_db(move |db| db.remove_from_blacklist(id))
+        .await;
     Redirect::to("/fail2ban").into_response()
 }
 

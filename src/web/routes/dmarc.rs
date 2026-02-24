@@ -307,10 +307,7 @@ fn find_dmarc_attachment(part: &mailparse::ParsedMail) -> Option<(String, Vec<u8
 }
 
 /// Read all emails in an account's INBOX and try to parse DMARC reports from them.
-fn read_dmarc_reports(
-    maildir_base: &str,
-    logs: &mut Vec<String>,
-) -> Vec<DmarcReport> {
+fn read_dmarc_reports(maildir_base: &str, logs: &mut Vec<String>) -> Vec<DmarcReport> {
     let mut reports = Vec::new();
 
     for subdir in &["new", "cur"] {
@@ -341,9 +338,7 @@ fn read_dmarc_reports(
                                 let encoded = URL_SAFE_NO_PAD.encode(fname.as_bytes());
 
                                 // Try to find a DMARC attachment
-                                if let Some((att_name, att_data)) =
-                                    find_dmarc_attachment(&parsed)
-                                {
+                                if let Some((att_name, att_data)) = find_dmarc_attachment(&parsed) {
                                     debug!(
                                         "[dmarc] found attachment '{}' in email '{}'",
                                         att_name, subject

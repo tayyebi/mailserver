@@ -32,8 +32,8 @@ fn main() {
                 "localhost".to_string()
             });
             let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
-                debug!("[main] DATABASE_URL not set, defaulting to postgres://mailserver:mailserver@localhost/mailserver");
-                "postgres://mailserver:mailserver@localhost/mailserver".to_string()
+                debug!("[main] DATABASE_URL not set, defaulting to postgres://mailserver:mailserver@db/mailserver");
+                "postgres://mailserver:mailserver@db/mailserver".to_string()
             });
 
             info!(
@@ -69,8 +69,8 @@ fn main() {
         }
         "filter" => {
             let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
-                debug!("[filter] DATABASE_URL not set, defaulting to postgres://mailserver:mailserver@localhost/mailserver");
-                "postgres://mailserver:mailserver@localhost/mailserver".to_string()
+                debug!("[filter] DATABASE_URL not set, defaulting to postgres://mailserver:mailserver@db/mailserver");
+                "postgres://mailserver:mailserver@db/mailserver".to_string()
             });
             // Prefer pixel_base_url stored in the database (if set), fall back to env var, then default
             let database = db::Database::open(&db_url);
@@ -106,7 +106,10 @@ fn main() {
             }
 
             let hostname = env::var("HOSTNAME").unwrap_or_else(|_| "localhost".to_string());
-            let admin_port = env::var("ADMIN_PORT").ok().and_then(|p| p.parse::<u16>().ok()).unwrap_or(8080);
+            let admin_port = env::var("ADMIN_PORT")
+                .ok()
+                .and_then(|p| p.parse::<u16>().ok())
+                .unwrap_or(8080);
             let unsubscribe_base_url = database
                 .get_setting("unsubscribe_base_url")
                 .or_else(|| env::var("UNSUBSCRIBE_BASE_URL").ok())
@@ -125,13 +128,20 @@ fn main() {
                 sender,
                 recipients.join(", ")
             );
-            filter::run_filter(&db_url, &sender, &recipients, &pixel_base_url, &unsubscribe_base_url, incoming);
+            filter::run_filter(
+                &db_url,
+                &sender,
+                &recipients,
+                &pixel_base_url,
+                &unsubscribe_base_url,
+                incoming,
+            );
             info!("[filter] content filter completed");
         }
         "seed" => {
             let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
-                debug!("[seed] DATABASE_URL not set, defaulting to postgres://mailserver:mailserver@localhost/mailserver");
-                "postgres://mailserver:mailserver@localhost/mailserver".to_string()
+                debug!("[seed] DATABASE_URL not set, defaulting to postgres://mailserver:mailserver@db/mailserver");
+                "postgres://mailserver:mailserver@db/mailserver".to_string()
             });
             let username = env::var("SEED_USER").unwrap_or_else(|_| {
                 debug!("[seed] SEED_USER not set, defaulting to admin");
@@ -153,8 +163,8 @@ fn main() {
         }
         "genconfig" => {
             let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
-                debug!("[genconfig] DATABASE_URL not set, defaulting to postgres://mailserver:mailserver@localhost/mailserver");
-                "postgres://mailserver:mailserver@localhost/mailserver".to_string()
+                debug!("[genconfig] DATABASE_URL not set, defaulting to postgres://mailserver:mailserver@db/mailserver");
+                "postgres://mailserver:mailserver@db/mailserver".to_string()
             });
             let hostname = env::var("HOSTNAME").unwrap_or_else(|_| {
                 warn!("[genconfig] HOSTNAME not set, defaulting to localhost");
@@ -172,7 +182,10 @@ fn main() {
                 "localhost".to_string()
             });
 
-            info!("[gencerts] generating certificates and DH parameters for hostname={}", hostname);
+            info!(
+                "[gencerts] generating certificates and DH parameters for hostname={}",
+                hostname
+            );
             match config::generate_all_certificates(&hostname, false) {
                 Ok(_) => {
                     info!("[gencerts] certificates and DH parameters generated successfully");
@@ -201,7 +214,7 @@ fn main() {
             println!("  ADMIN_PORT       Dashboard port (default: 8080)");
             println!("  HOSTNAME         Mail server hostname (default: localhost)");
             println!(
-                "  DATABASE_URL    PostgreSQL connection string (default: postgres://mailserver:mailserver@localhost/mailserver)"
+                "  DATABASE_URL    PostgreSQL connection string (default: postgres://mailserver:mailserver@db/mailserver)"
             );
             println!("  PIXEL_BASE_URL   Base URL for tracking pixels");
             println!("  SEED_USER        Default admin username (default: admin)");

@@ -8,9 +8,9 @@ use axum::{
 };
 use log::{debug, info, warn};
 
+use crate::web::auth::AuthAdmin;
 use crate::web::forms::UnsubscribeQuery;
 use crate::web::AppState;
-use crate::web::auth::AuthAdmin;
 
 // ── Templates ──
 
@@ -34,8 +34,10 @@ struct ConfirmTemplate<'a> {
 // ── Public routes (no auth) ──
 
 pub fn public_routes() -> Router<AppState> {
-    Router::new()
-        .route("/unsubscribe", get(unsubscribe_confirm_page).post(unsubscribe_one_click))
+    Router::new().route(
+        "/unsubscribe",
+        get(unsubscribe_confirm_page).post(unsubscribe_one_click),
+    )
 }
 
 /// GET /unsubscribe?token=xxx — show a confirmation/status page
@@ -115,7 +117,10 @@ async fn unsubscribe_one_click(
             state
                 .blocking_db(move |db| db.record_unsubscribe(&email_for_db, &domain_for_db))
                 .await;
-            info!("[web] unsubscribe recorded: email={} domain={}", email, domain);
+            info!(
+                "[web] unsubscribe recorded: email={} domain={}",
+                email, domain
+            );
             let tmpl = ConfirmTemplate {
                 token: &params.token,
                 success: true,
@@ -156,7 +161,10 @@ pub async fn delete(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Response {
-    info!("[web] POST /unsubscribe/{}/delete — deleting unsubscribe entry", id);
+    info!(
+        "[web] POST /unsubscribe/{}/delete — deleting unsubscribe entry",
+        id
+    );
     state.blocking_db(move |db| db.delete_unsubscribe(id)).await;
     axum::response::Redirect::to("/unsubscribe/list").into_response()
 }

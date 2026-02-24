@@ -158,7 +158,10 @@ pub async fn create(
     let db_hash = match crate::auth::hash_password(&form.password) {
         Ok(h) => h,
         Err(e) => {
-            error!("[web] failed to hash password for account {}: {}", form.username, e);
+            error!(
+                "[web] failed to hash password for account {}: {}",
+                form.username, e
+            );
             let tmpl = ErrorTemplate {
                 nav_active: "Accounts",
                 flash: None,
@@ -186,7 +189,11 @@ pub async fn create(
                 form.username, id
             );
             regen_configs(&state).await;
-            fire_webhook(&state, "account.created", serde_json::json!({"username": form.username, "domain_id": form.domain_id}));
+            fire_webhook(
+                &state,
+                "account.created",
+                serde_json::json!({"username": form.username, "domain_id": form.domain_id}),
+            );
             Redirect::to("/accounts").into_response()
         }
         Err(e) => {

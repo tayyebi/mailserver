@@ -7,7 +7,6 @@ pub mod dmarc;
 pub mod domains;
 pub mod fail2ban;
 pub mod forwarding;
-pub mod health;
 pub mod pixel;
 pub mod queue;
 pub mod relays;
@@ -15,8 +14,8 @@ pub mod settings;
 pub mod spambl;
 pub mod tracking;
 pub mod unsubscribe;
-pub mod webmail;
 pub mod webhook;
+pub mod webmail;
 
 use super::AppState;
 use axum::{
@@ -46,7 +45,10 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/aliases/:id/delete", post(aliases::delete))
         .route("/aliases/:id", post(aliases::update))
         .route("/forwarding/new", get(forwarding::new_form))
-        .route("/forwarding", get(forwarding::list).post(forwarding::create))
+        .route(
+            "/forwarding",
+            get(forwarding::list).post(forwarding::create),
+        )
         .route("/forwarding/:id/edit", get(forwarding::edit_form))
         .route("/forwarding/:id/delete", post(forwarding::delete))
         .route("/forwarding/:id", post(forwarding::update))
@@ -72,19 +74,34 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/settings/tls/regenerate", post(settings::regenerate_tls))
         .route("/settings/tls/cert.pem", get(settings::download_cert))
         .route("/settings/tls/key.pem", get(settings::download_key))
-        .route("/settings/restart-services", post(settings::restart_services))
-        .route("/settings/restart-container", post(settings::restart_container))
+        .route(
+            "/settings/restart-services",
+            post(settings::restart_services),
+        )
+        .route(
+            "/settings/restart-container",
+            post(settings::restart_container),
+        )
         .route("/configs", get(configs::page))
         .route("/fail2ban", get(fail2ban::overview))
         .route("/fail2ban/toggle", post(fail2ban::toggle_system))
         .route("/fail2ban/ban", post(fail2ban::ban_ip))
         .route("/fail2ban/unban/:id", post(fail2ban::unban_ip))
-        .route("/fail2ban/settings/:id/edit", get(fail2ban::edit_setting_form))
+        .route(
+            "/fail2ban/settings/:id/edit",
+            get(fail2ban::edit_setting_form),
+        )
         .route("/fail2ban/settings/:id", post(fail2ban::update_setting))
         .route("/fail2ban/whitelist", post(fail2ban::add_whitelist))
-        .route("/fail2ban/whitelist/:id/delete", post(fail2ban::remove_whitelist))
+        .route(
+            "/fail2ban/whitelist/:id/delete",
+            post(fail2ban::remove_whitelist),
+        )
         .route("/fail2ban/blacklist", post(fail2ban::add_blacklist))
-        .route("/fail2ban/blacklist/:id/delete", post(fail2ban::remove_blacklist))
+        .route(
+            "/fail2ban/blacklist/:id/delete",
+            post(fail2ban::remove_blacklist),
+        )
         .route("/unsubscribe/list", get(unsubscribe::list))
         .route("/unsubscribe/:id/delete", post(unsubscribe::delete))
         .route("/spambl", get(spambl::list))
@@ -92,7 +109,6 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/webhooks", get(webhook::list))
         .route("/webhooks/settings", post(webhook::update_webhook))
         .route("/webhooks/test", post(webhook::test_webhook))
-        .route("/health", get(health::page))
         .route("/dmarc", get(dmarc::list).post(dmarc::create))
         .route("/dmarc/:id/delete", post(dmarc::delete))
         .route("/dmarc/:id/reports", get(dmarc::reports))
@@ -102,5 +118,8 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/relays/:id/delete", post(relays::delete))
         .route("/relays/:id", post(relays::update))
         .route("/relays/:id/assignments", post(relays::add_assignment))
-        .route("/relays/:id/assignments/:aid/delete", post(relays::remove_assignment))
+        .route(
+            "/relays/:id/assignments/:aid/delete",
+            post(relays::remove_assignment),
+        )
 }
