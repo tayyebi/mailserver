@@ -1,0 +1,46 @@
+{% extends "layout.html" %}
+{% block title %}Health{% endblock %}
+{% block content %}
+<section>
+    <hgroup>
+        <small>Delivery first</small>
+        <h1>Health & Delivery</h1>
+    </hgroup>
+    <p>Observe live delivery health. Outgoing attempts and observed opens, plus current queue snapshot.</p>
+    <dl>
+        <dt>Outgoing messages (tracked)</dt>
+        <dd><mark data-variant="success">{{ outgoing_count }}</mark></dd>
+        <dt>Opens recorded</dt>
+        <dd><mark data-variant="success">{{ open_count }}</mark></dd>
+    </dl>
+</section>
+
+<section>
+    <h2>Postfix queue snapshot</h2>
+    {% if queue_has_error %}
+        <p><mark data-variant="danger">{{ queue_error }}</mark></p>
+    {% else %}
+        <p>{{ queue_summary }}</p>
+        {% if queue_has_entries %}
+        <div class="table">
+            <div class="thead">
+                <div>Queue ID</div>
+                <div>Arrival</div>
+                <div>Sender</div>
+                <div>Recipients</div>
+            </div>
+            {% for entry in queue_entries %}
+            <div class="row">
+                <div>{{ entry.id }}</div>
+                <div>{{ entry.arrival_time }}</div>
+                <div>{{ entry.sender }}</div>
+                <div>{{ entry.recipients_display }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+            <p>No queued messages.</p>
+        {% endif %}
+    {% endif %}
+</section>
+{% endblock %}

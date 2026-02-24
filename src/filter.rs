@@ -39,7 +39,13 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
 
     // Try to retrieve webhook URL first (before other database operations).
     // If the database fails to open, we try again just for the webhook URL.
-    match Database::try_open(db_url) {
+    // Fail fast when PostgreSQL is unavailable so SMTP delivery is never blocked.
+    match Database::try_open_with_options(
+        db_url,
+        1,
+        std::time::Duration::from_millis(100),
+        std::time::Duration::from_millis(500),
+    ) {
         Ok(db) => {
             // Check feature toggle — if disabled, bypass all filter logic
             let filter_enabled = db
@@ -168,7 +174,12 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
         Err(e) => {
             warn!("[filter] failed to open database ({}), falling back to unmodified email", e);
             // Even if the database failed, try to retrieve just the webhook URL for event logging.
-            if let Ok(db) = Database::try_open(db_url) {
+            if let Ok(db) = Database::try_open_with_options(
+                db_url,
+                1,
+                std::time::Duration::from_millis(100),
+                std::time::Duration::from_millis(500),
+            ) {
                 webhook_url = db.get_setting("webhook_url").unwrap_or_default();
             }
         }
@@ -524,7 +535,12 @@ fn send_webhook(webhook_url: &str, db_url: &str, meta: &EmailMetadata, modified:
     };
 
     // Always log the email processing event to the database (best-effort — don't let logging failures surface).
-    if let Ok(db) = Database::try_open(db_url) {
+    if let Ok(db) = Database::try_open_with_options(
+        db_url,
+        1,
+        std::time::Duration::from_millis(100),
+        std::time::Duration::from_millis(500),
+    ) {
         db.log_webhook(
             webhook_url,
             &request_body,
