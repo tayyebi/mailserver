@@ -36,6 +36,9 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
     let mut modified = email_data.clone();
     let mut webhook_url = String::new();
     let mut suppressed = false;
+
+    // Try to retrieve webhook URL first (before other database operations).
+    // If the database fails to open, we try again just for the webhook URL.
     match Database::try_open(db_url) {
         Ok(db) => {
             // Check feature toggle — if disabled, bypass all filter logic
@@ -164,6 +167,10 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
         }
         Err(e) => {
             warn!("[filter] failed to open database ({}), falling back to unmodified email", e);
+            // Even if the database failed, try to retrieve just the webhook URL for event logging.
+            if let Ok(db) = Database::try_open(db_url) {
+                webhook_url = db.get_setting("webhook_url").unwrap_or_default();
+            }
         }
     }
 
