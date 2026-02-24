@@ -102,9 +102,13 @@ pub struct Stats {
     pub domain_count: i64,
     pub account_count: i64,
     pub alias_count: i64,
+    pub forwarding_count: i64,
     pub tracked_count: i64,
     pub open_count: i64,
     pub banned_count: i64,
+    pub webhook_count: i64,
+    pub unsubscribe_count: i64,
+    pub dkim_ready_count: i64,
 }
 
 #[derive(Clone, Serialize)]
@@ -1226,6 +1230,10 @@ impl Database {
             .query_one("SELECT COUNT(*) FROM aliases", &[])
             .map(|row| row.get(0))
             .unwrap_or(0);
+        let forwarding_count: i64 = conn
+            .query_one("SELECT COUNT(*) FROM forwardings", &[])
+            .map(|row| row.get(0))
+            .unwrap_or(0);
         let tracked_count: i64 = conn
             .query_one("SELECT COUNT(*) FROM tracked_messages", &[])
             .map(|row| row.get(0))
@@ -1243,13 +1251,32 @@ impl Database {
             .map(|row| row.get(0))
             .unwrap_or(0);
 
+        let webhook_count: i64 = conn
+            .query_one("SELECT COUNT(*) FROM webhook_logs", &[])
+            .map(|row| row.get(0))
+            .unwrap_or(0);
+
+        let unsubscribe_count: i64 = conn
+            .query_one("SELECT COUNT(*) FROM unsubscribe_list", &[])
+            .map(|row| row.get(0))
+            .unwrap_or(0);
+
+        let dkim_ready_count: i64 = conn
+            .query_one("SELECT COUNT(*) FROM domains WHERE dkim_public_key IS NOT NULL AND active = TRUE", &[])
+            .map(|row| row.get(0))
+            .unwrap_or(0);
+
         Stats {
             domain_count,
             account_count,
             alias_count,
+            forwarding_count,
             tracked_count,
             open_count,
             banned_count,
+            webhook_count,
+            unsubscribe_count,
+            dkim_ready_count,
         }
     }
 
