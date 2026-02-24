@@ -53,6 +53,9 @@ scache    unix  -       -       n       -       1       scache
 postlog   unix-dgram n  -       n       -       1       postlogd
 
 # Pixel filter service
+# user=nobody is required: Postfix's pipe(8) daemon refuses to run commands as
+# the 'postfix' user (the mail system owner) and exits with a fatal error, which
+# causes all mail to queue indefinitely and never be delivered.
 pixelfilter unix -   n   n   -   10  pipe
   flags=hq user=nobody argv=/usr/local/bin/mailserver filter -f ${sender} -- ${recipient}
 pixelfilter-in unix -   n   n   -   10  pipe
