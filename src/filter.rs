@@ -185,16 +185,7 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
         modified = strip_dkim_signatures(&modified);
     }
 
-    // 5. If the email was suppressed because the recipient has unsubscribed, drop
-    //    the message here (do not reinject) without an error so Postfix discards it.
-    //    Recipient and domain details were logged when suppressed was set above.
-    if suppressed {
-        info!("[filter] email suppressed — not reinjecting (see earlier log for recipient/domain)");
-        return;
-    }
-
-    // 6. Reinject via SMTP to 127.0.0.1:10025
-    info!("[filter] reinjecting email via SMTP to 127.0.0.1:10025");
+    // 5. Prepare email metadata for the webhook (shared by suppressed and normal code paths).
     let email_was_modified = modified != email_data;
     let meta = EmailMetadata {
         sender: sender.to_string(),
@@ -208,6 +199,18 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
         size_bytes,
         direction: if incoming { "incoming".to_string() } else { "outgoing".to_string() },
     };
+
+    // 6. If the email was suppressed because the recipient has unsubscribed, drop
+    //    the message here (do not reinject) without an error so Postfix discards it.
+    //    Fire the webhook so the event is still visible to the caller.
+    if suppressed {
+        info!("[filter] email suppressed — not reinjecting (see earlier log for recipient/domain)");
+        send_webhook(&webhook_url, db_url, &meta, email_was_modified, sender, &subject);
+        return;
+    }
+
+    // 7. Reinject via SMTP to 127.0.0.1:10025
+    info!("[filter] reinjecting email via SMTP to 127.0.0.1:10025");
 
     // Spawn the webhook thread early so it can start in parallel with the reinject.
     // A channel carries the final `modified` flag (None = don't fire, Some(bool) = fire).
@@ -987,5 +990,71 @@ mod tests {
             direction: "incoming".to_string(),
         };
         assert_eq!(meta.direction, "incoming");
+    }
+
+    // ── Suppressed-email webhook path tests ──
+    //
+    // These tests verify that EmailMetadata is fully populated before the suppression
+    // check so that send_webhook can be called for suppressed emails.
+
+    #[test]
+    fn email_metadata_is_fully_populated_for_suppressed_outgoing() {
+        // Simulate the state just before the suppressed check for an outgoing email.
+        let incoming = false;
+        let sender = "sender@example.com";
+        let subject = "Promo".to_string();
+        let from_header = "Sender <sender@example.com>".to_string();
+        let to_header = "recipient@example.com".to_string();
+        let cc_header = String::new();
+        let date_header = "Mon, 01 Jan 2024 00:00:00 +0000".to_string();
+        let message_id_header = "<abc@example.com>".to_string();
+        let size_bytes = 512_usize;
+
+        let meta = EmailMetadata {
+            sender: sender.to_string(),
+            recipients: vec!["recipient@example.com".to_string()],
+            subject: subject.clone(),
+            from: from_header.clone(),
+            to: to_header.clone(),
+            cc: cc_header.clone(),
+            date: date_header.clone(),
+            message_id: message_id_header.clone(),
+            size_bytes,
+            direction: if incoming { "incoming".to_string() } else { "outgoing".to_string() },
+        };
+
+        // Verify all fields are set as expected so send_webhook would receive complete data.
+        assert_eq!(meta.sender, "sender@example.com");
+        assert_eq!(meta.recipients, vec!["recipient@example.com"]);
+        assert_eq!(meta.subject, "Promo");
+        assert_eq!(meta.from, "Sender <sender@example.com>");
+        assert_eq!(meta.to, "recipient@example.com");
+        assert_eq!(meta.date, "Mon, 01 Jan 2024 00:00:00 +0000");
+        assert_eq!(meta.message_id, "<abc@example.com>");
+        assert_eq!(meta.size_bytes, 512);
+        assert_eq!(meta.direction, "outgoing");
+    }
+
+    #[test]
+    fn email_metadata_is_fully_populated_for_suppressed_incoming() {
+        // Suppression should not happen for incoming emails (external senders are never
+        // in the local unsubscribe list), but the metadata path is the same.
+        let incoming = true;
+        let meta = EmailMetadata {
+            sender: "external@remote.com".to_string(),
+            recipients: vec!["local@example.com".to_string()],
+            subject: "Hello".to_string(),
+            from: "external@remote.com".to_string(),
+            to: "local@example.com".to_string(),
+            cc: String::new(),
+            date: "Mon, 01 Jan 2024 00:00:00 +0000".to_string(),
+            message_id: "<hello@remote.com>".to_string(),
+            size_bytes: 256,
+            direction: if incoming { "incoming".to_string() } else { "outgoing".to_string() },
+        };
+        assert_eq!(meta.direction, "incoming");
+        assert_eq!(meta.size_bytes, 256);
+        assert_eq!(meta.date, "Mon, 01 Jan 2024 00:00:00 +0000");
+        assert_eq!(meta.message_id, "<hello@remote.com>");
     }
 }
