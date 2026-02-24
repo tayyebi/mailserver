@@ -13,7 +13,7 @@ Send, receive, and manage email — with a sleek web admin panel, built-in webma
 
 Alpine · Postfix · Dovecot · OpenDKIM · Rust · PostgreSQL — all in one container.
 
-![Admin Dashboard](https://github.com/user-attachments/assets/da6ee91d-dfc2-4622-98fd-26622215a500)
+![Admin Dashboard](https://github.com/user-attachments/assets/921f8437-f852-4ec6-a9a2-416e55e54806)
 
 </div>
 
@@ -27,6 +27,7 @@ Alpine · Postfix · Dovecot · OpenDKIM · Rust · PostgreSQL — all in one co
 | 🌐 **Domain Management** | Add unlimited mail domains with one-click DKIM key generation |
 | 👤 **User Accounts** | Create mailboxes with passwords and storage quotas |
 | 🔀 **Aliases & Catch-all** | Forward addresses, wildcards (`*@domain.com`), and routing rules |
+| 📤 **Forwarding** | Forward mail from local addresses to any external destination, with optional local copy |
 | 📡 **Open Tracking** | Pixel-based email open tracking with per-message reports |
 | 🌐 **Built-in Webmail** | Read, compose, and manage email directly from your browser |
 | 🔒 **Fail2ban Protection** | Auto-ban IPs on repeated auth failures; manage whitelist & blacklist |
@@ -35,6 +36,8 @@ Alpine · Postfix · Dovecot · OpenDKIM · Rust · PostgreSQL — all in one co
 | 🗑️ **Unsubscribe Management** | Track and manage unsubscribe requests |
 | 🔍 **DNSBL / Spam Blocking** | DNS block-list management integrated with Postfix |
 | 📄 **DNS Runbook** | Per-domain DNS record viewer with SPF, DKIM, DMARC guidance |
+| 📊 **DMARC Reports** | Designate inboxes to receive DMARC aggregate reports and visualize results |
+| 🔁 **Outbound Relays** | Route outbound mail through external SMTP servers, assignable per domain, account, or alias |
 | 🔔 **Webhook Notifications** | Send HTTP webhooks on processed outbound emails |
 | ⚙️ **Config Viewer** | Inspect live Postfix/Dovecot/OpenDKIM configs from the UI |
 
@@ -102,6 +105,10 @@ Create email accounts for your users. Set display names, passwords, and per-acco
 
 Create forwarding rules between addresses. Use `*@yourdomain.com` as a catch-all to capture mail sent to any address on the domain. Toggle open tracking per alias.
 
+### Forwarding
+
+Set up rules to forward mail from a local address to any external email address. Optionally keep a local copy in the original mailbox. Useful for redirecting mail to third-party inboxes without changing the sender's experience.
+
 ### Open Tracking
 
 When tracking is enabled on an alias, outgoing emails get a tiny invisible tracking pixel injected into the HTML body. Every time the recipient opens the email, a record is created. View detailed per-message open reports from the **Tracking** section.
@@ -123,6 +130,10 @@ Mailserver includes a built-in fail2ban system that monitors Postfix and Dovecot
 
 Inspect the live Postfix mail queue and flush stuck messages directly from the admin panel — no SSH required.
 
+### DMARC Reports
+
+Designate one or more mailboxes as DMARC report inboxes. The dashboard automatically parses incoming DMARC aggregate reports and lets you visualize pass/fail results, sending sources, and policy dispositions per domain.
+
 ### DNS Check
 
 Per-domain DNS health checker with individual shortcut links for each record type. Catch delivery problems before they affect your users.
@@ -130,6 +141,10 @@ Per-domain DNS health checker with individual shortcut links for each record typ
 ### Config Viewer
 
 Inspect the live Postfix, Dovecot, and OpenDKIM configuration files generated from your database — useful for debugging.
+
+### Outbound Relays
+
+Configure external SMTP relays to route outbound mail through third-party providers (e.g. SendGrid, SES, or a corporate relay). Relays can be assigned globally or scoped to a specific domain, account, or alias, with support for PLAIN and LOGIN authentication.
 
 ---
 
