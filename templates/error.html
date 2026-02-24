@@ -1,8 +1,8 @@
 {% extends "layout.html" %}
 {% block title %}{{ title }}{% endblock %}
 {% block content %}
-<section class="error-page">
-	<p class="error-code">{{ status_code }} {{ status_text }}</p>
+<section role="alert">
+	<p><data>{{ status_code }} {{ status_text }}</data></p>
 	<h1>{{ title }}</h1>
 	<p>{{ message }}</p>
 	<p><a href="{{ back_url }}">{{ back_label }}</a></p>
