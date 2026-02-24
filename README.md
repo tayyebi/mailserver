@@ -112,7 +112,7 @@ A lightweight webmail client is built right into the admin panel. Browse folders
 
 ### Fail2ban
 
-Mailserver includes a built-in fail2ban system that watches `/var/log/mail.log` for repeated authentication failures on SMTP, IMAP, and POP3. Offending IPs are automatically banned. You can:
+Mailserver includes a built-in fail2ban system that monitors Postfix and Dovecot logs for repeated authentication failures on SMTP, IMAP, and POP3. Offending IPs are automatically banned. You can:
 
 - Configure thresholds and ban duration per service
 - Manually ban or unban individual IPs or CIDR ranges
@@ -201,18 +201,12 @@ graph LR
     Internet((Internet))
 
     subgraph Docker Container
-        Supervisor[Supervisord]
         Admin[Rust Admin Dashboard :8080]
         Filter[Content Filter + Footer Injector]
         Postfix[Postfix SMTP :25/587/465]
         Dovecot[Dovecot IMAP/POP3 :143/993/110/995]
         OpenDKIM[OpenDKIM]
         Postgres[(PostgreSQL DB)]
-
-        Supervisor --> Admin
-        Supervisor --> Postfix
-        Supervisor --> Dovecot
-        Supervisor --> OpenDKIM
 
         Admin -->|read/write| Postgres
         Filter -->|tracking & footer lookups| Postgres

@@ -6,6 +6,9 @@ mydestination = localhost
 inet_interfaces = all
 inet_protocols = all
 
+# Log directly to file (no syslog needed)
+maillog_file = /var/log/mail.log
+
 # Disable local alias database (we only use virtual domains)
 alias_maps =
 alias_database =

@@ -26,10 +26,19 @@ echo "[entrypoint] INFO: setting directory ownership"
 chown -R vmail:vmail /data/mail
 chown -R opendkim:opendkim /data/dkim
 
-echo "[entrypoint] INFO: starting syslogd for Postfix/Dovecot logging"
-# Write mail logs to /var/log/mail.log for fail2ban monitoring
-# -S uses smaller memory footprint (no buffering of log messages)
-syslogd -n -O /var/log/mail.log -S &
+echo "[entrypoint] INFO: starting services"
+# Trap signals for clean container shutdown
+trap 'kill $(jobs -p) 2>/dev/null; wait; exit 0' SIGTERM SIGINT SIGQUIT
 
-echo "[entrypoint] INFO: starting supervisord and all services"
-exec supervisord -c /etc/supervisord.conf
+# Tail mail log to stdout for Docker log visibility
+# (Postfix and Dovecot write directly to /var/log/mail.log, no syslog needed)
+touch /var/log/mail.log
+tail -F /var/log/mail.log &
+
+dovecot -F &
+opendkim -f &
+/usr/local/bin/mailserver serve &
+postfix start-fg &
+
+# Wait for any child process to exit
+wait
