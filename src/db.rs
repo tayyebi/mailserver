@@ -1,9 +1,7 @@
-#![allow(dead_code)]
-
 use log::{debug, error, info, warn};
 use postgres::{Client, NoTls};
 use serde::Serialize;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 fn now() -> String {
     chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
@@ -104,9 +102,13 @@ pub struct Stats {
     pub domain_count: i64,
     pub account_count: i64,
     pub alias_count: i64,
+    pub forwarding_count: i64,
     pub tracked_count: i64,
     pub open_count: i64,
     pub banned_count: i64,
+    pub webhook_count: i64,
+    pub unsubscribe_count: i64,
+    pub dkim_ready_count: i64,
 }
 
 #[derive(Clone, Serialize)]
@@ -295,6 +297,16 @@ fn run_migrations(client: &mut Client) {
 
 impl Database {
     pub fn open(url: &str) -> Self {
+        Self::try_open(url).unwrap_or_else(|e| {
+            panic!("Failed to connect to PostgreSQL: {}", e);
+        })
+    }
+
+    /// Try to open a database connection, returning an error on failure
+    /// instead of panicking. Used by short-lived processes (e.g. the
+    /// content filter) where a connection failure should be handled
+    /// gracefully rather than crashing.
+    pub fn try_open(url: &str) -> Result<Self, String> {
         info!("[db] opening PostgreSQL database at url={}", url);
         let mut retry_count = 0;
         let max_retries = 30;
@@ -308,7 +320,7 @@ impl Database {
                             "[db] failed to connect to PostgreSQL after {} retries: {}",
                             max_retries, e
                         );
-                        panic!("Failed to connect to PostgreSQL: {}", e);
+                        return Err(format!("Failed to connect to PostgreSQL after {} retries: {}", max_retries, e));
                     }
                     warn!(
                         "[db] failed to connect to PostgreSQL, retrying ({}/{}): {}",
@@ -322,16 +334,24 @@ impl Database {
         run_migrations(&mut client);
 
         info!("[db] PostgreSQL database opened and schema initialized successfully");
-        Database {
+        Ok(Database {
             conn: Arc::new(Mutex::new(client)),
-        }
+        })
+    }
+
+    /// Acquire the database connection, recovering from mutex poisoning.
+    fn conn(&self) -> MutexGuard<'_, Client> {
+        self.conn.lock().unwrap_or_else(|e| {
+            warn!("[db] mutex was poisoned, recovering connection");
+            e.into_inner()
+        })
     }
 
     // ── Admin methods ──
 
     pub fn get_admin_by_username(&self, username: &str) -> Option<Admin> {
         debug!("[db] looking up admin username={}", username);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let row = conn
             .query_opt(
                 "SELECT id, username, password_hash, totp_secret, totp_enabled FROM admins WHERE username = $1",
@@ -358,39 +378,45 @@ impl Database {
 
     pub fn update_admin_password(&self, id: i64, hash: &str) {
         info!("[db] updating admin password id={}", id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute(
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
             "UPDATE admins SET password_hash = $1, updated_at = $2 WHERE id = $3",
             &[&hash, &now(), &id],
-        );
+        ) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn update_admin_totp(&self, id: i64, secret: Option<&str>, enabled: bool) {
         info!("[db] updating admin TOTP id={}, enabled={}", id, enabled);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute(
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
             "UPDATE admins SET totp_secret = $1, totp_enabled = $2, updated_at = $3 WHERE id = $4",
             &[&secret, &enabled, &now(), &id],
-        );
+        ) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn seed_admin(&self, username: &str, password_hash: &str) {
         info!("[db] seeding admin user: {}", username);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let ts = now();
-        let _ = conn.execute(
+        if let Err(e) = conn.execute(
             "INSERT INTO admins (username, password_hash, created_at, updated_at)
              VALUES ($1, $2, $3, $4)
              ON CONFLICT (username) DO NOTHING",
             &[&username, &password_hash, &ts, &ts],
-        );
+        ) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     // ── Domain methods ──
 
     pub fn list_domains(&self) -> Vec<Domain> {
         debug!("[db] listing all domains");
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let rows = conn
             .query(
                 "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html, bimi_svg, unsubscribe_enabled
@@ -420,7 +446,7 @@ impl Database {
 
     pub fn get_domain(&self, id: i64) -> Option<Domain> {
         debug!("[db] getting domain id={}", id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         conn.query_opt(
             "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html, bimi_svg, unsubscribe_enabled
              FROM domains WHERE id = $1",
@@ -443,7 +469,7 @@ impl Database {
 
     pub fn get_domain_by_name(&self, domain_name: &str) -> Option<Domain> {
         debug!("[db] getting domain by name={}", domain_name);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         conn.query_opt(
             "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html, bimi_svg, unsubscribe_enabled
              FROM domains WHERE LOWER(domain) = LOWER($1)",
@@ -466,7 +492,7 @@ impl Database {
 
     pub fn create_domain(&self, domain: &str, footer_html: &str, bimi_svg: &str, unsubscribe_enabled: bool) -> Result<i64, String> {
         info!("[db] creating domain: {}", domain);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let ts = now();
         let row = conn
             .query_one(
@@ -494,19 +520,23 @@ impl Database {
             !bimi_svg.trim().is_empty(),
             unsubscribe_enabled
         );
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute(
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
             "UPDATE domains
              SET domain = $1, active = $2, footer_html = $3, bimi_svg = $4, unsubscribe_enabled = $5, updated_at = $6
              WHERE id = $7",
             &[&domain, &active, &footer_html, &bimi_svg, &unsubscribe_enabled, &now(), &id],
-        );
+        ) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn delete_domain(&self, id: i64) {
         warn!("[db] deleting domain id={}", id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute("DELETE FROM domains WHERE id = $1", &[&id]);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute("DELETE FROM domains WHERE id = $1", &[&id]) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn update_domain_dkim(&self, id: i64, selector: &str, private_key: &str, public_key: &str) {
@@ -514,18 +544,20 @@ impl Database {
             "[db] updating DKIM for domain id={}, selector={}",
             id, selector
         );
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute(
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
             "UPDATE domains
              SET dkim_selector = $1, dkim_private_key = $2, dkim_public_key = $3, updated_at = $4
              WHERE id = $5",
             &[&selector, &private_key, &public_key, &now(), &id],
-        );
+        ) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn get_bimi_svg_for_domain(&self, domain: &str) -> Option<String> {
         debug!("[db] looking up BIMI SVG for domain={}", domain);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         conn.query_opt(
             "SELECT bimi_svg FROM domains
              WHERE lower(domain) = lower($1)
@@ -543,7 +575,7 @@ impl Database {
         if domain_part.is_empty() {
             return None;
         }
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         conn.query_opt(
             "SELECT footer_html FROM domains
              WHERE lower(domain) = lower($1)
@@ -560,7 +592,7 @@ impl Database {
 
     pub fn list_accounts(&self) -> Vec<Account> {
         debug!("[db] listing all accounts");
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let rows = conn
             .query(
                 "SELECT id, domain_id, username, password_hash, name, active, quota
@@ -589,7 +621,7 @@ impl Database {
 
     pub fn get_account(&self, id: i64) -> Option<Account> {
         debug!("[db] getting account id={}", id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         conn.query_opt(
             "SELECT id, domain_id, username, password_hash, name, active, quota
              FROM accounts WHERE id = $1",
@@ -611,7 +643,7 @@ impl Database {
 
     pub fn get_account_with_domain(&self, id: i64) -> Option<Account> {
         debug!("[db] getting account with domain info id={}", id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         conn.query_opt(
             "SELECT a.id, a.domain_id, a.username, a.password_hash, a.name, a.active, a.quota, d.domain
              FROM accounts a
@@ -645,7 +677,7 @@ impl Database {
             "[db] creating account username={}, domain_id={}, quota={}",
             username, domain_id, quota
         );
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let ts = now();
         let row = conn
             .query_one(
@@ -668,33 +700,39 @@ impl Database {
             "[db] updating account id={}, active={}, quota={}",
             id, active, quota
         );
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute(
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
             "UPDATE accounts
              SET name = $1, active = $2, quota = $3, updated_at = $4
              WHERE id = $5",
             &[&name, &active, &quota, &now(), &id],
-        );
+        ) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn update_account_password(&self, id: i64, hash: &str) {
         info!("[db] updating account password id={}", id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute(
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
             "UPDATE accounts SET password_hash = $1, updated_at = $2 WHERE id = $3",
             &[&hash, &now(), &id],
-        );
+        ) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn delete_account(&self, id: i64) {
         warn!("[db] deleting account id={}", id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute("DELETE FROM accounts WHERE id = $1", &[&id]);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute("DELETE FROM accounts WHERE id = $1", &[&id]) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn list_all_accounts_with_domain(&self) -> Vec<Account> {
         debug!("[db] listing all accounts with domain info");
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let rows = conn
             .query(
                 "SELECT a.id, a.domain_id, a.username, a.password_hash, a.name, a.active, a.quota, d.domain
@@ -727,7 +765,7 @@ impl Database {
 
     pub fn list_aliases(&self) -> Vec<Alias> {
         debug!("[db] listing all aliases");
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let rows = conn
             .query(
                 "SELECT id, domain_id, source, destination, active, tracking_enabled, sort_order
@@ -756,7 +794,7 @@ impl Database {
 
     pub fn get_alias(&self, id: i64) -> Option<Alias> {
         debug!("[db] getting alias id={}", id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         conn.query_opt(
             "SELECT id, domain_id, source, destination, active, tracking_enabled, sort_order
              FROM aliases WHERE id = $1",
@@ -787,7 +825,7 @@ impl Database {
             "[db] creating alias source={}, destination={}, tracking={}",
             source, destination, tracking
         );
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let ts = now();
         
         // Calculate sort_order: 0 for specific addresses, 1 for catch-alls
@@ -821,28 +859,32 @@ impl Database {
         tracking: bool,
     ) {
         info!("[db] updating alias id={}, source={}, destination={}, active={}, tracking={}", id, source, destination, active, tracking);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         
         // Calculate sort_order: 0 for specific addresses, 1 for catch-alls
         let sort_order: i64 = if source.trim().starts_with('*') { 1 } else { 0 };
         
-        let _ = conn.execute(
+        if let Err(e) = conn.execute(
             "UPDATE aliases
              SET source = $1, destination = $2, active = $3, tracking_enabled = $4, sort_order = $5, updated_at = $6
              WHERE id = $7",
             &[&source, &destination, &active, &tracking, &sort_order, &now(), &id],
-        );
+        ) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn delete_alias(&self, id: i64) {
         warn!("[db] deleting alias id={}", id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute("DELETE FROM aliases WHERE id = $1", &[&id]);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute("DELETE FROM aliases WHERE id = $1", &[&id]) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn list_all_aliases_with_domain(&self) -> Vec<Alias> {
         debug!("[db] listing all aliases with domain info");
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let rows = conn
             .query(
                 "SELECT a.id, a.domain_id, a.source, a.destination, a.active, a.tracking_enabled, a.sort_order, d.domain
@@ -873,7 +915,7 @@ impl Database {
 
     pub fn is_tracking_enabled_for_sender(&self, sender: &str) -> bool {
         debug!("[db] checking tracking status for sender={}", sender);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let count: i64 = conn
             .query_one(
                 "SELECT COUNT(*) FROM aliases WHERE source = $1 AND active = TRUE AND tracking_enabled = TRUE",
@@ -890,7 +932,7 @@ impl Database {
     /// Check if an email address exists as an active account
     pub fn email_exists(&self, email: &str) -> bool {
         debug!("[db] checking if email exists: {}", email);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         
         // Parse email into username and domain
         let parts: Vec<&str> = email.split('@').collect();
@@ -921,7 +963,7 @@ impl Database {
 
     pub fn list_all_forwardings_with_domain(&self) -> Vec<Forwarding> {
         debug!("[db] listing all forwardings with domain info");
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let rows = conn
             .query(
                 "SELECT f.id, f.domain_id, f.source, f.destination, f.active, f.keep_copy, d.domain
@@ -949,7 +991,7 @@ impl Database {
 
     pub fn get_forwarding(&self, id: i64) -> Option<Forwarding> {
         debug!("[db] getting forwarding id={}", id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         conn.query_opt(
             "SELECT f.id, f.domain_id, f.source, f.destination, f.active, f.keep_copy, d.domain
              FROM forwardings f
@@ -981,7 +1023,7 @@ impl Database {
             "[db] creating forwarding source={}, destination={}, keep_copy={}",
             source, destination, keep_copy
         );
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let ts = now();
         let row = conn
             .query_one(
@@ -1008,19 +1050,23 @@ impl Database {
         keep_copy: bool,
     ) {
         info!("[db] updating forwarding id={}, source={}, destination={}, active={}, keep_copy={}", id, source, destination, active, keep_copy);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute(
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
             "UPDATE forwardings
              SET source = $1, destination = $2, active = $3, keep_copy = $4, updated_at = $5
              WHERE id = $6",
             &[&source, &destination, &active, &keep_copy, &now(), &id],
-        );
+        ) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn delete_forwarding(&self, id: i64) {
         warn!("[db] deleting forwarding id={}", id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute("DELETE FROM forwardings WHERE id = $1", &[&id]);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute("DELETE FROM forwardings WHERE id = $1", &[&id]) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     // ── Tracking methods ──
@@ -1037,12 +1083,14 @@ impl Database {
             "[db] creating tracked message id={}, sender={}, recipient={}",
             message_id, sender, recipient
         );
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute(
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
             "INSERT INTO tracked_messages (message_id, sender, recipient, subject, alias_id, created_at)
              VALUES ($1, $2, $3, $4, $5, $6)",
             &[&message_id, &sender, &recipient, &subject, &alias_id, &now()],
-        );
+        ) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn record_pixel_open(&self, message_id: &str, client_ip: &str, user_agent: &str) {
@@ -1050,17 +1098,19 @@ impl Database {
             "[db] recording pixel open message_id={}, client_ip={}",
             message_id, client_ip
         );
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute(
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
             "INSERT INTO pixel_opens (message_id, client_ip, user_agent, opened_at)
              VALUES ($1, $2, $3, $4)",
             &[&message_id, &client_ip, &user_agent, &now()],
-        );
+        ) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn list_tracked_messages(&self, limit: i64) -> Vec<TrackedMessage> {
         debug!("[db] listing tracked messages limit={}", limit);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let rows = conn
             .query(
                 "SELECT id, message_id, sender, recipient, subject, alias_id, created_at
@@ -1090,7 +1140,7 @@ impl Database {
 
     pub fn get_tracked_message(&self, message_id: &str) -> Option<TrackedMessage> {
         debug!("[db] getting tracked message id={}", message_id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         conn.query_opt(
             "SELECT id, message_id, sender, recipient, subject, alias_id, created_at
              FROM tracked_messages WHERE message_id = $1",
@@ -1111,7 +1161,7 @@ impl Database {
 
     pub fn get_opens_for_message(&self, message_id: &str) -> Vec<PixelOpen> {
         debug!("[db] getting opens for message id={}", message_id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let rows = conn
             .query(
                 "SELECT id, message_id, client_ip, user_agent, opened_at
@@ -1139,17 +1189,19 @@ impl Database {
     // ── Generic settings storage (key/value) ──
 
     pub fn set_setting(&self, key: &str, value: &str) {
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute(
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
             "INSERT INTO settings (key, value)
              VALUES ($1, $2)
              ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
             &[&key, &value],
-        );
+        ) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn get_setting(&self, key: &str) -> Option<String> {
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         conn.query_opt("SELECT value FROM settings WHERE key = $1", &[&key])
             .ok()
             .flatten()
@@ -1164,7 +1216,7 @@ impl Database {
 
     pub fn get_stats(&self) -> Stats {
         debug!("[db] fetching aggregate stats");
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
 
         let domain_count: i64 = conn
             .query_one("SELECT COUNT(*) FROM domains", &[])
@@ -1176,6 +1228,10 @@ impl Database {
             .unwrap_or(0);
         let alias_count: i64 = conn
             .query_one("SELECT COUNT(*) FROM aliases", &[])
+            .map(|row| row.get(0))
+            .unwrap_or(0);
+        let forwarding_count: i64 = conn
+            .query_one("SELECT COUNT(*) FROM forwardings", &[])
             .map(|row| row.get(0))
             .unwrap_or(0);
         let tracked_count: i64 = conn
@@ -1195,13 +1251,32 @@ impl Database {
             .map(|row| row.get(0))
             .unwrap_or(0);
 
+        let webhook_count: i64 = conn
+            .query_one("SELECT COUNT(*) FROM webhook_logs", &[])
+            .map(|row| row.get(0))
+            .unwrap_or(0);
+
+        let unsubscribe_count: i64 = conn
+            .query_one("SELECT COUNT(*) FROM unsubscribe_list", &[])
+            .map(|row| row.get(0))
+            .unwrap_or(0);
+
+        let dkim_ready_count: i64 = conn
+            .query_one("SELECT COUNT(*) FROM domains WHERE dkim_public_key IS NOT NULL AND active = TRUE", &[])
+            .map(|row| row.get(0))
+            .unwrap_or(0);
+
         Stats {
             domain_count,
             account_count,
             alias_count,
+            forwarding_count,
             tracked_count,
             open_count,
             banned_count,
+            webhook_count,
+            unsubscribe_count,
+            dkim_ready_count,
         }
     }
 
@@ -1209,7 +1284,7 @@ impl Database {
 
     pub fn list_fail2ban_settings(&self) -> Vec<Fail2banSetting> {
         debug!("[db] listing fail2ban settings");
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let rows = conn
             .query(
                 "SELECT id, service, max_attempts, ban_duration_minutes, find_time_minutes, enabled
@@ -1235,7 +1310,7 @@ impl Database {
 
     pub fn get_fail2ban_setting(&self, id: i64) -> Option<Fail2banSetting> {
         debug!("[db] getting fail2ban setting id={}", id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         conn.query_opt(
             "SELECT id, service, max_attempts, ban_duration_minutes, find_time_minutes, enabled
              FROM fail2ban_settings WHERE id = $1",
@@ -1265,16 +1340,18 @@ impl Database {
             "[db] updating fail2ban setting id={}, max_attempts={}, ban_duration={}, find_time={}, enabled={}",
             id, max_attempts, ban_duration_minutes, find_time_minutes, enabled
         );
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute(
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
             "UPDATE fail2ban_settings SET max_attempts = $1, ban_duration_minutes = $2, find_time_minutes = $3, enabled = $4, updated_at = $5 WHERE id = $6",
             &[&max_attempts, &ban_duration_minutes, &find_time_minutes, &enabled, &now(), &id],
-        );
+        ) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn list_fail2ban_banned(&self) -> Vec<Fail2banBanned> {
         debug!("[db] listing banned IPs");
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let rows = conn
             .query(
                 "SELECT id, ip_address, service, reason, attempts, banned_at, expires_at, permanent
@@ -1304,7 +1381,7 @@ impl Database {
 
     pub fn ban_ip(&self, ip_address: &str, service: &str, reason: &str, duration_minutes: i32, permanent: bool) -> Result<i64, String> {
         info!("[db] banning IP={} service={} permanent={}", ip_address, service, permanent);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let ts = now();
         let expires = if permanent {
             None
@@ -1330,10 +1407,12 @@ impl Database {
         let id: i64 = row.get(0);
 
         // Log the action
-        let _ = conn.execute(
+        if let Err(e) = conn.execute(
             "INSERT INTO fail2ban_log (ip_address, service, action, details, created_at) VALUES ($1, $2, 'ban', $3, $4)",
             &[&ip_address, &service, &reason, &ts],
-        );
+        ) {
+            error!("[db] failed to execute query: {}", e);
+        }
 
         info!("[db] IP banned: {} (id={})", ip_address, id);
         Ok(id)
@@ -1341,26 +1420,30 @@ impl Database {
 
     pub fn unban_ip(&self, id: i64) {
         info!("[db] unbanning IP id={}", id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         // Get IP for logging before delete
         let ip_info = conn
             .query_opt("SELECT ip_address, service FROM fail2ban_banned WHERE id = $1", &[&id])
             .ok()
             .flatten();
-        let _ = conn.execute("DELETE FROM fail2ban_banned WHERE id = $1", &[&id]);
+        if let Err(e) = conn.execute("DELETE FROM fail2ban_banned WHERE id = $1", &[&id]) {
+            error!("[db] failed to execute query: {}", e);
+        }
         if let Some(row) = ip_info {
             let ip: String = row.get(0);
             let service: String = row.get(1);
-            let _ = conn.execute(
+            if let Err(e) = conn.execute(
                 "INSERT INTO fail2ban_log (ip_address, service, action, details, created_at) VALUES ($1, $2, 'unban', 'Manual unban from admin', $3)",
                 &[&ip, &service, &now()],
-            );
+            ) {
+                error!("[db] failed to execute query: {}", e);
+            }
         }
     }
 
     pub fn list_fail2ban_whitelist(&self) -> Vec<Fail2banWhitelist> {
         debug!("[db] listing fail2ban whitelist");
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let rows = conn
             .query(
                 "SELECT id, ip_address, description, created_at FROM fail2ban_whitelist ORDER BY created_at DESC",
@@ -1383,7 +1466,7 @@ impl Database {
 
     pub fn add_to_whitelist(&self, ip_address: &str, description: &str) -> Result<i64, String> {
         info!("[db] adding IP to whitelist: {}", ip_address);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let ts = now();
         let row = conn
             .query_one(
@@ -1399,25 +1482,31 @@ impl Database {
         let id: i64 = row.get(0);
 
         // Also unban if currently banned
-        let _ = conn.execute("DELETE FROM fail2ban_banned WHERE ip_address = $1", &[&ip_address]);
+        if let Err(e) = conn.execute("DELETE FROM fail2ban_banned WHERE ip_address = $1", &[&ip_address]) {
+            error!("[db] failed to execute query: {}", e);
+        }
 
-        let _ = conn.execute(
+        if let Err(e) = conn.execute(
             "INSERT INTO fail2ban_log (ip_address, service, action, details, created_at) VALUES ($1, 'all', 'whitelist', $2, $3)",
             &[&ip_address, &description, &ts],
-        );
+        ) {
+            error!("[db] failed to execute query: {}", e);
+        }
 
         Ok(id)
     }
 
     pub fn remove_from_whitelist(&self, id: i64) {
         info!("[db] removing from whitelist id={}", id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute("DELETE FROM fail2ban_whitelist WHERE id = $1", &[&id]);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute("DELETE FROM fail2ban_whitelist WHERE id = $1", &[&id]) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn list_fail2ban_blacklist(&self) -> Vec<Fail2banBlacklist> {
         debug!("[db] listing fail2ban blacklist");
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let rows = conn
             .query(
                 "SELECT id, ip_address, description, created_at FROM fail2ban_blacklist ORDER BY created_at DESC",
@@ -1440,7 +1529,7 @@ impl Database {
 
     pub fn add_to_blacklist(&self, ip_address: &str, description: &str) -> Result<i64, String> {
         info!("[db] adding IP to blacklist: {}", ip_address);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let ts = now();
         let row = conn
             .query_one(
@@ -1456,30 +1545,36 @@ impl Database {
         let id: i64 = row.get(0);
 
         // Also permanently ban this IP
-        let _ = conn.execute(
+        if let Err(e) = conn.execute(
             "INSERT INTO fail2ban_banned (ip_address, service, reason, attempts, banned_at, expires_at, permanent, created_at)
              VALUES ($1, 'all', 'Blacklisted', 0, $2, NULL, TRUE, $2)
              ON CONFLICT (ip_address, service) DO UPDATE SET permanent = TRUE, reason = 'Blacklisted', expires_at = NULL",
             &[&ip_address, &ts],
-        );
+        ) {
+            error!("[db] failed to execute query: {}", e);
+        }
 
-        let _ = conn.execute(
+        if let Err(e) = conn.execute(
             "INSERT INTO fail2ban_log (ip_address, service, action, details, created_at) VALUES ($1, 'all', 'blacklist', $2, $3)",
             &[&ip_address, &description, &ts],
-        );
+        ) {
+            error!("[db] failed to execute query: {}", e);
+        }
 
         Ok(id)
     }
 
     pub fn remove_from_blacklist(&self, id: i64) {
         info!("[db] removing from blacklist id={}", id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute("DELETE FROM fail2ban_blacklist WHERE id = $1", &[&id]);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute("DELETE FROM fail2ban_blacklist WHERE id = $1", &[&id]) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn list_fail2ban_log(&self, limit: i64) -> Vec<Fail2banLogEntry> {
         debug!("[db] listing fail2ban log limit={}", limit);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let rows = conn
             .query(
                 "SELECT id, ip_address, service, action, details, created_at
@@ -1504,7 +1599,7 @@ impl Database {
     }
 
     pub fn is_ip_whitelisted(&self, ip_address: &str) -> bool {
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let count: i64 = conn
             .query_one("SELECT COUNT(*) FROM fail2ban_whitelist WHERE ip_address = $1", &[&ip_address])
             .map(|row| row.get(0))
@@ -1513,7 +1608,7 @@ impl Database {
     }
 
     pub fn is_ip_banned(&self, ip_address: &str) -> bool {
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let count: i64 = conn
             .query_one(
                 "SELECT COUNT(*) FROM fail2ban_banned WHERE ip_address = $1 AND (permanent = TRUE OR expires_at > $2)",
@@ -1526,7 +1621,7 @@ impl Database {
 
     pub fn get_fail2ban_setting_by_service(&self, service: &str) -> Option<Fail2banSetting> {
         debug!("[db] getting fail2ban setting for service={}", service);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         conn.query_opt(
             "SELECT id, service, max_attempts, ban_duration_minutes, find_time_minutes, enabled
              FROM fail2ban_settings WHERE service = $1",
@@ -1546,7 +1641,7 @@ impl Database {
 
     pub fn record_fail2ban_attempt(&self, ip_address: &str, service: &str, details: &str) {
         info!("[db] recording fail2ban attempt ip={} service={}", ip_address, service);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         if let Err(e) = conn.execute(
             "INSERT INTO fail2ban_log (ip_address, service, action, details, created_at) VALUES ($1, $2, 'attempt', $3, $4)",
             &[&ip_address, &service, &details, &now()],
@@ -1557,7 +1652,7 @@ impl Database {
 
     pub fn count_recent_attempts(&self, ip_address: &str, service: &str, minutes: i32) -> i64 {
         debug!("[db] counting recent attempts ip={} service={} window={}min", ip_address, service, minutes);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let cutoff = (chrono::Utc::now() - chrono::Duration::minutes(minutes as i64))
             .format("%Y-%m-%d %H:%M:%S")
             .to_string();
@@ -1573,18 +1668,20 @@ impl Database {
 
     pub fn create_unsubscribe_token(&self, token: &str, recipient_email: &str, sender_domain: &str) {
         debug!("[db] creating unsubscribe token for recipient={} domain={}", recipient_email, sender_domain);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute(
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
             "INSERT INTO unsubscribe_tokens (token, recipient_email, sender_domain, created_at)
              VALUES ($1, $2, $3, $4)
              ON CONFLICT (token) DO NOTHING",
             &[&token, &recipient_email, &sender_domain, &now()],
-        );
+        ) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn get_unsubscribe_by_token(&self, token: &str) -> Option<(String, String)> {
         debug!("[db] looking up unsubscribe token={}", token);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         conn.query_opt(
             "SELECT recipient_email, sender_domain FROM unsubscribe_tokens WHERE token = $1",
             &[&token],
@@ -1596,17 +1693,19 @@ impl Database {
 
     pub fn record_unsubscribe(&self, email: &str, domain: &str) {
         info!("[db] recording unsubscribe email={} domain={}", email, domain);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute(
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
             "INSERT INTO unsubscribe_list (email, domain, created_at)
              VALUES ($1, $2, $3)
              ON CONFLICT (email, domain) DO NOTHING",
             &[&email, &domain, &now()],
-        );
+        ) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn is_unsubscribed(&self, email: &str, domain: &str) -> bool {
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let count: i64 = conn
             .query_one(
                 "SELECT COUNT(*) FROM unsubscribe_list WHERE LOWER(email) = LOWER($1) AND LOWER(domain) = LOWER($2)",
@@ -1619,7 +1718,7 @@ impl Database {
 
     pub fn list_unsubscribes(&self) -> Vec<UnsubscribeEntry> {
         debug!("[db] listing all unsubscribe entries");
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let rows = conn
             .query(
                 "SELECT id, email, domain, created_at FROM unsubscribe_list ORDER BY created_at DESC",
@@ -1641,12 +1740,14 @@ impl Database {
 
     pub fn delete_unsubscribe(&self, id: i64) {
         warn!("[db] deleting unsubscribe entry id={}", id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute("DELETE FROM unsubscribe_list WHERE id = $1", &[&id]);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute("DELETE FROM unsubscribe_list WHERE id = $1", &[&id]) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn is_unsubscribe_enabled_for_domain(&self, sender_domain: &str) -> bool {
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let count: i64 = conn
             .query_one(
                 "SELECT COUNT(*) FROM domains WHERE LOWER(domain) = LOWER($1) AND unsubscribe_enabled = TRUE AND active = TRUE",
@@ -1661,7 +1762,7 @@ impl Database {
 
     pub fn list_spambl_lists(&self) -> Vec<SpamblList> {
         debug!("[db] listing spambl lists");
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let rows = conn
             .query(
                 "SELECT id, name, hostname, enabled FROM spambl_lists ORDER BY id",
@@ -1684,7 +1785,7 @@ impl Database {
 
     pub fn set_spambl_enabled(&self, id: i64, enabled: bool) {
         info!("[db] setting spambl id={} enabled={}", id, enabled);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         if let Err(e) = conn.execute(
             "UPDATE spambl_lists SET enabled = $1, updated_at = $2 WHERE id = $3",
             &[&enabled, &now(), &id],
@@ -1695,7 +1796,7 @@ impl Database {
 
     pub fn list_enabled_spambl_hostnames(&self) -> Vec<String> {
         debug!("[db] listing enabled spambl hostnames");
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let rows = conn
             .query(
                 "SELECT hostname FROM spambl_lists WHERE enabled = TRUE ORDER BY id",
@@ -1723,16 +1824,18 @@ impl Database {
         subject: &str,
     ) {
         debug!("[db] logging webhook execution url={}", url);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute(
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
             "INSERT INTO webhook_logs (url, request_body, response_status, response_body, error, duration_ms, sender, subject, created_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
             &[&url, &request_body, &response_status, &response_body, &error, &duration_ms, &sender, &subject, &now()],
-        );
+        ) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn count_webhook_logs(&self) -> i64 {
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         conn.query_one("SELECT COUNT(*) FROM webhook_logs", &[])
             .map(|row| row.get(0))
             .unwrap_or(0)
@@ -1740,7 +1843,7 @@ impl Database {
 
     pub fn list_webhook_logs(&self, limit: i64, offset: i64) -> Vec<WebhookLog> {
         debug!("[db] listing webhook logs limit={} offset={}", limit, offset);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let rows = conn
             .query(
                 "SELECT id, url, request_body, response_status, response_body, error, duration_ms, sender, subject, created_at
@@ -1772,7 +1875,7 @@ impl Database {
 
     pub fn list_dmarc_inboxes(&self) -> Vec<DmarcInbox> {
         debug!("[db] listing dmarc inboxes");
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let rows = conn
             .query(
                 "SELECT di.id, di.account_id, di.label, di.created_at, a.username, d.domain
@@ -1800,7 +1903,7 @@ impl Database {
 
     pub fn get_dmarc_inbox(&self, id: i64) -> Option<DmarcInbox> {
         debug!("[db] getting dmarc inbox id={}", id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         conn.query_opt(
             "SELECT di.id, di.account_id, di.label, di.created_at, a.username, d.domain
              FROM dmarc_inboxes di
@@ -1823,7 +1926,7 @@ impl Database {
 
     pub fn get_dmarc_inbox_by_domain(&self, domain: &str) -> Option<DmarcInbox> {
         debug!("[db] getting dmarc inbox for domain={}", domain);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         conn.query_opt(
             "SELECT di.id, di.account_id, di.label, di.created_at, a.username, d.domain
              FROM dmarc_inboxes di
@@ -1847,7 +1950,7 @@ impl Database {
 
     pub fn create_dmarc_inbox(&self, account_id: i64, label: &str) -> Result<i64, String> {
         info!("[db] creating dmarc inbox account_id={}", account_id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let ts = now();
         conn.query_one(
             "INSERT INTO dmarc_inboxes (account_id, label, created_at)
@@ -1863,15 +1966,17 @@ impl Database {
 
     pub fn delete_dmarc_inbox(&self, id: i64) {
         warn!("[db] deleting dmarc inbox id={}", id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute("DELETE FROM dmarc_inboxes WHERE id = $1", &[&id]);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute("DELETE FROM dmarc_inboxes WHERE id = $1", &[&id]) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     // ── Outbound Relay methods ──
 
     pub fn list_outbound_relays(&self) -> Vec<OutboundRelay> {
         debug!("[db] listing outbound relays");
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let rows = conn
             .query(
                 "SELECT id, name, host, port, auth_type, username, password, active
@@ -1898,7 +2003,7 @@ impl Database {
 
     pub fn get_outbound_relay(&self, id: i64) -> Option<OutboundRelay> {
         debug!("[db] getting outbound relay id={}", id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         conn.query_opt(
             "SELECT id, name, host, port, auth_type, username, password, active
              FROM outbound_relays WHERE id = $1",
@@ -1928,7 +2033,7 @@ impl Database {
         password: Option<&str>,
     ) -> Result<i64, String> {
         info!("[db] creating outbound relay name={} host={}:{}", name, host, port);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let ts = now();
         let row = conn
             .query_one(
@@ -1958,24 +2063,28 @@ impl Database {
         active: bool,
     ) {
         info!("[db] updating outbound relay id={} name={} host={}:{} active={}", id, name, host, port, active);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute(
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
             "UPDATE outbound_relays
              SET name = $1, host = $2, port = $3, auth_type = $4, username = $5, password = $6, active = $7, updated_at = $8
              WHERE id = $9",
             &[&name, &host, &port, &auth_type, &username, &password, &active, &now(), &id],
-        );
+        ) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn delete_outbound_relay(&self, id: i64) {
         warn!("[db] deleting outbound relay id={}", id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute("DELETE FROM outbound_relays WHERE id = $1", &[&id]);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute("DELETE FROM outbound_relays WHERE id = $1", &[&id]) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     pub fn list_relay_assignments(&self, relay_id: i64) -> Vec<OutboundRelayAssignment> {
         debug!("[db] listing assignments for relay id={}", relay_id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let rows = conn
             .query(
                 "SELECT a.id, a.relay_id, a.assignment_type, a.pattern, r.name
@@ -2002,7 +2111,7 @@ impl Database {
 
     pub fn list_all_relay_assignments(&self) -> Vec<OutboundRelayAssignment> {
         debug!("[db] listing all relay assignments");
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let rows = conn
             .query(
                 "SELECT a.id, a.relay_id, a.assignment_type, a.pattern, r.name
@@ -2033,7 +2142,7 @@ impl Database {
         pattern: &str,
     ) -> Result<i64, String> {
         info!("[db] creating relay assignment relay_id={} type={} pattern={}", relay_id, assignment_type, pattern);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let row = conn
             .query_one(
                 "INSERT INTO outbound_relay_assignments (relay_id, assignment_type, pattern, created_at)
@@ -2052,14 +2161,16 @@ impl Database {
 
     pub fn delete_relay_assignment(&self, id: i64) {
         warn!("[db] deleting relay assignment id={}", id);
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
-        let _ = conn.execute("DELETE FROM outbound_relay_assignments WHERE id = $1", &[&id]);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute("DELETE FROM outbound_relay_assignments WHERE id = $1", &[&id]) {
+            error!("[db] failed to execute query: {}", e);
+        }
     }
 
     /// Returns all active relay assignments joined with relay info for config generation.
     pub fn get_active_relay_assignments_with_relay(&self) -> Vec<(OutboundRelay, OutboundRelayAssignment)> {
         debug!("[db] getting active relay assignments with relay info");
-        let mut conn = self.conn.lock().unwrap_or_else(|e| { warn!("[db] mutex was poisoned, recovering connection"); e.into_inner() });
+        let mut conn = self.conn();
         let rows = conn
             .query(
                 "SELECT r.id, r.name, r.host, r.port, r.auth_type, r.username, r.password, r.active,

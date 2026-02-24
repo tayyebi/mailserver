@@ -10,7 +10,8 @@ use log::{debug, error, info, warn};
 use crate::db::Admin;
 use crate::web::AppState;
 use crate::web::auth::AuthAdmin;
-use crate::web::forms::{FeatureToggleForm, PasswordForm, TotpEnableForm, WebhookSettingsForm};
+use crate::web::fire_webhook;
+use crate::web::forms::{FeatureToggleForm, PasswordForm, TotpEnableForm};
 
 // ── Templates ──
 
@@ -32,7 +33,6 @@ struct SettingsTemplate<'a> {
     filter_healthy: bool,
     milter_healthy: bool,
     unsubscribe_enabled: bool,
-    webhook_url: String,
 }
 
 #[derive(Template)]
@@ -184,11 +184,6 @@ pub async fn page(auth: AuthAdmin, State(state): State<AppState>) -> Html<String
     let filter_healthy = check_filter_health();
     let milter_healthy = check_milter_health();
 
-    let webhook_url = state
-        .blocking_db(|db| db.get_setting("webhook_url"))
-        .await
-        .unwrap_or_default();
-
     let tmpl = SettingsTemplate {
         nav_active: "Settings",
         flash: None,
@@ -205,7 +200,6 @@ pub async fn page(auth: AuthAdmin, State(state): State<AppState>) -> Html<String
         filter_healthy,
         milter_healthy,
         unsubscribe_enabled,
-        webhook_url,
     };
     Html(tmpl.render().unwrap())
 }
@@ -292,6 +286,11 @@ pub async fn update_features(
     // Regenerate Postfix configs to apply feature toggle changes
     crate::web::regen_configs(&state).await;
 
+    fire_webhook(
+        &state,
+        "settings.features_updated",
+        serde_json::json!({"filter_enabled": filter_enabled, "milter_enabled": milter_enabled, "unsubscribe_enabled": unsubscribe_enabled}),
+    );
     let tmpl = ErrorTemplate {
         nav_active: "Settings",
         flash: None,
@@ -348,7 +347,23 @@ pub async fn change_password(
         };
         return Html(tmpl.render().unwrap()).into_response();
     }
-    let hash = crate::auth::hash_password(&form.new_password);
+    let hash = match crate::auth::hash_password(&form.new_password) {
+        Ok(h) => h,
+        Err(e) => {
+            error!("[web] failed to hash new password for username={}: {}", auth.admin.username, e);
+            let tmpl = ErrorTemplate {
+                nav_active: "Settings",
+                flash: None,
+                status_code: 500,
+                status_text: "Internal Server Error",
+                title: "Error",
+                message: "Failed to hash password. Please try again.",
+                back_url: "/settings",
+                back_label: "Back",
+            };
+            return Html(tmpl.render().unwrap()).into_response();
+        }
+    };
     let admin_id = auth.admin.id;
     state
         .blocking_db(move |db| db.update_admin_password(admin_id, &hash))
@@ -357,6 +372,7 @@ pub async fn change_password(
         "[web] password changed successfully for username={}",
         auth.admin.username
     );
+    fire_webhook(&state, "settings.password_changed", serde_json::json!({"username": auth.admin.username}));
     let tmpl = ErrorTemplate {
         nav_active: "Settings",
         flash: None,
@@ -421,6 +437,7 @@ pub async fn enable_2fa(
         "[web] 2FA enabled successfully for username={}",
         auth.admin.username
     );
+    fire_webhook(&state, "settings.2fa_enabled", serde_json::json!({"username": auth.admin.username}));
     let tmpl = ErrorTemplate {
         nav_active: "Settings",
         flash: None,
@@ -447,6 +464,7 @@ pub async fn disable_2fa(auth: AuthAdmin, State(state): State<AppState>) -> Resp
         "[web] 2FA disabled successfully for username={}",
         auth.admin.username
     );
+    fire_webhook(&state, "settings.2fa_disabled", serde_json::json!({"username": auth.admin.username}));
     let tmpl = ErrorTemplate {
         nav_active: "Settings",
         flash: None,
@@ -635,189 +653,5 @@ pub async fn download_key(auth: AuthAdmin) -> Response {
             };
             Html(tmpl.render().unwrap()).into_response()
         }
-    }
-}
-
-pub async fn update_webhook(
-    auth: AuthAdmin,
-    State(state): State<AppState>,
-    Form(form): Form<WebhookSettingsForm>,
-) -> Response {
-    info!(
-        "[web] POST /settings/webhook — update webhook URL by username={}",
-        auth.admin.username
-    );
-    let url = form.webhook_url.trim().to_string();
-    // Validate: must be empty or start with http:// or https://
-    if !url.is_empty() && !url.starts_with("http://") && !url.starts_with("https://") {
-        let tmpl = ErrorTemplate {
-            nav_active: "Settings",
-            flash: None,
-            status_code: 400,
-            status_text: "Bad Request",
-            title: "Error",
-            message: "Webhook URL must start with http:// or https://",
-            back_url: "/settings",
-            back_label: "Back",
-        };
-        return Html(tmpl.render().unwrap()).into_response();
-    }
-    let url_for_db = url.clone();
-    state
-        .blocking_db(move |db| db.set_setting("webhook_url", &url_for_db))
-        .await;
-    info!(
-        "[web] webhook_url updated by user={}",
-        auth.admin.username
-    );
-    let tmpl = ErrorTemplate {
-        nav_active: "Settings",
-        flash: None,
-        status_code: 200,
-        status_text: "OK",
-        title: "Success",
-        message: "Webhook URL updated successfully.",
-        back_url: "/settings",
-        back_label: "Back to Settings",
-    };
-    Html(tmpl.render().unwrap()).into_response()
-}
-
-pub async fn test_webhook(
-    auth: AuthAdmin,
-    State(state): State<AppState>,
-) -> Response {
-    info!(
-        "[web] POST /settings/webhook/test — webhook test by username={}",
-        auth.admin.username
-    );
-
-    let webhook_url = state
-        .blocking_db(|db| db.get_setting("webhook_url"))
-        .await
-        .unwrap_or_default();
-
-    if webhook_url.is_empty() {
-        let tmpl = ErrorTemplate {
-            nav_active: "Settings",
-            flash: None,
-            status_code: 400,
-            status_text: "Bad Request",
-            title: "No Webhook URL",
-            message: "No webhook URL is configured. Save a webhook URL first, then test it.",
-            back_url: "/settings",
-            back_label: "Back to Settings",
-        };
-        return Html(tmpl.render().unwrap()).into_response();
-    }
-
-    let timestamp = chrono::Utc::now().to_rfc3339();
-    let payload = serde_json::json!({
-        "event": "test",
-        "timestamp": timestamp,
-        "sender": "test@example.com",
-        "recipients": ["recipient@example.com"],
-        "subject": "Webhook Test",
-        "from": "Test <test@example.com>",
-        "to": "recipient@example.com",
-        "cc": "",
-        "date": timestamp,
-        "message_id": "<test@mailserver>",
-        "size_bytes": 0,
-        "modified": false,
-    });
-    let request_body = payload.to_string();
-
-    let start = std::time::Instant::now();
-    let result = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|e| e.to_string())
-        .and_then(|client| {
-            client
-                .post(&webhook_url)
-                .json(&payload)
-                .send()
-                .map_err(|e| e.to_string())
-        });
-    let duration_ms = start.elapsed().as_millis() as i64;
-
-    let (response_status, response_body, error_msg) = match result {
-        Ok(resp) => {
-            let status = resp.status().as_u16() as i32;
-            let body = resp.text().unwrap_or_default();
-            let body_truncated = if body.len() > 2048 {
-                let mut end = 2048;
-                while !body.is_char_boundary(end) { end -= 1; }
-                body[..end].to_string()
-            } else {
-                body
-            };
-            info!(
-                "[web] test webhook delivered to {} status={}",
-                webhook_url, status
-            );
-            (Some(status), body_truncated, String::new())
-        }
-        Err(e) => {
-            warn!("[web] test webhook failed to {}: {}", webhook_url, e);
-            (None, String::new(), e.clone())
-        }
-    };
-
-    // Log the test execution to the database
-    let url_clone = webhook_url.clone();
-    let rb_clone = request_body.clone();
-    let rb2_clone = response_body.clone();
-    let err_clone = error_msg.clone();
-    state
-        .blocking_db(move |db| {
-            db.log_webhook(
-                &url_clone,
-                &rb_clone,
-                response_status,
-                &rb2_clone,
-                &err_clone,
-                duration_ms,
-                "test@example.com",
-                "Webhook Test",
-            )
-        })
-        .await;
-
-    if error_msg.is_empty() {
-        let msg = format!(
-            "Test webhook delivered to {} — HTTP {} in {} ms.",
-            webhook_url,
-            response_status.unwrap_or(0),
-            duration_ms
-        );
-        let tmpl = ErrorTemplate {
-            nav_active: "Settings",
-            flash: None,
-            status_code: 200,
-            status_text: "OK",
-            title: "Webhook Test Successful",
-            message: &msg,
-            back_url: "/settings",
-            back_label: "Back to Settings",
-        };
-        Html(tmpl.render().unwrap()).into_response()
-    } else {
-        let msg = format!(
-            "Webhook test to {} failed after {} ms: {}",
-            webhook_url, duration_ms, error_msg
-        );
-        let tmpl = ErrorTemplate {
-            nav_active: "Settings",
-            flash: None,
-            status_code: 502,
-            status_text: "Bad Gateway",
-            title: "Webhook Test Failed",
-            message: &msg,
-            back_url: "/settings",
-            back_label: "Back to Settings",
-        };
-        Html(tmpl.render().unwrap()).into_response()
     }
 }

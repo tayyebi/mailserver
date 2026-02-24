@@ -7,7 +7,7 @@ use axum::http::{StatusCode, Uri};
 use axum::response::Response;
 use axum::routing::get_service;
 use axum::Router;
-use log::info;
+use log::{debug, info, warn};
 use tower_http::services::ServeDir;
 
 use crate::web::errors::status_response;
@@ -104,4 +104,79 @@ pub(crate) async fn regen_configs(state: &AppState) {
     });
 
     let _ = rx.await;
+}
+
+/// Fire a webhook notification for a system activity event.
+///
+/// This sends a POST request with a JSON payload to the configured webhook URL.
+/// The call is non-blocking — it spawns a background thread so the HTTP response
+/// to the admin is not delayed by the webhook delivery.
+///
+/// `event` — short event identifier (e.g. "domain.created", "account.deleted")
+/// `details` — a JSON-serialisable value with event-specific information
+pub(crate) fn fire_webhook(state: &AppState, event: &str, details: serde_json::Value) {
+    let db = state.db.clone();
+    let event = event.to_string();
+
+    std::thread::spawn(move || {
+        let webhook_url = db.get_setting("webhook_url").unwrap_or_default();
+        if webhook_url.is_empty() {
+            return;
+        }
+
+        let timestamp = chrono::Utc::now().to_rfc3339();
+        let payload = serde_json::json!({
+            "event": event,
+            "timestamp": timestamp,
+            "details": details,
+        });
+        let request_body = payload.to_string();
+
+        debug!("[webhook] firing {} to {}", event, webhook_url);
+        let start = std::time::Instant::now();
+
+        let (response_status, response_body, error) =
+            match reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
+            {
+                Ok(client) => match client.post(&webhook_url).json(&payload).send() {
+                    Ok(resp) => {
+                        let status = resp.status().as_u16() as i32;
+                        let body = resp.text().unwrap_or_default();
+                        let body_truncated = if body.len() > 2048 {
+                            let mut end = 2048;
+                            while !body.is_char_boundary(end) { end -= 1; }
+                            body[..end].to_string()
+                        } else {
+                            body
+                        };
+                        info!("[webhook] {} delivered to {} status={}", event, webhook_url, status);
+                        (Some(status), body_truncated, String::new())
+                    }
+                    Err(e) => {
+                        warn!("[webhook] {} delivery failed to {}: {}", event, webhook_url, e);
+                        (None, String::new(), e.to_string())
+                    }
+                },
+                Err(e) => {
+                    warn!("[webhook] failed to build HTTP client: {}", e);
+                    (None, String::new(), e.to_string())
+                }
+            };
+
+        let duration_ms = start.elapsed().as_millis() as i64;
+
+        // Log the webhook execution (best-effort)
+        db.log_webhook(
+            &webhook_url,
+            &request_body,
+            response_status,
+            &response_body,
+            &error,
+            duration_ms,
+            &event,
+            "",
+        );
+    });
 }

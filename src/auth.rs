@@ -19,11 +19,11 @@ pub fn verify_password(password: &str, hash: &str) -> bool {
     result
 }
 
-pub fn hash_password(password: &str) -> String {
+pub fn hash_password(password: &str) -> Result<String, bcrypt::BcryptError> {
     debug!("[auth] hashing password with bcrypt cost={}", DEFAULT_COST);
-    let result = hash(password, DEFAULT_COST).expect("failed to hash password");
+    let result = hash(password, DEFAULT_COST)?;
     debug!("[auth] password hashed successfully");
-    result
+    Ok(result)
 }
 
 pub fn generate_totp_secret() -> String {
@@ -45,10 +45,13 @@ pub fn verify_totp(secret_base32: &str, code: &str) -> bool {
         }
     };
 
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("time went backwards")
-        .as_secs();
+    let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(d) => d.as_secs(),
+        Err(e) => {
+            error!("[auth] system clock is before UNIX epoch: {}", e);
+            return false;
+        }
+    };
     let current_step = now / 30;
 
     for offset in [0, 1, u64::MAX] {

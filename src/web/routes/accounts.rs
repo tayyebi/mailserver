@@ -9,6 +9,7 @@ use serde::Deserialize;
 
 use crate::db::{Account, Alias, Domain};
 use crate::web::auth::AuthAdmin;
+use crate::web::fire_webhook;
 use crate::web::forms::{AccountEditForm, AccountForm};
 use crate::web::regen_configs;
 use crate::web::AppState;
@@ -154,7 +155,23 @@ pub async fn create(
         "[web] POST /accounts — creating account username={}, domain_id={}",
         form.username, form.domain_id
     );
-    let db_hash = crate::auth::hash_password(&form.password);
+    let db_hash = match crate::auth::hash_password(&form.password) {
+        Ok(h) => h,
+        Err(e) => {
+            error!("[web] failed to hash password for account {}: {}", form.username, e);
+            let tmpl = ErrorTemplate {
+                nav_active: "Accounts",
+                flash: None,
+                status_code: 500,
+                status_text: "Error",
+                title: "Error",
+                message: "Failed to hash password. Please try again.",
+                back_url: "/accounts/new",
+                back_label: "Back",
+            };
+            return Html(tmpl.render().unwrap()).into_response();
+        }
+    };
     let quota = form.quota.unwrap_or(0);
     let domain_id = form.domain_id;
     let username = form.username.clone();
@@ -169,6 +186,7 @@ pub async fn create(
                 form.username, id
             );
             regen_configs(&state).await;
+            fire_webhook(&state, "account.created", serde_json::json!({"username": form.username, "domain_id": form.domain_id}));
             Redirect::to("/accounts").into_response()
         }
         Err(e) => {
@@ -241,14 +259,21 @@ pub async fn update(
     if let Some(ref pw) = form.password {
         if !pw.is_empty() {
             info!("[web] updating password for account id={}", id);
-            let db_hash = crate::auth::hash_password(pw);
-            state
-                .blocking_db(move |db| db.update_account_password(id, &db_hash))
-                .await;
+            match crate::auth::hash_password(pw) {
+                Ok(db_hash) => {
+                    state
+                        .blocking_db(move |db| db.update_account_password(id, &db_hash))
+                        .await;
+                }
+                Err(e) => {
+                    error!("[web] failed to hash password for account id={}: {}", id, e);
+                }
+            }
         }
     }
 
     regen_configs(&state).await;
+    fire_webhook(&state, "account.updated", serde_json::json!({"id": id}));
     Redirect::to("/accounts").into_response()
 }
 
@@ -260,5 +285,6 @@ pub async fn delete(
     warn!("[web] POST /accounts/{}/delete — deleting account", id);
     state.blocking_db(move |db| db.delete_account(id)).await;
     regen_configs(&state).await;
+    fire_webhook(&state, "account.deleted", serde_json::json!({"id": id}));
     Redirect::to("/accounts").into_response()
 }

@@ -19,10 +19,10 @@
     <button type="submit">Confirm Unsubscribe</button>
   </form>
   {% else %}
-  <p><mark class="mark-success">{{ message }}</mark></p>
+  <p><mark data-variant="success">{{ message }}</mark></p>
   {% endif %}
 {% else %}
-<p><mark class="mark-danger">{{ message }}</mark></p>
+<p><mark data-variant="danger">{{ message }}</mark></p>
 {% endif %}
 </main>
 </body>

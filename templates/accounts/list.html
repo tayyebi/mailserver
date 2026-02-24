@@ -14,7 +14,7 @@
 <tr>
     <td><strong>{{ row.email }}</strong></td>
     <td>{{ row.name }}</td>
-    <td>{% if row.active %}<mark>Active</mark>{% else %}<mark class="mark-muted">Inactive</mark>{% endif %}</td>
+    <td>{% if row.active %}<mark>Active</mark>{% else %}<mark data-variant="muted">Inactive</mark>{% endif %}</td>
     <td>{{ row.quota_display }}</td>
     <td><code>{{ row.mailbox_path }}</code></td>
     <td>

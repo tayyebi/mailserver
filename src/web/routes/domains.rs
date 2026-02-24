@@ -8,6 +8,7 @@ use log::{debug, error, info, warn};
 use serde::Deserialize;
 
 use crate::web::auth::AuthAdmin;
+use crate::web::fire_webhook;
 use crate::web::forms::{DomainEditForm, DomainForm};
 use crate::web::regen_configs;
 use crate::web::AppState;
@@ -248,6 +249,7 @@ pub async fn create(
                 form.domain, id
             );
             regen_configs(&state).await;
+            fire_webhook(&state, "domain.created", serde_json::json!({"domain": form.domain}));
             Redirect::to("/domains").into_response()
         }
         Err(e) => {
@@ -307,6 +309,7 @@ pub async fn update(
         .blocking_db(move |db| db.update_domain(id, &domain, active, &footer_html, &bimi_svg, unsubscribe_enabled))
         .await;
     regen_configs(&state).await;
+    fire_webhook(&state, "domain.updated", serde_json::json!({"id": id, "domain": form.domain}));
     Redirect::to("/domains").into_response()
 }
 
@@ -318,6 +321,7 @@ pub async fn delete(
     warn!("[web] POST /domains/{}/delete — deleting domain", id);
     state.blocking_db(move |db| db.delete_domain(id)).await;
     regen_configs(&state).await;
+    fire_webhook(&state, "domain.deleted", serde_json::json!({"id": id}));
     Redirect::to("/domains").into_response()
 }
 
@@ -455,6 +459,7 @@ pub async fn generate_dkim(
         .blocking_db(move |db| db.update_domain_dkim(id, &selector, &private_key, &public_key))
         .await;
     regen_configs(&state).await;
+    fire_webhook(&state, "domain.dkim_generated", serde_json::json!({"id": id}));
     Redirect::to(&format!("/domains/{}/dns", id)).into_response()
 }
 

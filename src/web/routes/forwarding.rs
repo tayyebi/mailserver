@@ -7,6 +7,7 @@ use axum::{
 use log::{debug, error, info, warn};
 
 use crate::web::auth::AuthAdmin;
+use crate::web::fire_webhook;
 use crate::web::forms::{ForwardingEditForm, ForwardingForm};
 use crate::web::regen_configs;
 use crate::web::AppState;
@@ -152,6 +153,7 @@ pub async fn create(
                 form.source, form.destination, id, keep_copy
             );
             regen_configs(&state).await;
+            fire_webhook(&state, "forwarding.created", serde_json::json!({"source": form.source, "destination": form.destination}));
             Redirect::to("/forwarding").into_response()
         }
         Err(e) => {
@@ -213,6 +215,7 @@ pub async fn update(
         .blocking_db(move |db| db.update_forwarding(id, &source, &destination, active, keep_copy))
         .await;
     regen_configs(&state).await;
+    fire_webhook(&state, "forwarding.updated", serde_json::json!({"id": id}));
     Redirect::to("/forwarding").into_response()
 }
 
@@ -224,5 +227,6 @@ pub async fn delete(
     warn!("[web] POST /forwarding/{}/delete — deleting forwarding", id);
     state.blocking_db(move |db| db.delete_forwarding(id)).await;
     regen_configs(&state).await;
+    fire_webhook(&state, "forwarding.deleted", serde_json::json!({"id": id}));
     Redirect::to("/forwarding").into_response()
 }

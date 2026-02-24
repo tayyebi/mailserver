@@ -36,45 +36,34 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
     let mut modified = email_data.clone();
     let mut webhook_url = String::new();
     let mut suppressed = false;
-    match std::panic::catch_unwind(|| {
-        debug!("[filter] opening database at {}", db_url);
-        let db = Database::open(db_url);
+    match Database::try_open(db_url) {
+        Ok(db) => {
+            // Check feature toggle — if disabled, bypass all filter logic
+            let filter_enabled = db
+                .get_setting("feature_filter_enabled")
+                .map(|v| v != "false")
+                .unwrap_or(true);
 
-        // Check feature toggle — if disabled, bypass all filter logic
-        let filter_enabled = db
-            .get_setting("feature_filter_enabled")
-            .map(|v| v != "false")
-            .unwrap_or(true);
+            webhook_url = db.get_setting("webhook_url").unwrap_or_default();
 
-        let webhook_url = db.get_setting("webhook_url").unwrap_or_default();
-
-        if !filter_enabled {
-            info!("[filter] content filter feature is disabled, bypassing");
-            return (db, false, None, false, false, String::new(), webhook_url);
-        }
-
-        let tracking = db.is_tracking_enabled_for_sender(sender);
-        let footer_html = db.get_footer_for_sender(sender);
-
-        // Check if unsubscribe injection is enabled globally and per-domain
-        let unsubscribe_global = db
-            .get_setting("feature_unsubscribe_enabled")
-            .map(|v| v != "false")
-            .unwrap_or(true);
-        let sender_domain = sender.split('@').nth(1).unwrap_or("").to_lowercase();
-        let unsubscribe_domain = if unsubscribe_global && !sender_domain.is_empty() {
-            db.is_unsubscribe_enabled_for_domain(&sender_domain)
-        } else {
-            false
-        };
-
-        (db, tracking, footer_html, true, unsubscribe_domain, sender_domain, webhook_url)
-    }) {
-        Ok((db, tracking, footer_html, enabled, unsubscribe_domain, sender_domain, wh_url)) => {
-            webhook_url = wh_url;
-            if !enabled {
-                // Feature disabled — pass through unmodified
+            if !filter_enabled {
+                info!("[filter] content filter feature is disabled, bypassing");
             } else {
+                let tracking = db.is_tracking_enabled_for_sender(sender);
+                let footer_html = db.get_footer_for_sender(sender);
+
+                // Check if unsubscribe injection is enabled globally and per-domain
+                let unsubscribe_global = db
+                    .get_setting("feature_unsubscribe_enabled")
+                    .map(|v| v != "false")
+                    .unwrap_or(true);
+                let sender_domain = sender.split('@').nth(1).unwrap_or("").to_lowercase();
+                let unsubscribe_domain = if unsubscribe_global && !sender_domain.is_empty() {
+                    db.is_unsubscribe_enabled_for_domain(&sender_domain)
+                } else {
+                    false
+                };
+
                 info!(
                     "[filter] tracking enabled for sender={}: {}",
                     sender, tracking
@@ -173,8 +162,8 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
                 }
             }
         }
-        Err(_) => {
-            warn!("[filter] filter database/pixel logic failed, falling back to unmodified email");
+        Err(e) => {
+            warn!("[filter] failed to open database ({}), falling back to unmodified email", e);
         }
     }
 
@@ -528,7 +517,7 @@ fn send_webhook(webhook_url: &str, db_url: &str, meta: &EmailMetadata, modified:
     };
 
     // Always log the email processing event to the database (best-effort — don't let logging failures surface).
-    if let Ok(db) = std::panic::catch_unwind(|| Database::open(db_url)) {
+    if let Ok(db) = Database::try_open(db_url) {
         db.log_webhook(
             webhook_url,
             &request_body,

@@ -23,7 +23,7 @@
             <td>{{ r.host }}</td>
             <td>{{ r.port }}</td>
             <td>{{ r.auth_type }}</td>
-            <td>{% if r.active %}<mark aria-label="Active">Active</mark>{% else %}<mark class="mark-muted" aria-label="Disabled">Disabled</mark>{% endif %}</td>
+            <td>{% if r.active %}<mark aria-label="Active">Active</mark>{% else %}<mark data-variant="muted" aria-label="Disabled">Disabled</mark>{% endif %}</td>
             <td>
                 <a href="/relays/{{ r.id }}/edit">Edit</a>
                 <form method="post" action="/relays/{{ r.id }}/delete" class="form-inline" onsubmit="return confirm('Delete this relay and all its assignments?')"><button type="submit">Delete</button></form>
