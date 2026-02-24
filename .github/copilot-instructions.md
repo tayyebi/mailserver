@@ -101,3 +101,4 @@ In this project, user data resides in PostgreSQL but config generation currently
 - When user asks about "why is email rejected?", check the **Cleanup** and **Routing** phases.
 - When configuring new Postfix modules, remember to check `master.cf` privileges.
 - When debugging "user unknown", verify `virtual_mailbox_maps` vs `virtual_alias_maps` contents.
+- Delivery-first principle: never block or delay message delivery; fall back to pass-through if optional components (DB, filters, webhooks) misbehave.

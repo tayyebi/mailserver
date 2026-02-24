@@ -1,0 +1,62 @@
+{% extends "layout.html" %}
+{% block title %}Health{% endblock %}
+{% block content %}
+<section>
+    <hgroup>
+        <small>Delivery first</small>
+        <h1>Health & Delivery</h1>
+    </hgroup>
+    <p>Observe success rates and recent issues. Mail delivery must never be blocked, even if databases wobble.</p>
+    <div class="stats-grid">
+        <article>
+            <mark data-variant="success">{{ success_rate }}%</mark>
+            <strong>Success rate</strong>
+            <small>{{ successes }} / {{ total }} deliveries logged</small>
+        </article>
+        <article>
+            <mark data-variant="success">{{ successes }}</mark>
+            <strong>Successful events</strong>
+            <small>Webhooks / reinjections</small>
+        </article>
+        <article>
+            <mark data-variant="danger">{{ failures }}</mark>
+            <strong>Issues detected</strong>
+            <small>Last {{ total }} events</small>
+        </article>
+    </div>
+</section>
+
+<section>
+    <h2>Recent delivery issues</h2>
+    {% if has_failures %}
+    <div class="table">
+        <div class="thead">
+            <div>When</div>
+            <div>Status</div>
+            <div>Cause</div>
+            <div>Sender</div>
+            <div>Subject</div>
+        </div>
+        {% for log in recent_failures %}
+        <div class="row">
+            <div>{{ log.created_at }}</div>
+            <div>
+                {% if log.failed %}
+                    <mark data-variant="danger">{{ log.status_label }}</mark>
+                {% else %}
+                    <mark data-variant="success">{{ log.status_label }}</mark>
+                {% endif %}
+            </div>
+            <div>
+                {{ log.cause }}
+            </div>
+            <div>{{ log.sender }}</div>
+            <div>{{ log.subject }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+        <p>No recent failures — great job! Keep an eye on this page when making changes.</p>
+    {% endif %}
+</section>
+{% endblock %}

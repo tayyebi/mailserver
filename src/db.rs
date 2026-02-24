@@ -307,11 +307,35 @@ impl Database {
     /// content filter) where a connection failure should be handled
     /// gracefully rather than crashing.
     pub fn try_open(url: &str) -> Result<Self, String> {
+        Self::try_open_with_options(
+            url,
+            30,
+            std::time::Duration::from_secs(1),
+            std::time::Duration::from_secs(5),
+        )
+    }
+
+    /// Try to open a database connection with configurable retry and timeout behavior.
+    /// The `connect_timeout` is applied to each attempt to prevent long blocking when
+    /// PostgreSQL is unreachable.
+    pub fn try_open_with_options(
+        url: &str,
+        max_retries: u32,
+        retry_delay: std::time::Duration,
+        connect_timeout: std::time::Duration,
+    ) -> Result<Self, String> {
+        use postgres::config::Config;
+        use std::str::FromStr;
+
         info!("[db] opening PostgreSQL database at url={}", url);
+        let base_config = Config::from_str(url)
+            .map_err(|e| format!("Failed to parse PostgreSQL URL: {}", e))?;
+
         let mut retry_count = 0;
-        let max_retries = 30;
         let mut client = loop {
-            match Client::connect(url, NoTls) {
+            let mut config = base_config.clone();
+            config.connect_timeout(connect_timeout);
+            match config.connect(NoTls) {
                 Ok(c) => break c,
                 Err(e) => {
                     retry_count += 1;
@@ -320,13 +344,16 @@ impl Database {
                             "[db] failed to connect to PostgreSQL after {} retries: {}",
                             max_retries, e
                         );
-                        return Err(format!("Failed to connect to PostgreSQL after {} retries: {}", max_retries, e));
+                        return Err(format!(
+                            "Failed to connect to PostgreSQL after {} retries: {}",
+                            max_retries, e
+                        ));
                     }
                     warn!(
                         "[db] failed to connect to PostgreSQL, retrying ({}/{}): {}",
                         retry_count, max_retries, e
                     );
-                    std::thread::sleep(std::time::Duration::from_secs(1));
+                    std::thread::sleep(retry_delay);
                 }
             }
         };
@@ -1278,6 +1305,56 @@ impl Database {
             unsubscribe_count,
             dkim_ready_count,
         }
+    }
+
+    /// Delivery health overview for UI — returns (total, successes, recent_failures).
+    pub fn get_delivery_health(&self) -> (i64, i64, Vec<WebhookLog>) {
+        debug!("[db] computing delivery health stats");
+        let mut conn = self.conn();
+        let total: i64 = conn
+            .query_one("SELECT COUNT(*) FROM webhook_logs", &[])
+            .map(|row| row.get(0))
+            .unwrap_or(0);
+        let successes: i64 = conn
+            .query_one(
+                "SELECT COUNT(*) FROM webhook_logs WHERE response_status >= 200 AND response_status < 400",
+                &[],
+            )
+            .map(|row| row.get(0))
+            .unwrap_or(0);
+
+        let recent_failures = conn
+            .query(
+                "SELECT id, url, request_body, response_status, response_body, error, duration_ms, sender, subject, created_at
+                 FROM webhook_logs
+                 WHERE response_status IS NULL
+                    OR response_status < 200
+                    OR response_status >= 400
+                    OR error IS NOT NULL
+                 ORDER BY created_at DESC
+                 LIMIT 20",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list recent failures: {}", e);
+                Vec::new()
+            })
+            .into_iter()
+            .map(|row| WebhookLog {
+                id: row.get(0),
+                url: row.get(1),
+                request_body: row.get::<_, Option<String>>(2).unwrap_or_default(),
+                response_status: row.get(3),
+                response_body: row.get::<_, Option<String>>(4).unwrap_or_default(),
+                error: row.get::<_, Option<String>>(5).unwrap_or_default(),
+                duration_ms: row.get::<_, Option<i64>>(6),
+                sender: row.get::<_, Option<String>>(7).unwrap_or_default(),
+                subject: row.get::<_, Option<String>>(8).unwrap_or_default(),
+                created_at: row.get(9),
+            })
+            .collect();
+
+        (total, successes, recent_failures)
     }
 
     // ── Fail2ban methods ──

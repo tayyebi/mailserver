@@ -7,6 +7,7 @@ pub mod dmarc;
 pub mod domains;
 pub mod fail2ban;
 pub mod forwarding;
+pub mod health;
 pub mod pixel;
 pub mod queue;
 pub mod relays;
@@ -91,6 +92,7 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/webhooks", get(webhook::list))
         .route("/webhooks/settings", post(webhook::update_webhook))
         .route("/webhooks/test", post(webhook::test_webhook))
+        .route("/health", get(health::page))
         .route("/dmarc", get(dmarc::list).post(dmarc::create))
         .route("/dmarc/:id/delete", post(dmarc::delete))
         .route("/dmarc/:id/reports", get(dmarc::reports))
