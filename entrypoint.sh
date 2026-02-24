@@ -26,10 +26,28 @@ echo "[entrypoint] INFO: setting directory ownership"
 chown -R vmail:vmail /data/mail
 chown -R opendkim:opendkim /data/dkim
 
-echo "[entrypoint] INFO: starting syslogd for Postfix/Dovecot logging"
-# Write mail logs to /var/log/mail.log for fail2ban monitoring
-# -S uses smaller memory footprint (no buffering of log messages)
-syslogd -n -O /var/log/mail.log -S &
+echo "[entrypoint] INFO: starting services"
+# Trap signals for clean container shutdown
+trap 'trap - TERM; kill 0' SIGTERM SIGINT SIGQUIT
 
-echo "[entrypoint] INFO: starting supervisord and all services"
-exec supervisord -c /etc/supervisord.conf
+# Postfix and Dovecot log to stdout directly (via /dev/stdout)
+# tee duplicates output to /var/log/mail.log for fail2ban monitoring
+touch /var/log/mail.log
+
+dovecot -F 2>&1 | tee -a /var/log/mail.log &
+DOVECOT_PID=$!  # tee PID — exits when dovecot dies (pipe EOF)
+opendkim -f &
+OPENDKIM_PID=$!
+/usr/local/bin/mailserver serve &
+MAILSERVER_PID=$!
+postfix start-fg 2>&1 | tee -a /var/log/mail.log &
+POSTFIX_PID=$!  # tee PID — exits when postfix dies (pipe EOF)
+
+# Monitor all services — exit if any process dies
+while kill -0 $DOVECOT_PID 2>/dev/null && \
+      kill -0 $OPENDKIM_PID 2>/dev/null && \
+      kill -0 $MAILSERVER_PID 2>/dev/null && \
+      kill -0 $POSTFIX_PID 2>/dev/null; do
+    sleep 5
+done
+echo "[entrypoint] ERROR: a service has exited, shutting down"

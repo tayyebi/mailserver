@@ -21,7 +21,6 @@ RUN --mount=type=cache,target=/var/cache/apk \
     dovecot-pop3d \
     opendkim \
     opendkim-utils \
-    supervisor \
     openssl \
     curl
 COPY --from=builder /output /usr/local/bin/mailserver
@@ -29,7 +28,6 @@ COPY templates/config/ /app/templates/config/
 COPY migrations/ /app/migrations/
 COPY static/ /app/static/
 COPY entrypoint.sh /entrypoint.sh
-COPY supervisord.conf /etc/supervisord.conf
 RUN chmod +x /entrypoint.sh \
     && mkdir -p /data/ssl /data/dkim /data/mail /data/db /var/spool/postfix \
     && addgroup -S vmail 2>/dev/null; adduser -S -D -H -G vmail -s /sbin/nologin vmail 2>/dev/null; \
