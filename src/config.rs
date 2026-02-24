@@ -156,7 +156,9 @@ pub fn generate_postfix_main_cf(db: &Database, hostname: &str) {
         .unwrap_or(true);
 
     let milter_config = if milter_enabled {
-        "smtpd_milters = inet:127.0.0.1:8891\nnon_smtpd_milters = inet:127.0.0.1:8891\nmilter_default_action = accept".to_string()
+        r#"smtpd_milters = inet:127.0.0.1:8891
+non_smtpd_milters = inet:127.0.0.1:8891
+milter_default_action = accept"#.to_string()
     } else {
         "# milter disabled via feature settings".to_string()
     };
@@ -180,7 +182,11 @@ pub fn generate_postfix_main_cf(db: &Database, hostname: &str) {
     let has_auth = assignments.iter().any(|(r, _)| r.auth_type != "none");
 
     let relay_config = if has_auth {
-        "transport_maps = lmdb:/etc/postfix/transport_maps\nsmtp_sasl_auth_enable = yes\nsmtp_sasl_password_maps = lmdb:/etc/postfix/sasl_passwd\nsmtp_sasl_security_options = noanonymous\nsmtp_sasl_tls_security_options = noanonymous".to_string()
+        r#"transport_maps = lmdb:/etc/postfix/transport_maps
+smtp_sasl_auth_enable = yes
+smtp_sasl_password_maps = lmdb:/etc/postfix/sasl_passwd
+smtp_sasl_security_options = noanonymous
+smtp_sasl_tls_security_options = noanonymous"#.to_string()
     } else if has_assignments {
         "transport_maps = lmdb:/etc/postfix/transport_maps".to_string()
     } else {
@@ -201,7 +207,7 @@ pub fn generate_postfix_main_cf(db: &Database, hostname: &str) {
     }
 }
 
-pub fn generate_postfix_master_cf(db: &Database) {
+pub fn generate_postfix_master_cf(_db: &Database) {
     info!("[config] generating /etc/postfix/master.cf");
     let template = match load_template("postfix-master.cf.txt") {
         Ok(t) => t,
@@ -224,9 +230,10 @@ pub fn generate_virtual_domains(db: &Database) {
     info!("[config] generating /etc/postfix/virtual_domains");
     let domains = db.list_domains();
     let mut lines = generated_header();
+    use std::fmt::Write;
     for d in &domains {
         if d.active {
-            lines.push_str(&format!("{} OK\n", d.domain));
+            let _ = writeln!(lines, "{} OK", d.domain);
         }
     }
     match fs::write("/etc/postfix/virtual_domains", lines) {
@@ -245,15 +252,17 @@ pub fn generate_virtual_mailboxes(db: &Database) {
     info!("[config] generating /etc/postfix/vmailbox");
     let accounts = db.list_all_accounts_with_domain();
     let mut lines = generated_header();
+    use std::fmt::Write;
     for a in &accounts {
         if !a.active {
             continue;
         }
         if let Some(ref domain) = a.domain_name {
-            lines.push_str(&format!(
-                "{}@{} {}/{}/Maildir/\n",
+            let _ = writeln!(
+                lines,
+                "{}@{} {}/{}/Maildir/",
                 a.username, domain, domain, a.username
-            ));
+            );
         }
     }
     match fs::write("/etc/postfix/vmailbox", lines) {
@@ -358,14 +367,18 @@ pub fn generate_virtual_aliases(db: &Database) {
     let active_count = entries.len();
     let mut lines = generated_header();
 
+    use std::fmt::Write;
     for (source, destination) in &entries {
-        lines.push_str(&format!("{} {}\n", source, destination));
+        let _ = writeln!(lines, "{} {}", source, destination);
     }
 
     // Add a comment if there are no active aliases or forwardings to make the file more informative
     if active_count == 0 {
-        lines.push_str("# No active aliases or forwardings configured\n");
-        lines.push_str("# Add aliases or forwarding rules in the admin dashboard\n");
+        lines.push_str(
+            r#"# No active aliases or forwardings configured
+# Add aliases or forwarding rules in the admin dashboard
+"#,
+        );
     }
 
     match write_secure_file("/etc/postfix/virtual_aliases", &lines) {
@@ -405,8 +418,9 @@ pub fn generate_recipient_bcc_maps(db: &Database) {
     let forwardings = db.list_all_forwardings_with_domain();
     let entries = build_recipient_bcc_entries(&forwardings);
     let mut lines = generated_header();
+    use std::fmt::Write;
     for (source, bcc) in &entries {
-        lines.push_str(&format!("{} {}\n", source, bcc));
+        let _ = writeln!(lines, "{} {}", source, bcc);
     }
     match write_secure_file("/etc/postfix/recipient_bcc", &lines) {
         Ok(_) => debug!(
@@ -482,20 +496,22 @@ pub fn generate_sender_login_maps(db: &Database) {
     }
 
     let mut lines = generated_header();
+    use std::fmt::Write;
     for (sender, logins) in &map {
         // Deduplicate logins
         let mut unique: Vec<&String> = logins.iter().collect();
         unique.sort();
         unique.dedup();
-        lines.push_str(&format!(
-            "{} {}\n",
+        let _ = writeln!(
+            lines,
+            "{} {}",
             sender,
             unique
                 .iter()
                 .map(|s| s.as_str())
                 .collect::<Vec<_>>()
                 .join(",")
-        ));
+        );
     }
     match write_secure_file("/etc/postfix/sender_login_maps", &lines) {
         Ok(_) => debug!(
@@ -513,12 +529,13 @@ pub fn generate_transport_maps(db: &Database) {
     info!("[config] generating /etc/postfix/transport_maps");
     let assignments = db.get_active_relay_assignments_with_relay();
     let mut lines = generated_header();
-
+    use std::fmt::Write;
     for (relay, assignment) in &assignments {
-        lines.push_str(&format!(
-            "{} smtp:[{}]:{}\n",
+        let _ = writeln!(
+            lines,
+            "{} smtp:[{}]:{}",
             assignment.pattern, relay.host, relay.port
-        ));
+        );
     }
 
     match write_secure_file("/etc/postfix/transport_maps", &lines) {
@@ -548,8 +565,9 @@ pub fn generate_sasl_passwd(db: &Database) {
     }
 
     let mut lines = generated_header();
+    use std::fmt::Write;
     for (host_port, creds) in &relay_creds {
-        lines.push_str(&format!("{} {}\n", host_port, creds));
+        let _ = writeln!(lines, "{} {}", host_port, creds);
     }
 
     match write_secure_file(sasl_path, &lines) {
@@ -590,15 +608,17 @@ pub fn generate_dovecot_passwd(db: &Database) {
     info!("[config] generating {}", passwd_path);
     let accounts = db.list_all_accounts_with_domain();
     let mut lines = String::new();
+    use std::fmt::Write;
     for a in &accounts {
         if !a.active {
             continue;
         }
         if let Some(ref domain) = a.domain_name {
-            lines.push_str(&format!(
-                "{}@{}:{{BLF-CRYPT}}{}:::::\n",
+            let _ = writeln!(
+                lines,
+                "{}@{}:{{BLF-CRYPT}}{}:::::",
                 a.username, domain, a.password_hash
-            ));
+            );
         }
     }
     match write_secure_file(passwd_path, &lines) {
@@ -654,7 +674,12 @@ pub fn generate_opendkim_tables(db: &Database) {
     let header = generated_header_with(&timestamp);
     let mut key_table = header.clone();
     let mut signing_table = header.clone();
-    let mut trusted_hosts = format!("{}127.0.0.1\nlocalhost\n", header);
+    let mut trusted_hosts = format!(
+        r#"{}127.0.0.1
+localhost
+"#,
+        header
+    );
     let mut dkim_count: usize = 0;
 
     for d in &domains {
@@ -698,15 +723,11 @@ pub fn generate_opendkim_tables(db: &Database) {
                 ),
             }
 
-            key_table.push_str(&format!(
-                "{}._domainkey.{} {}:{}:{}\n",
-                selector, domain, domain, selector, key_path
-            ));
-            signing_table.push_str(&format!(
-                "*@{} {}._domainkey.{}\n",
-                domain, selector, domain
-            ));
-            trusted_hosts.push_str(&format!("{}\n", domain));
+            use std::fmt::Write;
+            let _ = writeln!(key_table, "{}._domainkey.{} {}:{}:{}", selector, domain, domain, selector, key_path);
+            let _ = writeln!(signing_table, "*@{} {}._domainkey.{}", domain, selector, domain);
+            let _ = writeln!(trusted_hosts, "{}", domain);
+
             dkim_count += 1;
         } else {
             debug!("[config] domain {} has no DKIM key configured", d.domain);
@@ -987,31 +1008,31 @@ mod tests {
     }
 
     #[test]
-    fn master_cf_template_has_filter_smtp_placeholder() {
+    fn master_cf_template_has_filter_smtp_configuration() {
         let template = load_template("postfix-master.cf.txt")
             .expect("postfix-master.cf.txt template should be loadable");
         assert!(
-            template.contains("{{ filter_smtp }}"),
-            "master.cf template must include {{ filter_smtp }} placeholder for incoming smtp (port 25) filter"
+            template.contains("-o content_filter=pixelfilter-in:local"),
+            "master.cf template must include content_filter=pixelfilter-in:local for incoming smtp (port 25) filter"
         );
     }
 
     #[test]
-    fn master_cf_template_filter_smtp_placeholder_is_on_smtp_inet_service() {
+    fn master_cf_template_filter_smtp_configuration_is_on_smtp_inet_service() {
         let template = load_template("postfix-master.cf.txt")
             .expect("postfix-master.cf.txt template should be loadable");
-        // The smtp inet line must appear before the filter_smtp placeholder
+        // The smtp inet line must appear before the filter configuration
         let smtp_inet_pos = template.find("smtp      inet").expect("smtp inet service must exist");
-        let filter_smtp_pos = template.find("{{ filter_smtp }}").expect("{{ filter_smtp }} placeholder must exist");
+        let filter_smtp_pos = template.find("content_filter=pixelfilter-in:local").expect("content_filter configuration must exist");
         assert!(
             smtp_inet_pos < filter_smtp_pos,
-            "{{ filter_smtp }} placeholder must appear after the smtp inet service line"
+            "content_filter configuration must appear after the smtp inet service line"
         );
         // And before the submission service
         let submission_pos = template.find("submission inet").expect("submission inet service must exist");
         assert!(
             filter_smtp_pos < submission_pos,
-            "{{ filter_smtp }} placeholder must appear before the submission inet service line"
+            "content_filter configuration must appear before the submission inet service line"
         );
     }
 
@@ -1404,28 +1425,17 @@ pub fn generate_tls_certificate(hostname: &str, force: bool) -> Result<(), Strin
         return Err(format!("failed to create SSL directory: {}", e));
     }
     
+    let template = match load_template("openssl.cnf.txt") {
+        Ok(t) => t,
+        Err(e) => {
+            error!("[config] failed to load openssl.cnf.txt template: {}", e);
+            return Err(format!("failed to load OpenSSL template: {}", e));
+        }
+    };
+    
     // Create OpenSSL config file with SAN extension
     // Modern TLS clients require Subject Alternative Name (SAN) to be present
-    let openssl_config = format!(
-        "[req]\n\
-         default_bits = 2048\n\
-         prompt = no\n\
-         default_md = sha256\n\
-         distinguished_name = dn\n\
-         x509_extensions = v3_req\n\
-         \n\
-         [dn]\n\
-         CN = {}\n\
-         \n\
-         [v3_req]\n\
-         subjectAltName = @alt_names\n\
-         \n\
-         [alt_names]\n\
-         DNS.1 = {}\n\
-         DNS.2 = localhost\n\
-         IP.1 = 127.0.0.1\n",
-        safe_hostname, safe_hostname
-    );
+    let openssl_config = template.replace("{{ hostname }}", &safe_hostname);
     
     // Use a unique temporary file to avoid race conditions
     // Note: In Docker container context, /tmp is isolated and single-process
