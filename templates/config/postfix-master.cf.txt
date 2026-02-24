@@ -54,6 +54,6 @@ postlog   unix-dgram n  -       n       -       1       postlogd
 
 # Pixel filter service
 pixelfilter unix -   n   n   -   10  pipe
-  flags=hq user=postfix argv=/usr/local/bin/mailserver filter -f ${sender} -- ${recipient}
+  flags=hq user=nobody argv=/usr/local/bin/mailserver filter -f ${sender} -- ${recipient}
 pixelfilter-in unix -   n   n   -   10  pipe
-  flags=hq user=postfix argv=/usr/local/bin/mailserver filter --incoming -f ${sender} -- ${recipient}
+  flags=hq user=nobody argv=/usr/local/bin/mailserver filter --incoming -f ${sender} -- ${recipient}
