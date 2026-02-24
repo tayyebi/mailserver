@@ -89,10 +89,7 @@ pub async fn create(
     // Extract domain from source email
     let source_parts: Vec<&str> = form.source.split('@').collect();
     if source_parts.len() != 2 {
-        warn!(
-            "[web] invalid source email format: {}",
-            form.source
-        );
+        warn!("[web] invalid source email format: {}", form.source);
         let tmpl = ErrorTemplate {
             nav_active: "Forwarding",
             flash: None,
@@ -153,7 +150,11 @@ pub async fn create(
                 form.source, form.destination, id, keep_copy
             );
             regen_configs(&state).await;
-            fire_webhook(&state, "forwarding.created", serde_json::json!({"source": form.source, "destination": form.destination}));
+            fire_webhook(
+                &state,
+                "forwarding.created",
+                serde_json::json!({"source": form.source, "destination": form.destination}),
+            );
             Redirect::to("/forwarding").into_response()
         }
         Err(e) => {

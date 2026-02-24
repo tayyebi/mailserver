@@ -91,8 +91,16 @@ pub async fn create(
 
     let name = form.name.clone();
     let host = form.host.clone();
-    let username = form.username.as_deref().filter(|s| !s.is_empty()).map(str::to_string);
-    let password = form.password.as_deref().filter(|s| !s.is_empty()).map(str::to_string);
+    let username = form
+        .username
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let password = form
+        .password
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
 
     let result = state
         .blocking_db(move |db| {
@@ -143,7 +151,9 @@ pub async fn edit_form(
             return Redirect::to("/relays").into_response();
         }
     };
-    let assignments = state.blocking_db(move |db| db.list_relay_assignments(id)).await;
+    let assignments = state
+        .blocking_db(move |db| db.list_relay_assignments(id))
+        .await;
     let tmpl = EditTemplate {
         nav_active: "Relays",
         flash: None,
@@ -173,8 +183,16 @@ pub async fn update(
 
     let name = form.name.clone();
     let host = form.host.clone();
-    let username = form.username.as_deref().filter(|s| !s.is_empty()).map(str::to_string);
-    let new_password = form.password.as_deref().filter(|s| !s.is_empty()).map(str::to_string);
+    let username = form
+        .username
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let new_password = form
+        .password
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
 
     state
         .blocking_db(move |db| {
@@ -207,7 +225,9 @@ pub async fn delete(
     Path(id): Path<i64>,
 ) -> Response {
     warn!("[web] POST /relays/{}/delete — deleting relay", id);
-    state.blocking_db(move |db| db.delete_outbound_relay(id)).await;
+    state
+        .blocking_db(move |db| db.delete_outbound_relay(id))
+        .await;
     regen_configs(&state).await;
     Redirect::to("/relays").into_response()
 }

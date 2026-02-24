@@ -4,7 +4,14 @@ use std::sync::mpsc;
 
 use crate::db::Database;
 
-pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_url: &str, unsubscribe_base_url: &str, incoming: bool) {
+pub fn run_filter(
+    db_url: &str,
+    sender: &str,
+    recipients: &[String],
+    pixel_base_url: &str,
+    unsubscribe_base_url: &str,
+    incoming: bool,
+) {
     info!(
         "[filter] starting content filter sender={}, recipients={}",
         sender,
@@ -93,7 +100,11 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
                             suppressed = true;
                         } else {
                             let token = uuid::Uuid::new_v4().to_string();
-                            let unsub_url = format!("{}/unsubscribe?token={}", unsubscribe_base_url.trim_end_matches('/'), token);
+                            let unsub_url = format!(
+                                "{}/unsubscribe?token={}",
+                                unsubscribe_base_url.trim_end_matches('/'),
+                                token
+                            );
                             db.create_unsubscribe_token(&token, primary_recipient, &sender_domain);
                             let headers = format!(
                                 "List-Unsubscribe: <{}>\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click",
@@ -172,7 +183,10 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
             }
         }
         Err(e) => {
-            warn!("[filter] failed to open database ({}), falling back to unmodified email", e);
+            warn!(
+                "[filter] failed to open database ({}), falling back to unmodified email",
+                e
+            );
             // Even if the database failed, try to retrieve just the webhook URL for event logging.
             if let Ok(db) = Database::try_open_with_options(
                 db_url,
@@ -204,7 +218,11 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
         date: date_header.clone(),
         message_id: message_id_header.clone(),
         size_bytes,
-        direction: if incoming { "incoming".to_string() } else { "outgoing".to_string() },
+        direction: if incoming {
+            "incoming".to_string()
+        } else {
+            "outgoing".to_string()
+        },
     };
 
     // 6. If the email was suppressed because the recipient has unsubscribed, drop
@@ -212,7 +230,14 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
     //    Fire the webhook so the event is still visible to the caller.
     if suppressed {
         info!("[filter] email suppressed — not reinjecting (see earlier log for recipient/domain)");
-        send_webhook(&webhook_url, db_url, &meta, email_was_modified, sender, &subject);
+        send_webhook(
+            &webhook_url,
+            db_url,
+            &meta,
+            email_was_modified,
+            sender,
+            &subject,
+        );
         return;
     }
 
@@ -231,7 +256,14 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
             // Wait for the reinject outcome before making the HTTP call.
             match modified_rx.recv() {
                 Ok(Some(was_modified)) => {
-                    send_webhook(&url, &db_url_owned, &meta, was_modified, &sender_owned, &subject_owned);
+                    send_webhook(
+                        &url,
+                        &db_url_owned,
+                        &meta,
+                        was_modified,
+                        &sender_owned,
+                        &subject_owned,
+                    );
                 }
                 // None or channel closed means double-failure — skip webhook.
                 _ => {}
@@ -245,7 +277,10 @@ pub fn run_filter(db_url: &str, sender: &str, recipients: &[String], pixel_base_
             e
         );
         if let Err(e) = reinject_smtp(&email_data, sender, recipients) {
-            error!("[filter] failed to reinject unmodified fallback email: {}", e);
+            error!(
+                "[filter] failed to reinject unmodified fallback email: {}",
+                e
+            );
             // Signal the webhook thread to not fire (both injects failed).
             let _ = modified_tx.send(None);
             let _ = webhook_handle.join();
@@ -471,7 +506,14 @@ struct EmailMetadata {
     direction: String,
 }
 
-fn send_webhook(webhook_url: &str, db_url: &str, meta: &EmailMetadata, modified: bool, sender: &str, subject: &str) {
+fn send_webhook(
+    webhook_url: &str,
+    db_url: &str,
+    meta: &EmailMetadata,
+    modified: bool,
+    sender: &str,
+    subject: &str,
+) {
     let timestamp = chrono::Utc::now().to_rfc3339();
     let payload = serde_json::json!({
         "event": "email_processed",
@@ -496,39 +538,40 @@ fn send_webhook(webhook_url: &str, db_url: &str, meta: &EmailMetadata, modified:
         debug!("[filter] sending webhook to {}", webhook_url);
         let start = std::time::Instant::now();
 
-        let (response_status, response_body, error) =
-            match reqwest::blocking::Client::builder()
-                .timeout(std::time::Duration::from_secs(10))
-                .build()
-            {
-                Ok(client) => match client.post(webhook_url).json(&payload).send() {
-                    Ok(resp) => {
-                        let status = resp.status().as_u16() as i32;
-                        let body = resp.text().unwrap_or_default();
-                        // Truncate response body to 2 KB for storage (char-boundary safe)
-                        let body_truncated = if body.len() > 2048 {
-                            let mut end = 2048;
-                            while !body.is_char_boundary(end) { end -= 1; }
-                            body[..end].to_string()
-                        } else {
-                            body
-                        };
-                        info!(
-                            "[filter] webhook delivered to {} status={}",
-                            webhook_url, status
-                        );
-                        (Some(status), body_truncated, String::new())
-                    }
-                    Err(e) => {
-                        warn!("[filter] webhook delivery failed to {}: {}", webhook_url, e);
-                        (None, String::new(), e.to_string())
-                    }
-                },
+        let (response_status, response_body, error) = match reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+        {
+            Ok(client) => match client.post(webhook_url).json(&payload).send() {
+                Ok(resp) => {
+                    let status = resp.status().as_u16() as i32;
+                    let body = resp.text().unwrap_or_default();
+                    // Truncate response body to 2 KB for storage (char-boundary safe)
+                    let body_truncated = if body.len() > 2048 {
+                        let mut end = 2048;
+                        while !body.is_char_boundary(end) {
+                            end -= 1;
+                        }
+                        body[..end].to_string()
+                    } else {
+                        body
+                    };
+                    info!(
+                        "[filter] webhook delivered to {} status={}",
+                        webhook_url, status
+                    );
+                    (Some(status), body_truncated, String::new())
+                }
                 Err(e) => {
-                    warn!("[filter] failed to build HTTP client for webhook: {}", e);
+                    warn!("[filter] webhook delivery failed to {}: {}", webhook_url, e);
                     (None, String::new(), e.to_string())
                 }
-            };
+            },
+            Err(e) => {
+                warn!("[filter] failed to build HTTP client for webhook: {}", e);
+                (None, String::new(), e.to_string())
+            }
+        };
 
         let duration_ms = start.elapsed().as_millis() as i64;
         (response_status, response_body, error, duration_ms)
@@ -634,7 +677,11 @@ fn extract_sender_ip(email: &str) -> Option<String> {
         if let Some(end) = received_line[start + 1..].find(']') {
             let ip = &received_line[start + 1..start + 1 + end];
             // Reject IPv6 and loopback/private addresses
-            if ip.contains(':') || ip.starts_with("127.") || ip.starts_with("10.") || ip.starts_with("192.168.") {
+            if ip.contains(':')
+                || ip.starts_with("127.")
+                || ip.starts_with("10.")
+                || ip.starts_with("192.168.")
+            {
                 return None;
             }
             // Reject RFC1918 172.16.0.0/12 range (172.16.x.x – 172.31.x.x)
@@ -663,7 +710,10 @@ fn check_rbl(ip: &str, rbl_host: &str) -> bool {
     if parts.len() != 4 {
         return false;
     }
-    let lookup = format!("{}.{}.{}.{}.{}", parts[3], parts[2], parts[1], parts[0], rbl_host);
+    let lookup = format!(
+        "{}.{}.{}.{}.{}",
+        parts[3], parts[2], parts[1], parts[0], rbl_host
+    );
     use std::net::ToSocketAddrs;
     (lookup.as_str(), 0u16)
         .to_socket_addrs()
@@ -687,7 +737,8 @@ mod tests {
 
     #[test]
     fn read_smtp_response_multi_line_ehlo() {
-        let input = b"250-mail.example.com\r\n250-PIPELINING\r\n250-SIZE 10240000\r\n250 SMTPUTF8\r\n";
+        let input =
+            b"250-mail.example.com\r\n250-PIPELINING\r\n250-SIZE 10240000\r\n250 SMTPUTF8\r\n";
         let mut reader = std::io::BufReader::new(input.as_ref());
         let result = read_smtp_response(&mut reader).unwrap();
         // Should read all four lines and stop at "250 " (final line).
@@ -873,21 +924,32 @@ mod tests {
             "\r\n",
             "Body.\r\n"
         );
-        assert_eq!(extract_header(email, "From"), Some("sender@example.com".to_string()));
-        assert_eq!(extract_header(email, "To"), Some("recipient@example.com".to_string()));
-        assert_eq!(extract_header(email, "Subject"), Some("Test Subject".to_string()));
-        assert_eq!(extract_header(email, "Message-ID"), Some("<abc123@example.com>".to_string()));
+        assert_eq!(
+            extract_header(email, "From"),
+            Some("sender@example.com".to_string())
+        );
+        assert_eq!(
+            extract_header(email, "To"),
+            Some("recipient@example.com".to_string())
+        );
+        assert_eq!(
+            extract_header(email, "Subject"),
+            Some("Test Subject".to_string())
+        );
+        assert_eq!(
+            extract_header(email, "Message-ID"),
+            Some("<abc123@example.com>".to_string())
+        );
         assert_eq!(extract_header(email, "Cc"), None);
     }
 
     #[test]
     fn extract_header_stops_at_blank_line() {
-        let email = concat!(
-            "Subject: InHeader\r\n",
-            "\r\n",
-            "Subject: InBody\r\n"
+        let email = concat!("Subject: InHeader\r\n", "\r\n", "Subject: InBody\r\n");
+        assert_eq!(
+            extract_header(email, "Subject"),
+            Some("InHeader".to_string())
         );
-        assert_eq!(extract_header(email, "Subject"), Some("InHeader".to_string()));
     }
 
     #[test]
@@ -951,16 +1013,15 @@ mod tests {
             "\r\n",
             "Body.\r\n"
         );
-        assert_eq!(extract_sender_ip(email_172_32), Some("172.32.0.1".to_string()));
+        assert_eq!(
+            extract_sender_ip(email_172_32),
+            Some("172.32.0.1".to_string())
+        );
     }
 
     #[test]
     fn extract_sender_ip_returns_none_without_received_header() {
-        let email = concat!(
-            "From: user@example.com\r\n",
-            "\r\n",
-            "Body.\r\n"
-        );
+        let email = concat!("From: user@example.com\r\n", "\r\n", "Body.\r\n");
         assert_eq!(extract_sender_ip(email), None);
     }
 
@@ -1032,7 +1093,11 @@ mod tests {
             date: date_header.clone(),
             message_id: message_id_header.clone(),
             size_bytes,
-            direction: if incoming { "incoming".to_string() } else { "outgoing".to_string() },
+            direction: if incoming {
+                "incoming".to_string()
+            } else {
+                "outgoing".to_string()
+            },
         };
 
         // Verify all fields are set as expected so send_webhook would receive complete data.
@@ -1062,7 +1127,11 @@ mod tests {
             date: "Mon, 01 Jan 2024 00:00:00 +0000".to_string(),
             message_id: "<hello@remote.com>".to_string(),
             size_bytes: 256,
-            direction: if incoming { "incoming".to_string() } else { "outgoing".to_string() },
+            direction: if incoming {
+                "incoming".to_string()
+            } else {
+                "outgoing".to_string()
+            },
         };
         assert_eq!(meta.direction, "incoming");
         assert_eq!(meta.size_bytes, 256);

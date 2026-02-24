@@ -113,7 +113,6 @@ fn spf_chain_recursive(domain: &str, depth: usize) -> Vec<SpfRecord> {
     result
 }
 
-
 // ── Templates ──
 
 #[derive(Template)]
@@ -240,7 +239,9 @@ pub async fn create(
     let bimi_svg = form.bimi_svg.clone();
     let unsubscribe_enabled = form.unsubscribe_enabled.is_some();
     let create_result = state
-        .blocking_db(move |db| db.create_domain(&domain, &footer_html, &bimi_svg, unsubscribe_enabled))
+        .blocking_db(move |db| {
+            db.create_domain(&domain, &footer_html, &bimi_svg, unsubscribe_enabled)
+        })
         .await;
     match create_result {
         Ok(id) => {
@@ -249,7 +250,11 @@ pub async fn create(
                 form.domain, id
             );
             regen_configs(&state).await;
-            fire_webhook(&state, "domain.created", serde_json::json!({"domain": form.domain}));
+            fire_webhook(
+                &state,
+                "domain.created",
+                serde_json::json!({"domain": form.domain}),
+            );
             Redirect::to("/domains").into_response()
         }
         Err(e) => {
@@ -306,10 +311,23 @@ pub async fn update(
     let bimi_svg = form.bimi_svg.clone();
     let unsubscribe_enabled = form.unsubscribe_enabled.is_some();
     state
-        .blocking_db(move |db| db.update_domain(id, &domain, active, &footer_html, &bimi_svg, unsubscribe_enabled))
+        .blocking_db(move |db| {
+            db.update_domain(
+                id,
+                &domain,
+                active,
+                &footer_html,
+                &bimi_svg,
+                unsubscribe_enabled,
+            )
+        })
         .await;
     regen_configs(&state).await;
-    fire_webhook(&state, "domain.updated", serde_json::json!({"id": id, "domain": form.domain}));
+    fire_webhook(
+        &state,
+        "domain.updated",
+        serde_json::json!({"id": id, "domain": form.domain}),
+    );
     Redirect::to("/domains").into_response()
 }
 
@@ -459,7 +477,11 @@ pub async fn generate_dkim(
         .blocking_db(move |db| db.update_domain_dkim(id, &selector, &private_key, &public_key))
         .await;
     regen_configs(&state).await;
-    fire_webhook(&state, "domain.dkim_generated", serde_json::json!({"id": id}));
+    fire_webhook(
+        &state,
+        "domain.dkim_generated",
+        serde_json::json!({"id": id}),
+    );
     Redirect::to(&format!("/domains/{}/dns", id)).into_response()
 }
 
@@ -527,11 +549,7 @@ pub async fn dns_check_run(
     Path(id): Path<i64>,
     Query(query): Query<DnsCheckQuery>,
 ) -> Response {
-    let check_type = query
-        .check_type
-        .as_deref()
-        .unwrap_or("ptr")
-        .to_lowercase();
+    let check_type = query.check_type.as_deref().unwrap_or("ptr").to_lowercase();
     debug!(
         "[web] GET /domains/{}/check?type={} — running DNS check",
         id, check_type

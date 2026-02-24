@@ -165,9 +165,11 @@ pub async fn create(
     Form(form): Form<AliasForm>,
 ) -> Response {
     let tracking = form.tracking_enabled.is_some();
-    info!("[web] POST /aliases — creating alias source={}, destination={}, tracking={}",
-        form.source, form.destination, tracking);
-    
+    info!(
+        "[web] POST /aliases — creating alias source={}, destination={}, tracking={}",
+        form.source, form.destination, tracking
+    );
+
     // Extract domain from source email
     let source_parts: Vec<&str> = form.source.split('@').collect();
     if source_parts.len() != 2 {
@@ -190,15 +192,15 @@ pub async fn create(
         };
         return Html(tmpl.render().unwrap()).into_response();
     }
-    
+
     let source_domain = source_parts[1].to_ascii_lowercase();
-    
+
     // Validate that the domain exists in registered domains
     let domain_check = source_domain.clone();
     let domain_opt = state
         .blocking_db(move |db| db.get_domain_by_name(&domain_check))
         .await;
-    
+
     let domain = match domain_opt {
         Some(d) => d,
         None => {
@@ -222,15 +224,15 @@ pub async fn create(
             return Html(tmpl.render().unwrap()).into_response();
         }
     };
-    
+
     let domain_id = domain.id;
-    
+
     // Validate that destination account exists
     let destination_check = form.destination.clone();
     let destination_exists = state
         .blocking_db(move |db| db.email_exists(&destination_check))
         .await;
-    
+
     if !destination_exists {
         warn!(
             "[web] attempted to create alias to non-existent destination: {}",
@@ -251,13 +253,11 @@ pub async fn create(
         };
         return Html(tmpl.render().unwrap()).into_response();
     }
-    
+
     let source = form.source.clone();
     let destination = form.destination.clone();
     let create_result = state
-        .blocking_db(move |db| {
-            db.create_alias(domain_id, &source, &destination, tracking)
-        })
+        .blocking_db(move |db| db.create_alias(domain_id, &source, &destination, tracking))
         .await;
     match create_result {
         Ok(id) => {
@@ -266,7 +266,11 @@ pub async fn create(
                 form.source, form.destination, id, domain_id
             );
             regen_configs(&state).await;
-            fire_webhook(&state, "alias.created", serde_json::json!({"source": form.source, "destination": form.destination}));
+            fire_webhook(
+                &state,
+                "alias.created",
+                serde_json::json!({"source": form.source, "destination": form.destination}),
+            );
             Redirect::to("/aliases").into_response()
         }
         Err(e) => {
@@ -318,14 +322,14 @@ pub async fn update(
 ) -> Response {
     let active = form.active.is_some();
     let tracking = form.tracking_enabled.is_some();
-    info!("[web] POST /aliases/{} — updating alias source={}, destination={}, active={}, tracking={}",
-        id, form.source, form.destination, active, tracking);
+    info!(
+        "[web] POST /aliases/{} — updating alias source={}, destination={}, active={}, tracking={}",
+        id, form.source, form.destination, active, tracking
+    );
     let source = form.source.clone();
     let destination = form.destination.clone();
     state
-        .blocking_db(move |db| {
-            db.update_alias(id, &source, &destination, active, tracking)
-        })
+        .blocking_db(move |db| db.update_alias(id, &source, &destination, active, tracking))
         .await;
     regen_configs(&state).await;
     fire_webhook(&state, "alias.updated", serde_json::json!({"id": id}));

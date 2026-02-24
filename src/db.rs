@@ -227,8 +227,7 @@ fn load_available_migrations() -> Vec<(String, String)> {
         if let Ok(entries) = std::fs::read_dir(path) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_file() 
-                   && path.extension().and_then(|ext| ext.to_str()) == Some("sql") {
+                if path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("sql") {
                     if let Some(filename) = path.file_stem().and_then(|stem| stem.to_str()) {
                         if let Ok(sql) = std::fs::read_to_string(&path) {
                             migrations.push((filename.to_string(), sql));
@@ -245,7 +244,7 @@ fn load_available_migrations() -> Vec<(String, String)> {
     if !found_any {
         warn!("[db] no migrations directory found (checked ./migrations and /app/migrations)");
     }
-    
+
     // Sort by filename to ensure correct order
     migrations.sort_by(|a, b| a.0.cmp(&b.0));
     migrations
@@ -283,7 +282,9 @@ fn run_migrations(client: &mut Client) {
         if rows.is_empty() {
             info!("[db] applying migration: {}", name);
             let mut transaction = client.transaction().expect("Failed to start transaction");
-            transaction.batch_execute(&sql).expect("Failed to execute migration script");
+            transaction
+                .batch_execute(&sql)
+                .expect("Failed to execute migration script");
             transaction
                 .execute("INSERT INTO _migrations (name) VALUES ($1)", &[&name])
                 .expect("Failed to record migration");
@@ -328,8 +329,8 @@ impl Database {
         use std::str::FromStr;
 
         info!("[db] opening PostgreSQL database at url={}", url);
-        let base_config = Config::from_str(url)
-            .map_err(|e| format!("Failed to parse PostgreSQL URL: {}", e))?;
+        let base_config =
+            Config::from_str(url).map_err(|e| format!("Failed to parse PostgreSQL URL: {}", e))?;
 
         let mut retry_count = 0;
         let mut client = loop {
@@ -455,8 +456,7 @@ impl Database {
                 Vec::new()
             });
 
-        rows
-            .into_iter()
+        rows.into_iter()
             .map(|row| Domain {
                 id: row.get(0),
                 domain: row.get(1),
@@ -517,7 +517,13 @@ impl Database {
         })
     }
 
-    pub fn create_domain(&self, domain: &str, footer_html: &str, bimi_svg: &str, unsubscribe_enabled: bool) -> Result<i64, String> {
+    pub fn create_domain(
+        &self,
+        domain: &str,
+        footer_html: &str,
+        bimi_svg: &str,
+        unsubscribe_enabled: bool,
+    ) -> Result<i64, String> {
         info!("[db] creating domain: {}", domain);
         let mut conn = self.conn();
         let ts = now();
@@ -537,7 +543,15 @@ impl Database {
         Ok(id)
     }
 
-    pub fn update_domain(&self, id: i64, domain: &str, active: bool, footer_html: &str, bimi_svg: &str, unsubscribe_enabled: bool) {
+    pub fn update_domain(
+        &self,
+        id: i64,
+        domain: &str,
+        active: bool,
+        footer_html: &str,
+        bimi_svg: &str,
+        unsubscribe_enabled: bool,
+    ) {
         info!(
             "[db] updating domain id={}, domain={}, active={}, footer_present={}, bimi_present={}, unsubscribe_enabled={}",
             id,
@@ -616,35 +630,6 @@ impl Database {
     }
 
     // ── Account methods ──
-
-    pub fn list_accounts(&self) -> Vec<Account> {
-        debug!("[db] listing all accounts");
-        let mut conn = self.conn();
-        let rows = conn
-            .query(
-                "SELECT id, domain_id, username, password_hash, name, active, quota
-                 FROM accounts ORDER BY username",
-                &[],
-            )
-            .unwrap_or_else(|e| {
-                error!("[db] failed to list accounts: {}", e);
-                Vec::new()
-            });
-
-        rows
-            .into_iter()
-            .map(|row| Account {
-                id: row.get(0),
-                domain_id: row.get(1),
-                username: row.get(2),
-                password_hash: row.get(3),
-                name: row.get(4),
-                active: row.get(5),
-                quota: row.get(6),
-                domain_name: None,
-            })
-            .collect()
-    }
 
     pub fn get_account(&self, id: i64) -> Option<Account> {
         debug!("[db] getting account id={}", id);
@@ -773,8 +758,7 @@ impl Database {
                 Vec::new()
             });
 
-        rows
-            .into_iter()
+        rows.into_iter()
             .map(|row| Account {
                 id: row.get(0),
                 domain_id: row.get(1),
@@ -784,37 +768,6 @@ impl Database {
                 active: row.get(5),
                 quota: row.get(6),
                 domain_name: row.get(7),
-            })
-            .collect()
-    }
-
-    // ── Alias methods ──
-
-    pub fn list_aliases(&self) -> Vec<Alias> {
-        debug!("[db] listing all aliases");
-        let mut conn = self.conn();
-        let rows = conn
-            .query(
-                "SELECT id, domain_id, source, destination, active, tracking_enabled, sort_order
-                 FROM aliases ORDER BY sort_order ASC, id ASC",
-                &[],
-            )
-            .unwrap_or_else(|e| {
-                error!("[db] failed to list aliases: {}", e);
-                Vec::new()
-            });
-
-        rows
-            .into_iter()
-            .map(|row| Alias {
-                id: row.get(0),
-                domain_id: row.get(1),
-                source: row.get(2),
-                destination: row.get(3),
-                active: row.get(4),
-                tracking_enabled: row.get(5),
-                sort_order: row.get(6),
-                domain_name: None,
             })
             .collect()
     }
@@ -854,10 +807,10 @@ impl Database {
         );
         let mut conn = self.conn();
         let ts = now();
-        
+
         // Calculate sort_order: 0 for specific addresses, 1 for catch-alls
         let sort_order: i64 = if source.trim().starts_with('*') { 1 } else { 0 };
-        
+
         let row = conn
             .query_one(
                 "INSERT INTO aliases (domain_id, source, destination, tracking_enabled, sort_order, created_at, updated_at)
@@ -885,12 +838,15 @@ impl Database {
         active: bool,
         tracking: bool,
     ) {
-        info!("[db] updating alias id={}, source={}, destination={}, active={}, tracking={}", id, source, destination, active, tracking);
+        info!(
+            "[db] updating alias id={}, source={}, destination={}, active={}, tracking={}",
+            id, source, destination, active, tracking
+        );
         let mut conn = self.conn();
-        
+
         // Calculate sort_order: 0 for specific addresses, 1 for catch-alls
         let sort_order: i64 = if source.trim().starts_with('*') { 1 } else { 0 };
-        
+
         if let Err(e) = conn.execute(
             "UPDATE aliases
              SET source = $1, destination = $2, active = $3, tracking_enabled = $4, sort_order = $5, updated_at = $6
@@ -925,8 +881,7 @@ impl Database {
                 Vec::new()
             });
 
-        rows
-            .into_iter()
+        rows.into_iter()
             .map(|row| Alias {
                 id: row.get(0),
                 domain_id: row.get(1),
@@ -955,22 +910,21 @@ impl Database {
         enabled
     }
 
-
     /// Check if an email address exists as an active account
     pub fn email_exists(&self, email: &str) -> bool {
         debug!("[db] checking if email exists: {}", email);
         let mut conn = self.conn();
-        
+
         // Parse email into username and domain
         let parts: Vec<&str> = email.split('@').collect();
         if parts.len() != 2 {
             warn!("[db] invalid email format: {}", email);
             return false;
         }
-        
+
         let username = parts[0];
         let domain = parts[1];
-        
+
         let count: i64 = conn
             .query_one(
                 "SELECT COUNT(*) FROM accounts ac
@@ -980,7 +934,7 @@ impl Database {
             )
             .map(|row| row.get(0))
             .unwrap_or(0);
-        
+
         let exists = count > 0;
         debug!("[db] email {} exists: {}", email, exists);
         exists
@@ -1064,7 +1018,10 @@ impl Database {
                 e.to_string()
             })?;
         let id: i64 = row.get(0);
-        info!("[db] forwarding created: {} -> {} (id={})", source, destination, id);
+        info!(
+            "[db] forwarding created: {} -> {} (id={})",
+            source, destination, id
+        );
         Ok(id)
     }
 
@@ -1076,7 +1033,10 @@ impl Database {
         active: bool,
         keep_copy: bool,
     ) {
-        info!("[db] updating forwarding id={}, source={}, destination={}, active={}, keep_copy={}", id, source, destination, active, keep_copy);
+        info!(
+            "[db] updating forwarding id={}, source={}, destination={}, active={}, keep_copy={}",
+            id, source, destination, active, keep_copy
+        );
         let mut conn = self.conn();
         if let Err(e) = conn.execute(
             "UPDATE forwardings
@@ -1151,8 +1111,7 @@ impl Database {
                 Vec::new()
             });
 
-        rows
-            .into_iter()
+        rows.into_iter()
             .map(|row| TrackedMessage {
                 id: row.get(0),
                 message_id: row.get(1),
@@ -1201,8 +1160,7 @@ impl Database {
                 Vec::new()
             });
 
-        rows
-            .into_iter()
+        rows.into_iter()
             .map(|row| PixelOpen {
                 id: row.get(0),
                 message_id: row.get(1),
@@ -1289,7 +1247,10 @@ impl Database {
             .unwrap_or(0);
 
         let dkim_ready_count: i64 = conn
-            .query_one("SELECT COUNT(*) FROM domains WHERE dkim_public_key IS NOT NULL AND active = TRUE", &[])
+            .query_one(
+                "SELECT COUNT(*) FROM domains WHERE dkim_public_key IS NOT NULL AND active = TRUE",
+                &[],
+            )
             .map(|row| row.get(0))
             .unwrap_or(0);
 
@@ -1305,72 +1266,6 @@ impl Database {
             unsubscribe_count,
             dkim_ready_count,
         }
-    }
-
-    /// Delivery health overview for UI — returns (total, successes, recent_failures).
-    pub fn get_delivery_health(&self) -> (i64, i64, Vec<WebhookLog>) {
-        debug!("[db] computing delivery health stats");
-        let mut conn = self.conn();
-        let total: i64 = conn
-            .query_one("SELECT COUNT(*) FROM webhook_logs", &[])
-            .map(|row| row.get(0))
-            .unwrap_or(0);
-        let successes: i64 = conn
-            .query_one(
-                "SELECT COUNT(*) FROM webhook_logs WHERE response_status >= 200 AND response_status < 400",
-                &[],
-            )
-            .map(|row| row.get(0))
-            .unwrap_or(0);
-
-        let recent_failures = conn
-            .query(
-                "SELECT id, url, request_body, response_status, response_body, error, duration_ms, sender, subject, created_at
-                 FROM webhook_logs
-                 WHERE response_status IS NULL
-                    OR response_status < 200
-                    OR response_status >= 400
-                    OR error IS NOT NULL
-                 ORDER BY created_at DESC
-                 LIMIT 20",
-                &[],
-            )
-            .unwrap_or_else(|e| {
-                error!("[db] failed to list recent failures: {}", e);
-                Vec::new()
-            })
-            .into_iter()
-            .map(|row| WebhookLog {
-                id: row.get(0),
-                url: row.get(1),
-                request_body: row.get::<_, Option<String>>(2).unwrap_or_default(),
-                response_status: row.get(3),
-                response_body: row.get::<_, Option<String>>(4).unwrap_or_default(),
-                error: row.get::<_, Option<String>>(5).unwrap_or_default(),
-                duration_ms: row.get::<_, Option<i64>>(6),
-                sender: row.get::<_, Option<String>>(7).unwrap_or_default(),
-                subject: row.get::<_, Option<String>>(8).unwrap_or_default(),
-                created_at: row.get(9),
-            })
-            .collect();
-
-        (total, successes, recent_failures)
-    }
-
-    /// Lightweight delivery counters for observability.
-    /// - outgoing_count: messages we attempted to send (tracked_messages rows)
-    /// - open_count: observed opens (pixel_opens rows)
-    pub fn get_delivery_counters(&self) -> (i64, i64) {
-        let mut conn = self.conn();
-        let outgoing_count: i64 = conn
-            .query_one("SELECT COUNT(*) FROM tracked_messages", &[])
-            .map(|row| row.get(0))
-            .unwrap_or(0);
-        let open_count: i64 = conn
-            .query_one("SELECT COUNT(*) FROM pixel_opens", &[])
-            .map(|row| row.get(0))
-            .unwrap_or(0);
-        (outgoing_count, open_count)
     }
 
     // ── Fail2ban methods ──
@@ -1472,8 +1367,18 @@ impl Database {
             .collect()
     }
 
-    pub fn ban_ip(&self, ip_address: &str, service: &str, reason: &str, duration_minutes: i32, permanent: bool) -> Result<i64, String> {
-        info!("[db] banning IP={} service={} permanent={}", ip_address, service, permanent);
+    pub fn ban_ip(
+        &self,
+        ip_address: &str,
+        service: &str,
+        reason: &str,
+        duration_minutes: i32,
+        permanent: bool,
+    ) -> Result<i64, String> {
+        info!(
+            "[db] banning IP={} service={} permanent={}",
+            ip_address, service, permanent
+        );
         let mut conn = self.conn();
         let ts = now();
         let expires = if permanent {
@@ -1516,7 +1421,10 @@ impl Database {
         let mut conn = self.conn();
         // Get IP for logging before delete
         let ip_info = conn
-            .query_opt("SELECT ip_address, service FROM fail2ban_banned WHERE id = $1", &[&id])
+            .query_opt(
+                "SELECT ip_address, service FROM fail2ban_banned WHERE id = $1",
+                &[&id],
+            )
             .ok()
             .flatten();
         if let Err(e) = conn.execute("DELETE FROM fail2ban_banned WHERE id = $1", &[&id]) {
@@ -1575,7 +1483,10 @@ impl Database {
         let id: i64 = row.get(0);
 
         // Also unban if currently banned
-        if let Err(e) = conn.execute("DELETE FROM fail2ban_banned WHERE ip_address = $1", &[&ip_address]) {
+        if let Err(e) = conn.execute(
+            "DELETE FROM fail2ban_banned WHERE ip_address = $1",
+            &[&ip_address],
+        ) {
             error!("[db] failed to execute query: {}", e);
         }
 
@@ -1694,7 +1605,10 @@ impl Database {
     pub fn is_ip_whitelisted(&self, ip_address: &str) -> bool {
         let mut conn = self.conn();
         let count: i64 = conn
-            .query_one("SELECT COUNT(*) FROM fail2ban_whitelist WHERE ip_address = $1", &[&ip_address])
+            .query_one(
+                "SELECT COUNT(*) FROM fail2ban_whitelist WHERE ip_address = $1",
+                &[&ip_address],
+            )
             .map(|row| row.get(0))
             .unwrap_or(0);
         count > 0
@@ -1733,7 +1647,10 @@ impl Database {
     }
 
     pub fn record_fail2ban_attempt(&self, ip_address: &str, service: &str, details: &str) {
-        info!("[db] recording fail2ban attempt ip={} service={}", ip_address, service);
+        info!(
+            "[db] recording fail2ban attempt ip={} service={}",
+            ip_address, service
+        );
         let mut conn = self.conn();
         if let Err(e) = conn.execute(
             "INSERT INTO fail2ban_log (ip_address, service, action, details, created_at) VALUES ($1, $2, 'attempt', $3, $4)",
@@ -1744,7 +1661,10 @@ impl Database {
     }
 
     pub fn count_recent_attempts(&self, ip_address: &str, service: &str, minutes: i32) -> i64 {
-        debug!("[db] counting recent attempts ip={} service={} window={}min", ip_address, service, minutes);
+        debug!(
+            "[db] counting recent attempts ip={} service={} window={}min",
+            ip_address, service, minutes
+        );
         let mut conn = self.conn();
         let cutoff = (chrono::Utc::now() - chrono::Duration::minutes(minutes as i64))
             .format("%Y-%m-%d %H:%M:%S")
@@ -1759,8 +1679,16 @@ impl Database {
         count
     }
 
-    pub fn create_unsubscribe_token(&self, token: &str, recipient_email: &str, sender_domain: &str) {
-        debug!("[db] creating unsubscribe token for recipient={} domain={}", recipient_email, sender_domain);
+    pub fn create_unsubscribe_token(
+        &self,
+        token: &str,
+        recipient_email: &str,
+        sender_domain: &str,
+    ) {
+        debug!(
+            "[db] creating unsubscribe token for recipient={} domain={}",
+            recipient_email, sender_domain
+        );
         let mut conn = self.conn();
         if let Err(e) = conn.execute(
             "INSERT INTO unsubscribe_tokens (token, recipient_email, sender_domain, created_at)
@@ -1785,7 +1713,10 @@ impl Database {
     }
 
     pub fn record_unsubscribe(&self, email: &str, domain: &str) {
-        info!("[db] recording unsubscribe email={} domain={}", email, domain);
+        info!(
+            "[db] recording unsubscribe email={} domain={}",
+            email, domain
+        );
         let mut conn = self.conn();
         if let Err(e) = conn.execute(
             "INSERT INTO unsubscribe_list (email, domain, created_at)
@@ -1883,7 +1814,10 @@ impl Database {
             "UPDATE spambl_lists SET enabled = $1, updated_at = $2 WHERE id = $3",
             &[&enabled, &now(), &id],
         ) {
-            error!("[db] failed to set spambl id={} enabled={}: {}", id, enabled, e);
+            error!(
+                "[db] failed to set spambl id={} enabled={}: {}",
+                id, enabled, e
+            );
         }
     }
 
@@ -1935,7 +1869,10 @@ impl Database {
     }
 
     pub fn list_webhook_logs(&self, limit: i64, offset: i64) -> Vec<WebhookLog> {
-        debug!("[db] listing webhook logs limit={} offset={}", limit, offset);
+        debug!(
+            "[db] listing webhook logs limit={} offset={}",
+            limit, offset
+        );
         let mut conn = self.conn();
         let rows = conn
             .query(
@@ -2125,7 +2062,10 @@ impl Database {
         username: Option<&str>,
         password: Option<&str>,
     ) -> Result<i64, String> {
-        info!("[db] creating outbound relay name={} host={}:{}", name, host, port);
+        info!(
+            "[db] creating outbound relay name={} host={}:{}",
+            name, host, port
+        );
         let mut conn = self.conn();
         let ts = now();
         let row = conn
@@ -2155,7 +2095,10 @@ impl Database {
         password: Option<&str>,
         active: bool,
     ) {
-        info!("[db] updating outbound relay id={} name={} host={}:{} active={}", id, name, host, port, active);
+        info!(
+            "[db] updating outbound relay id={} name={} host={}:{} active={}",
+            id, name, host, port, active
+        );
         let mut conn = self.conn();
         if let Err(e) = conn.execute(
             "UPDATE outbound_relays
@@ -2202,39 +2145,16 @@ impl Database {
             .collect()
     }
 
-    pub fn list_all_relay_assignments(&self) -> Vec<OutboundRelayAssignment> {
-        debug!("[db] listing all relay assignments");
-        let mut conn = self.conn();
-        let rows = conn
-            .query(
-                "SELECT a.id, a.relay_id, a.assignment_type, a.pattern, r.name
-                 FROM outbound_relay_assignments a
-                 JOIN outbound_relays r ON a.relay_id = r.id
-                 ORDER BY a.assignment_type, a.pattern",
-                &[],
-            )
-            .unwrap_or_else(|e| {
-                error!("[db] failed to list all relay assignments: {}", e);
-                Vec::new()
-            });
-        rows.into_iter()
-            .map(|row| OutboundRelayAssignment {
-                id: row.get(0),
-                relay_id: row.get(1),
-                assignment_type: row.get(2),
-                pattern: row.get(3),
-                relay_name: row.get(4),
-            })
-            .collect()
-    }
-
     pub fn create_relay_assignment(
         &self,
         relay_id: i64,
         assignment_type: &str,
         pattern: &str,
     ) -> Result<i64, String> {
-        info!("[db] creating relay assignment relay_id={} type={} pattern={}", relay_id, assignment_type, pattern);
+        info!(
+            "[db] creating relay assignment relay_id={} type={} pattern={}",
+            relay_id, assignment_type, pattern
+        );
         let mut conn = self.conn();
         let row = conn
             .query_one(
@@ -2255,13 +2175,18 @@ impl Database {
     pub fn delete_relay_assignment(&self, id: i64) {
         warn!("[db] deleting relay assignment id={}", id);
         let mut conn = self.conn();
-        if let Err(e) = conn.execute("DELETE FROM outbound_relay_assignments WHERE id = $1", &[&id]) {
+        if let Err(e) = conn.execute(
+            "DELETE FROM outbound_relay_assignments WHERE id = $1",
+            &[&id],
+        ) {
             error!("[db] failed to execute query: {}", e);
         }
     }
 
     /// Returns all active relay assignments joined with relay info for config generation.
-    pub fn get_active_relay_assignments_with_relay(&self) -> Vec<(OutboundRelay, OutboundRelayAssignment)> {
+    pub fn get_active_relay_assignments_with_relay(
+        &self,
+    ) -> Vec<(OutboundRelay, OutboundRelayAssignment)> {
         debug!("[db] getting active relay assignments with relay info");
         let mut conn = self.conn();
         let rows = conn
