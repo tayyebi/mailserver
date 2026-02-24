@@ -141,7 +141,13 @@ pub fn generate_postfix_main_cf(db: &Database, hostname: &str) {
     );
     let mydomain = hostname.splitn(2, '.').nth(1).unwrap_or(hostname);
 
-    let template = load_template("postfix-main.cf.txt").expect("postfix-main.cf.txt template not found");
+    let template = match load_template("postfix-main.cf.txt") {
+        Ok(t) => t,
+        Err(e) => {
+            error!("[config] failed to load postfix-main.cf.txt template: {}", e);
+            return;
+        }
+    };
     let generated_at = generated_at();
 
     let milter_enabled = db
@@ -197,7 +203,13 @@ pub fn generate_postfix_main_cf(db: &Database, hostname: &str) {
 
 pub fn generate_postfix_master_cf(db: &Database) {
     info!("[config] generating /etc/postfix/master.cf");
-    let template = load_template("postfix-master.cf.txt").expect("postfix-master.cf.txt template not found");
+    let template = match load_template("postfix-master.cf.txt") {
+        Ok(t) => t,
+        Err(e) => {
+            error!("[config] failed to load postfix-master.cf.txt template: {}", e);
+            return;
+        }
+    };
 
     // The content filter is always active so that webhook events are logged for every
     // processed message.  The `feature_filter_enabled` flag controls whether the filter
@@ -567,7 +579,13 @@ pub fn generate_dovecot_conf(hostname: &str) {
         "[config] generating /etc/dovecot/dovecot.conf for hostname={}",
         hostname
     );
-    let template = load_template("dovecot.conf.txt").expect("dovecot.conf.txt template not found");
+    let template = match load_template("dovecot.conf.txt") {
+        Ok(t) => t,
+        Err(e) => {
+            error!("[config] failed to load dovecot.conf.txt template: {}", e);
+            return;
+        }
+    };
 
     let config = template
         .replace("{{ generated_at }}", &generated_at())
@@ -622,7 +640,13 @@ pub fn generate_dovecot_passwd(db: &Database) {
 
 pub fn generate_opendkim_conf() {
     info!("[config] generating /etc/opendkim/opendkim.conf");
-    let template = load_template("opendkim.conf.txt").expect("opendkim.conf.txt template not found");
+    let template = match load_template("opendkim.conf.txt") {
+        Ok(t) => t,
+        Err(e) => {
+            error!("[config] failed to load opendkim.conf.txt template: {}", e);
+            return;
+        }
+    };
     let config = template.replace("{{ generated_at }}", &generated_at());
 
     match fs::write("/etc/opendkim/opendkim.conf", config) {

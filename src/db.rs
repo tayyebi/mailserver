@@ -293,6 +293,16 @@ fn run_migrations(client: &mut Client) {
 
 impl Database {
     pub fn open(url: &str) -> Self {
+        Self::try_open(url).unwrap_or_else(|e| {
+            panic!("Failed to connect to PostgreSQL: {}", e);
+        })
+    }
+
+    /// Try to open a database connection, returning an error on failure
+    /// instead of panicking. Used by short-lived processes (e.g. the
+    /// content filter) where a connection failure should be handled
+    /// gracefully rather than crashing.
+    pub fn try_open(url: &str) -> Result<Self, String> {
         info!("[db] opening PostgreSQL database at url={}", url);
         let mut retry_count = 0;
         let max_retries = 30;
@@ -306,7 +316,7 @@ impl Database {
                             "[db] failed to connect to PostgreSQL after {} retries: {}",
                             max_retries, e
                         );
-                        panic!("Failed to connect to PostgreSQL: {}", e);
+                        return Err(format!("Failed to connect to PostgreSQL after {} retries: {}", max_retries, e));
                     }
                     warn!(
                         "[db] failed to connect to PostgreSQL, retrying ({}/{}): {}",
@@ -320,9 +330,9 @@ impl Database {
         run_migrations(&mut client);
 
         info!("[db] PostgreSQL database opened and schema initialized successfully");
-        Database {
+        Ok(Database {
             conn: Arc::new(Mutex::new(client)),
-        }
+        })
     }
 
     /// Acquire the database connection, recovering from mutex poisoning.
