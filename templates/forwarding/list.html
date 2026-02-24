@@ -23,7 +23,7 @@
             <td>{{ f.source }}</td>
             <td>{{ f.destination }}</td>
             <td>{% if f.keep_copy %}<mark>Yes</mark>{% else %}No{% endif %}</td>
-            <td>{% if f.active %}<mark>Active</mark>{% else %}<mark class="mark-muted">Disabled</mark>{% endif %}</td>
+            <td>{% if f.active %}<mark>Active</mark>{% else %}<mark data-variant="muted">Disabled</mark>{% endif %}</td>
             <td>
                 <a href="/forwarding/{{ f.id }}/edit">Edit</a>
                 <form method="post" action="/forwarding/{{ f.id }}/delete" class="form-inline" onsubmit="return confirm('Delete this forwarding rule?')"><button type="submit">Delete</button></form>

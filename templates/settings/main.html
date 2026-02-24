@@ -7,19 +7,19 @@
 <dl>
 <dt>Content Filter</dt>
 <dd>
-  {% if filter_enabled %}<mark class="mark-success">Enabled</mark>{% else %}<mark class="mark-muted">Disabled</mark>{% endif %}
+  {% if filter_enabled %}<mark data-variant="success">Enabled</mark>{% else %}<mark data-variant="muted">Disabled</mark>{% endif %}
   —
-  {% if filter_healthy %}<mark class="mark-success">● Healthy</mark>{% else %}<mark class="mark-danger">● Unavailable</mark>{% endif %}
+  {% if filter_healthy %}<mark data-variant="success">● Healthy</mark>{% else %}<mark data-variant="danger">● Unavailable</mark>{% endif %}
 </dd>
 <dt>Milter (OpenDKIM)</dt>
 <dd>
-  {% if milter_enabled %}<mark class="mark-success">Enabled</mark>{% else %}<mark class="mark-muted">Disabled</mark>{% endif %}
+  {% if milter_enabled %}<mark data-variant="success">Enabled</mark>{% else %}<mark data-variant="muted">Disabled</mark>{% endif %}
   —
-  {% if milter_healthy %}<mark class="mark-success">● Healthy</mark>{% else %}<mark class="mark-danger">● Unavailable</mark>{% endif %}
+  {% if milter_healthy %}<mark data-variant="success">● Healthy</mark>{% else %}<mark data-variant="danger">● Unavailable</mark>{% endif %}
 </dd>
 <dt>List-Unsubscribe Injection</dt>
 <dd>
-  {% if unsubscribe_enabled %}<mark class="mark-success">Enabled</mark>{% else %}<mark class="mark-muted">Disabled</mark>{% endif %}
+  {% if unsubscribe_enabled %}<mark data-variant="success">Enabled</mark>{% else %}<mark data-variant="muted">Disabled</mark>{% endif %}
 </dd>
 </dl>
 <form method="post" action="/settings/features">

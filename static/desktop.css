@@ -149,11 +149,10 @@ body > header nav a[aria-current="page"]::before {
   flex-direction: column;
 }
 
-/* ── Main: constrained width ── */
+/* ── Main: full width ── */
 
 main {
   flex: 1;
-  max-inline-size: 1100px;
   margin-inline: auto;
   padding-block: var(--space-xl);
   padding-inline: var(--space-xl);
@@ -219,16 +218,16 @@ td:last-child {
   padding-block-start: var(--space-sm);
 }
 
-/* ── Forms: constrain width ── */
+/* ── Forms: use available width ── */
 
 form {
-  max-inline-size: 640px;
+  max-inline-size: none;
 }
 
-/* ── Description lists: side-by-side ── */
+/* ── Description lists: use available width ── */
 
 dl {
-  max-inline-size: 640px;
+  max-inline-size: none;
 }
 
 /* ── Section headings with actions ── */
