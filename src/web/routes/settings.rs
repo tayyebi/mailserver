@@ -348,7 +348,23 @@ pub async fn change_password(
         };
         return Html(tmpl.render().unwrap()).into_response();
     }
-    let hash = crate::auth::hash_password(&form.new_password);
+    let hash = match crate::auth::hash_password(&form.new_password) {
+        Ok(h) => h,
+        Err(e) => {
+            error!("[web] failed to hash new password for username={}: {}", auth.admin.username, e);
+            let tmpl = ErrorTemplate {
+                nav_active: "Settings",
+                flash: None,
+                status_code: 500,
+                status_text: "Internal Server Error",
+                title: "Error",
+                message: "Failed to hash password. Please try again.",
+                back_url: "/settings",
+                back_label: "Back",
+            };
+            return Html(tmpl.render().unwrap()).into_response();
+        }
+    };
     let admin_id = auth.admin.id;
     state
         .blocking_db(move |db| db.update_admin_password(admin_id, &hash))

@@ -144,7 +144,10 @@ fn main() {
 
             info!("[seed] seeding admin user: {}", username);
             let database = db::Database::open(&db_url);
-            let hash = auth::hash_password(&password);
+            let hash = auth::hash_password(&password).unwrap_or_else(|e| {
+                error!("[seed] failed to hash password: {}", e);
+                std::process::exit(1);
+            });
             database.seed_admin(&username, &hash);
             info!("[seed] admin user seeded successfully: {}", username);
         }

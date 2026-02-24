@@ -154,7 +154,23 @@ pub async fn create(
         "[web] POST /accounts — creating account username={}, domain_id={}",
         form.username, form.domain_id
     );
-    let db_hash = crate::auth::hash_password(&form.password);
+    let db_hash = match crate::auth::hash_password(&form.password) {
+        Ok(h) => h,
+        Err(e) => {
+            error!("[web] failed to hash password for account {}: {}", form.username, e);
+            let tmpl = ErrorTemplate {
+                nav_active: "Accounts",
+                flash: None,
+                status_code: 500,
+                status_text: "Error",
+                title: "Error",
+                message: "Failed to hash password. Please try again.",
+                back_url: "/accounts/new",
+                back_label: "Back",
+            };
+            return Html(tmpl.render().unwrap()).into_response();
+        }
+    };
     let quota = form.quota.unwrap_or(0);
     let domain_id = form.domain_id;
     let username = form.username.clone();
@@ -241,10 +257,16 @@ pub async fn update(
     if let Some(ref pw) = form.password {
         if !pw.is_empty() {
             info!("[web] updating password for account id={}", id);
-            let db_hash = crate::auth::hash_password(pw);
-            state
-                .blocking_db(move |db| db.update_account_password(id, &db_hash))
-                .await;
+            match crate::auth::hash_password(pw) {
+                Ok(db_hash) => {
+                    state
+                        .blocking_db(move |db| db.update_account_password(id, &db_hash))
+                        .await;
+                }
+                Err(e) => {
+                    error!("[web] failed to hash password for account id={}: {}", id, e);
+                }
+            }
         }
     }
 
