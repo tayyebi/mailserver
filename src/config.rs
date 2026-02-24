@@ -217,7 +217,7 @@ pub fn generate_postfix_master_cf(db: &Database) {
     // it does NOT gate the filter pipeline itself.
     let filter_line = "  -o content_filter=pixelfilter:local\n";
     let filter_smtp_line = "  -o content_filter=pixelfilter-in:local\n";
-    let filter_service = "# Pixel filter service\npixelfilter unix -   y   n   -   10  pipe\n  flags=hq user=postfix argv=/usr/local/bin/mailserver filter -f ${sender} -- ${recipient}\npixelfilter-in unix -   y   n   -   10  pipe\n  flags=hq user=postfix argv=/usr/local/bin/mailserver filter --incoming -f ${sender} -- ${recipient}\n";
+    let filter_service = "# Pixel filter service\npixelfilter unix -   n   n   -   10  pipe\n  flags=hq user=postfix argv=/usr/local/bin/mailserver filter -f ${sender} -- ${recipient}\npixelfilter-in unix -   n   n   -   10  pipe\n  flags=hq user=postfix argv=/usr/local/bin/mailserver filter --incoming -f ${sender} -- ${recipient}\n";
 
     let config = template
         .replace("{{ generated_at }}", &generated_at())
@@ -1065,7 +1065,7 @@ mod tests {
         // The filter service constant must always configure both outgoing (pixelfilter)
         // and incoming (pixelfilter-in) pipes so that webhooks fire for all email
         // regardless of the feature_filter_enabled setting.
-        let filter_service = "# Pixel filter service\npixelfilter unix -   y   n   -   10  pipe\n  flags=hq user=postfix argv=/usr/local/bin/mailserver filter -f ${sender} -- ${recipient}\npixelfilter-in unix -   y   n   -   10  pipe\n  flags=hq user=postfix argv=/usr/local/bin/mailserver filter --incoming -f ${sender} -- ${recipient}\n";
+        let filter_service = "# Pixel filter service\npixelfilter unix -   n   n   -   10  pipe\n  flags=hq user=postfix argv=/usr/local/bin/mailserver filter -f ${sender} -- ${recipient}\npixelfilter-in unix -   n   n   -   10  pipe\n  flags=hq user=postfix argv=/usr/local/bin/mailserver filter --incoming -f ${sender} -- ${recipient}\n";
         assert!(
             filter_service.contains("pixelfilter unix"),
             "filter service must include pixelfilter for outgoing email"
