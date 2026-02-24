@@ -9,6 +9,7 @@ use log::{debug, error, info, warn};
 
 use crate::web::AppState;
 use crate::web::auth::AuthAdmin;
+use crate::web::fire_webhook;
 use crate::web::forms::{Fail2banBanForm, Fail2banGlobalToggleForm, Fail2banListForm, Fail2banSettingForm};
 
 fn same_origin(headers: &HeaderMap) -> bool {
@@ -167,6 +168,7 @@ pub async fn toggle_system(
         .await;
 
     info!("[web] fail2ban system toggled to: {}", value);
+    fire_webhook(&state, "fail2ban.toggled", serde_json::json!({"enabled": enabled}));
     Redirect::to("/fail2ban").into_response()
 }
 
@@ -284,11 +286,14 @@ pub async fn ban_ip(
     let permanent = form.permanent.as_deref() == Some("on");
     let duration = form.duration_minutes.unwrap_or(60);
 
+    let ip_for_webhook = form.ip_address.trim().to_string();
+    let service_for_webhook = service.clone();
     state
         .blocking_db(move |db| db.ban_ip(&ip, &service, &reason, duration, permanent))
         .await
         .ok();
 
+    fire_webhook(&state, "fail2ban.ip_banned", serde_json::json!({"ip": ip_for_webhook, "service": service_for_webhook}));
     Redirect::to("/fail2ban").into_response()
 }
 
@@ -309,6 +314,7 @@ pub async fn unban_ip(
     }
 
     state.blocking_db(move |db| db.unban_ip(id)).await;
+    fire_webhook(&state, "fail2ban.ip_unbanned", serde_json::json!({"id": id}));
     Redirect::to("/fail2ban").into_response()
 }
 

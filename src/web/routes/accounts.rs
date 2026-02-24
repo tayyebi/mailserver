@@ -9,6 +9,7 @@ use serde::Deserialize;
 
 use crate::db::{Account, Alias, Domain};
 use crate::web::auth::AuthAdmin;
+use crate::web::fire_webhook;
 use crate::web::forms::{AccountEditForm, AccountForm};
 use crate::web::regen_configs;
 use crate::web::AppState;
@@ -185,6 +186,7 @@ pub async fn create(
                 form.username, id
             );
             regen_configs(&state).await;
+            fire_webhook(&state, "account.created", serde_json::json!({"username": form.username, "domain_id": form.domain_id}));
             Redirect::to("/accounts").into_response()
         }
         Err(e) => {
@@ -271,6 +273,7 @@ pub async fn update(
     }
 
     regen_configs(&state).await;
+    fire_webhook(&state, "account.updated", serde_json::json!({"id": id}));
     Redirect::to("/accounts").into_response()
 }
 
@@ -282,5 +285,6 @@ pub async fn delete(
     warn!("[web] POST /accounts/{}/delete — deleting account", id);
     state.blocking_db(move |db| db.delete_account(id)).await;
     regen_configs(&state).await;
+    fire_webhook(&state, "account.deleted", serde_json::json!({"id": id}));
     Redirect::to("/accounts").into_response()
 }

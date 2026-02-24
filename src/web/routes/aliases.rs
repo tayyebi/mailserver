@@ -8,6 +8,7 @@ use log::{debug, error, info, warn};
 use std::collections::HashMap;
 
 use crate::web::auth::AuthAdmin;
+use crate::web::fire_webhook;
 use crate::web::forms::{AliasEditForm, AliasForm};
 use crate::web::regen_configs;
 use crate::web::AppState;
@@ -265,6 +266,7 @@ pub async fn create(
                 form.source, form.destination, id, domain_id
             );
             regen_configs(&state).await;
+            fire_webhook(&state, "alias.created", serde_json::json!({"source": form.source, "destination": form.destination}));
             Redirect::to("/aliases").into_response()
         }
         Err(e) => {
@@ -326,6 +328,7 @@ pub async fn update(
         })
         .await;
     regen_configs(&state).await;
+    fire_webhook(&state, "alias.updated", serde_json::json!({"id": id}));
     Redirect::to("/aliases").into_response()
 }
 
@@ -337,5 +340,6 @@ pub async fn delete(
     warn!("[web] POST /aliases/{}/delete — deleting alias", id);
     state.blocking_db(move |db| db.delete_alias(id)).await;
     regen_configs(&state).await;
+    fire_webhook(&state, "alias.deleted", serde_json::json!({"id": id}));
     Redirect::to("/aliases").into_response()
 }

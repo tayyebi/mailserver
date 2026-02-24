@@ -10,6 +10,7 @@ use log::{debug, error, info, warn};
 use crate::db::Admin;
 use crate::web::AppState;
 use crate::web::auth::AuthAdmin;
+use crate::web::fire_webhook;
 use crate::web::forms::{FeatureToggleForm, PasswordForm, TotpEnableForm};
 
 // ── Templates ──
@@ -285,6 +286,11 @@ pub async fn update_features(
     // Regenerate Postfix configs to apply feature toggle changes
     crate::web::regen_configs(&state).await;
 
+    fire_webhook(
+        &state,
+        "settings.features_updated",
+        serde_json::json!({"filter_enabled": filter_enabled, "milter_enabled": milter_enabled, "unsubscribe_enabled": unsubscribe_enabled}),
+    );
     let tmpl = ErrorTemplate {
         nav_active: "Settings",
         flash: None,
@@ -366,6 +372,7 @@ pub async fn change_password(
         "[web] password changed successfully for username={}",
         auth.admin.username
     );
+    fire_webhook(&state, "settings.password_changed", serde_json::json!({"username": auth.admin.username}));
     let tmpl = ErrorTemplate {
         nav_active: "Settings",
         flash: None,
@@ -430,6 +437,7 @@ pub async fn enable_2fa(
         "[web] 2FA enabled successfully for username={}",
         auth.admin.username
     );
+    fire_webhook(&state, "settings.2fa_enabled", serde_json::json!({"username": auth.admin.username}));
     let tmpl = ErrorTemplate {
         nav_active: "Settings",
         flash: None,
@@ -456,6 +464,7 @@ pub async fn disable_2fa(auth: AuthAdmin, State(state): State<AppState>) -> Resp
         "[web] 2FA disabled successfully for username={}",
         auth.admin.username
     );
+    fire_webhook(&state, "settings.2fa_disabled", serde_json::json!({"username": auth.admin.username}));
     let tmpl = ErrorTemplate {
         nav_active: "Settings",
         flash: None,
