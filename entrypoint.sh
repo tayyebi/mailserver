@@ -28,17 +28,28 @@ chown -R opendkim:opendkim /data/dkim
 
 echo "[entrypoint] INFO: starting services"
 # Trap signals for clean container shutdown
-trap 'kill $(jobs -p) 2>/dev/null; wait; exit 0' SIGTERM SIGINT SIGQUIT
+trap 'kill $DOVECOT_PID $OPENDKIM_PID $MAILSERVER_PID $POSTFIX_PID $TAIL_PID 2>/dev/null; wait; exit 0' SIGTERM SIGINT SIGQUIT
 
 # Tail mail log to stdout for Docker log visibility
 # (Postfix and Dovecot write directly to /var/log/mail.log, no syslog needed)
 touch /var/log/mail.log
 tail -F /var/log/mail.log &
+TAIL_PID=$!
 
 dovecot -F &
+DOVECOT_PID=$!
 opendkim -f &
+OPENDKIM_PID=$!
 /usr/local/bin/mailserver serve &
+MAILSERVER_PID=$!
 postfix start-fg &
+POSTFIX_PID=$!
 
-# Wait for any child process to exit
-wait
+# Monitor all services — exit if any critical process dies
+while kill -0 $DOVECOT_PID 2>/dev/null && \
+      kill -0 $OPENDKIM_PID 2>/dev/null && \
+      kill -0 $MAILSERVER_PID 2>/dev/null && \
+      kill -0 $POSTFIX_PID 2>/dev/null; do
+    sleep 5
+done
+echo "[entrypoint] ERROR: a service has exited, shutting down"
