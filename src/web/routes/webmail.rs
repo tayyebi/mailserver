@@ -1,6 +1,7 @@
 use askama::Template;
 use axum::{
     extract::{Path, Query, State},
+    http::header,
     response::{Html, IntoResponse, Redirect, Response},
     Form,
 };
@@ -91,6 +92,35 @@ pub struct DeleteForm {
     pub folder: Option<String>,
 }
 
+#[derive(Deserialize, Default)]
+pub struct ComposePageQuery {
+    pub account_id: Option<i64>,
+    #[serde(default)]
+    pub to: String,
+    #[serde(default)]
+    pub cc: String,
+    #[serde(default)]
+    pub bcc: String,
+    #[serde(default)]
+    pub subject: String,
+    #[serde(default)]
+    pub reply_to: String,
+    #[serde(default)]
+    pub in_reply_to: String,
+    #[serde(default)]
+    pub priority: String,
+    #[serde(default)]
+    pub sender_name: String,
+    #[serde(default)]
+    pub from_address: String,
+    #[serde(default)]
+    pub body_format: String,
+    #[serde(default)]
+    pub body: String,
+    #[serde(default)]
+    pub custom_headers: String,
+}
+
 #[derive(Deserialize)]
 pub struct ComposeForm {
     pub account_id: i64,
@@ -116,6 +146,72 @@ pub struct ComposeForm {
     #[serde(default)]
     pub custom_headers: String,
     pub body: String,
+}
+
+#[derive(Clone, Default)]
+struct ComposeDefaults {
+    to: String,
+    cc: String,
+    bcc: String,
+    subject: String,
+    reply_to: String,
+    in_reply_to: String,
+    priority: String,
+    sender_name: String,
+    from_address: String,
+    body_format: String,
+    body: String,
+    custom_headers: String,
+}
+
+fn defaults_from_query(query: &ComposePageQuery) -> ComposeDefaults {
+    ComposeDefaults {
+        to: query.to.clone(),
+        cc: query.cc.clone(),
+        bcc: query.bcc.clone(),
+        subject: query.subject.clone(),
+        reply_to: query.reply_to.clone(),
+        in_reply_to: query.in_reply_to.clone(),
+        priority: if query.priority.is_empty() {
+            "normal".to_string()
+        } else {
+            query.priority.clone()
+        },
+        sender_name: query.sender_name.clone(),
+        from_address: query.from_address.clone(),
+        body_format: if query.body_format.is_empty() {
+            "plain".to_string()
+        } else {
+            query.body_format.clone()
+        },
+        body: query.body.clone(),
+        custom_headers: query.custom_headers.clone(),
+    }
+}
+
+fn defaults_from_form(form: &ComposeForm) -> ComposeDefaults {
+    ComposeDefaults {
+        to: form.to.clone(),
+        cc: form.cc.clone(),
+        bcc: form.bcc.clone(),
+        subject: form.subject.clone(),
+        reply_to: form.reply_to.clone(),
+        in_reply_to: form.in_reply_to.clone(),
+        priority: if form.priority.is_empty() {
+            "normal".to_string()
+        } else {
+            form.priority.clone()
+        },
+        sender_name: form.sender_name.clone(),
+        from_address: form.from_address.clone(),
+        body_format: if form.body_format.is_empty() {
+            "plain".to_string()
+        } else {
+            form.body_format.clone()
+        },
+        body: form.body.clone(),
+        custom_headers: form.custom_headers.clone(),
+    }
 }
 
 // ── Folder scanning ──
@@ -367,6 +463,7 @@ struct ComposeTemplate<'a> {
     flash: Option<&'a str>,
     accounts: Vec<Account>,
     selected_account: Option<Account>,
+    defaults: ComposeDefaults,
     send_log: Vec<String>,
 }
 
@@ -641,6 +738,293 @@ pub async fn view_email(
     Html(tmpl.render().unwrap()).into_response()
 }
 
+pub async fn download_email(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Path(filename_b64): Path<String>,
+    Query(query): Query<WebmailQuery>,
+) -> Response {
+    info!(
+        "[web] GET /webmail/download/{} — downloading email",
+        filename_b64
+    );
+
+    let account_id = match query.account_id {
+        Some(id) => id,
+        None => {
+            warn!("[web] no account_id provided for email download");
+            return Html("Missing account_id parameter".to_string()).into_response();
+        }
+    };
+
+    let acct = match state
+        .blocking_db(move |db| db.get_account_with_domain(account_id))
+        .await
+    {
+        Some(a) => a,
+        None => {
+            warn!(
+                "[web] account id={} not found for email download",
+                account_id
+            );
+            return Html("Account not found".to_string()).into_response();
+        }
+    };
+
+    let filename = match URL_SAFE_NO_PAD.decode(filename_b64.as_bytes()) {
+        Ok(bytes) => match String::from_utf8(bytes) {
+            Ok(s) => s,
+            Err(_) => {
+                error!("[web] invalid UTF-8 in decoded filename for download");
+                return Html("Invalid filename encoding".to_string()).into_response();
+            }
+        },
+        Err(e) => {
+            error!("[web] failed to decode base64 filename for download: {}", e);
+            return Html("Invalid filename encoding".to_string()).into_response();
+        }
+    };
+
+    let domain = acct.domain_name.as_deref().unwrap_or("unknown");
+    let current_folder = query
+        .folder
+        .as_deref()
+        .filter(|f| is_safe_folder(f))
+        .unwrap_or("")
+        .to_string();
+
+    if !is_safe_path_component(domain)
+        || !is_safe_path_component(&acct.username)
+        || !is_safe_path_component(&filename)
+        || !is_safe_folder(&current_folder)
+    {
+        warn!("[web] unsafe path component in download_email");
+        return Html("Invalid path component".to_string()).into_response();
+    }
+
+    let maildir_base = maildir_path(domain, &acct.username);
+    let root = folder_root(&maildir_base, &current_folder);
+
+    let mut file_path = None;
+    for subdir in &["new", "cur"] {
+        let candidate = format!("{}/{}/{}", root, subdir, filename);
+        if std::path::Path::new(&candidate).is_file() {
+            file_path = Some(candidate);
+            break;
+        }
+    }
+
+    let file_path = match file_path {
+        Some(p) => p,
+        None => {
+            warn!("[web] email file not found for download: {}", filename);
+            return Html("Email not found".to_string()).into_response();
+        }
+    };
+
+    let data = match std::fs::read(&file_path) {
+        Ok(d) => d,
+        Err(e) => {
+            error!("[web] failed to read email file for download: {}", e);
+            return Html("Failed to read email".to_string()).into_response();
+        }
+    };
+
+    let safe_name = format!(
+        "{}.eml",
+        filename.replace(['"', '\\', '/', ':'], "_")
+    );
+    let encoded_name = urlencoding_simple(&safe_name);
+    (
+        [
+            (header::CONTENT_TYPE, "message/rfc822".to_string()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!(
+                    "attachment; filename=\"{}\"; filename*=UTF-8''{}",
+                    safe_name, encoded_name
+                ),
+            ),
+        ],
+        data,
+    )
+        .into_response()
+}
+
+pub async fn reply_email(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Path(filename_b64): Path<String>,
+    Query(query): Query<WebmailQuery>,
+) -> Response {
+    info!(
+        "[web] GET /webmail/reply/{} — preparing reply",
+        filename_b64
+    );
+
+    let account_id = match query.account_id {
+        Some(id) => id,
+        None => {
+            warn!("[web] no account_id provided for email reply");
+            return Html("Missing account_id parameter".to_string()).into_response();
+        }
+    };
+
+    let acct = match state
+        .blocking_db(move |db| db.get_account_with_domain(account_id))
+        .await
+    {
+        Some(a) => a,
+        None => {
+            warn!("[web] account id={} not found for email reply", account_id);
+            return Html("Account not found".to_string()).into_response();
+        }
+    };
+
+    let filename = match URL_SAFE_NO_PAD.decode(filename_b64.as_bytes()) {
+        Ok(bytes) => match String::from_utf8(bytes) {
+            Ok(s) => s,
+            Err(_) => {
+                error!("[web] invalid UTF-8 in decoded filename for reply");
+                return Html("Invalid filename encoding".to_string()).into_response();
+            }
+        },
+        Err(e) => {
+            error!("[web] failed to decode base64 filename for reply: {}", e);
+            return Html("Invalid filename encoding".to_string()).into_response();
+        }
+    };
+
+    let domain = acct.domain_name.as_deref().unwrap_or("unknown");
+    let current_folder = query
+        .folder
+        .as_deref()
+        .filter(|f| is_safe_folder(f))
+        .unwrap_or("")
+        .to_string();
+
+    if !is_safe_path_component(domain)
+        || !is_safe_path_component(&acct.username)
+        || !is_safe_path_component(&filename)
+        || !is_safe_folder(&current_folder)
+    {
+        warn!("[web] unsafe path component in reply_email");
+        return Html("Invalid path component".to_string()).into_response();
+    }
+
+    let maildir_base = maildir_path(domain, &acct.username);
+    let root = folder_root(&maildir_base, &current_folder);
+
+    let mut file_path = None;
+    for subdir in &["new", "cur"] {
+        let candidate = format!("{}/{}/{}", root, subdir, filename);
+        if std::path::Path::new(&candidate).is_file() {
+            file_path = Some(candidate);
+            break;
+        }
+    }
+
+    let file_path = match file_path {
+        Some(p) => p,
+        None => {
+            warn!("[web] email file not found for reply: {}", filename);
+            return Html("Email not found".to_string()).into_response();
+        }
+    };
+
+    let data = match std::fs::read(&file_path) {
+        Ok(d) => d,
+        Err(e) => {
+            error!("[web] failed to read email file for reply: {}", e);
+            return Html("Failed to read email".to_string()).into_response();
+        }
+    };
+
+    let parsed = match mailparse::parse_mail(&data) {
+        Ok(p) => p,
+        Err(e) => {
+            error!("[web] failed to parse email for reply: {}", e);
+            return Html("Failed to parse email".to_string()).into_response();
+        }
+    };
+
+    let subject_raw = parsed
+        .headers
+        .iter()
+        .find(|h| h.get_key().eq_ignore_ascii_case("Subject"))
+        .map(|h| h.get_value())
+        .unwrap_or_default();
+    let from = parsed
+        .headers
+        .iter()
+        .find(|h| h.get_key().eq_ignore_ascii_case("From"))
+        .map(|h| h.get_value())
+        .unwrap_or_default();
+    let reply_to = parsed
+        .headers
+        .iter()
+        .find(|h| h.get_key().eq_ignore_ascii_case("Reply-To"))
+        .map(|h| h.get_value())
+        .unwrap_or_default();
+    let message_id = parsed
+        .headers
+        .iter()
+        .find(|h| h.get_key().eq_ignore_ascii_case("Message-ID"))
+        .map(|h| h.get_value())
+        .unwrap_or_default();
+    let body = extract_body(&parsed);
+
+    let mut defaults = ComposeDefaults {
+        priority: "normal".to_string(),
+        body_format: "plain".to_string(),
+        ..ComposeDefaults::default()
+    };
+    let recipient = if !reply_to.trim().is_empty() {
+        reply_to
+    } else {
+        from.clone()
+    };
+    let reply_subject = if subject_raw.to_lowercase().starts_with("re:") {
+        subject_raw
+    } else if subject_raw.is_empty() {
+        "Re:".to_string()
+    } else {
+        format!("Re: {}", subject_raw)
+    };
+
+    defaults.to = sanitize_header_value(&recipient);
+    defaults.subject = sanitize_header_value(&reply_subject);
+    defaults.in_reply_to = sanitize_header_value(&message_id);
+    if !body.is_empty() {
+        let quoted = body
+            .lines()
+            .fold(String::new(), |mut acc, line| {
+                if !acc.is_empty() {
+                    acc.push('\n');
+                }
+                acc.push_str("> ");
+                acc.push_str(line);
+                acc
+            });
+        defaults.body = format!("\n\n{}", quoted);
+    }
+
+    let accounts = state
+        .blocking_db(|db| db.list_all_accounts_with_domain())
+        .await;
+
+    let tmpl = ComposeTemplate {
+        nav_active: "Webmail",
+        flash: None,
+        accounts,
+        selected_account: Some(acct),
+        defaults,
+        send_log: Vec::new(),
+    };
+
+    Html(tmpl.render().unwrap()).into_response()
+}
+
 pub async fn delete_email(
     _auth: AuthAdmin,
     State(state): State<AppState>,
@@ -764,10 +1148,11 @@ fn find_body_part(parsed: &mailparse::ParsedMail, mime_type: &str) -> Option<Str
 pub async fn compose(
     _auth: AuthAdmin,
     State(state): State<AppState>,
-    Query(query): Query<WebmailQuery>,
+    Query(query): Query<ComposePageQuery>,
 ) -> Html<String> {
     info!("[web] GET /webmail/compose — compose email form");
 
+    let defaults = defaults_from_query(&query);
     let accounts = state
         .blocking_db(|db| db.list_all_accounts_with_domain())
         .await;
@@ -785,6 +1170,7 @@ pub async fn compose(
         flash: None,
         accounts,
         selected_account,
+        defaults,
         send_log: Vec::new(),
     };
     Html(tmpl.render().unwrap())
@@ -797,6 +1183,7 @@ pub async fn send_email(
 ) -> Html<String> {
     info!("[web] POST /webmail/send — sending email");
     let mut send_log: Vec<String> = Vec::new();
+    let defaults = defaults_from_form(&form);
     let flash: Option<String>;
 
     send_log.push(format!("Looking up account ID {}", form.account_id));
@@ -861,6 +1248,7 @@ pub async fn send_email(
                             flash: flash.as_deref(),
                             accounts,
                             selected_account: Some(acct.clone()),
+                            defaults: defaults.clone(),
                             send_log,
                         };
                         return Html(tmpl.render().unwrap());
@@ -990,6 +1378,7 @@ pub async fn send_email(
                                 flash: flash.as_deref(),
                                 accounts,
                                 selected_account: Some(acct.clone()),
+                                defaults: defaults.clone(),
                                 send_log,
                             };
                             return Html(tmpl.render().unwrap());
@@ -1025,6 +1414,7 @@ pub async fn send_email(
                                 flash: flash.as_deref(),
                                 accounts,
                                 selected_account: Some(acct.clone()),
+                                defaults: defaults.clone(),
                                 send_log,
                             };
                             return Html(tmpl.render().unwrap());
@@ -1046,6 +1436,7 @@ pub async fn send_email(
                             flash: flash.as_deref(),
                             accounts,
                             selected_account: Some(acct.clone()),
+                            defaults: defaults.clone(),
                             send_log,
                         };
                         return Html(tmpl.render().unwrap());
@@ -1080,6 +1471,7 @@ pub async fn send_email(
                 flash: flash.as_deref(),
                 accounts,
                 selected_account: Some(acct.clone()),
+                defaults: defaults.clone(),
                 send_log,
             };
             Html(tmpl.render().unwrap())
@@ -1096,6 +1488,7 @@ pub async fn send_email(
                 flash: flash.as_deref(),
                 accounts,
                 selected_account: None,
+                defaults,
                 send_log,
             };
             Html(tmpl.render().unwrap())
@@ -1105,7 +1498,10 @@ pub async fn send_email(
 
 #[cfg(test)]
 mod tests {
-    use super::{group_folders, is_safe_folder, maildir_path, WebmailFolder};
+    use super::{
+        defaults_from_form, defaults_from_query, group_folders, is_safe_folder, maildir_path,
+        ComposeForm, ComposePageQuery, WebmailFolder,
+    };
 
     #[test]
     fn maildir_path_uses_data_mail_root() {
@@ -1229,5 +1625,40 @@ mod tests {
             .children
             .iter()
             .any(|c| c.name == ".Archive.2023.Q1"));
+    }
+
+    #[test]
+    fn compose_defaults_from_query_sets_baseline_values() {
+        let query = ComposePageQuery::default();
+        let defaults = defaults_from_query(&query);
+        assert_eq!(defaults.priority, "normal");
+        assert_eq!(defaults.body_format, "plain");
+    }
+
+    #[test]
+    fn compose_defaults_from_form_preserves_user_input() {
+        let form = ComposeForm {
+            account_id: 1,
+            to: "to@example.com".into(),
+            cc: "cc@example.com".into(),
+            bcc: "bcc@example.com".into(),
+            subject: "Hello".into(),
+            reply_to: "reply@example.com".into(),
+            in_reply_to: "<message-id@example.com>".into(),
+            priority: "high".into(),
+            sender_name: "Alice".into(),
+            from_address: "alice@example.com".into(),
+            body_format: "html".into(),
+            custom_headers: "X-Test: 1".into(),
+            body: "<p>Hi</p>".into(),
+        };
+
+        let defaults = defaults_from_form(&form);
+        assert_eq!(defaults.to, "to@example.com");
+        assert_eq!(defaults.cc, "cc@example.com");
+        assert_eq!(defaults.subject, "Hello");
+        assert_eq!(defaults.priority, "high");
+        assert_eq!(defaults.body_format, "html");
+        assert_eq!(defaults.in_reply_to, "<message-id@example.com>");
     }
 }

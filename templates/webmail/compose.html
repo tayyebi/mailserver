@@ -13,50 +13,50 @@
     </select>
 
     <label for="sender_name">Sender Name (optional):</label>
-    <input type="text" name="sender_name" id="sender_name" placeholder="Display Name">
+    <input type="text" name="sender_name" id="sender_name" placeholder="Display Name" value="{{ defaults.sender_name }}">
 
     <label for="from_address">From Address (optional, overrides account address):</label>
-    <input type="text" name="from_address" id="from_address" placeholder="custom@example.com or Display Name &lt;custom@example.com&gt;">
+    <input type="text" name="from_address" id="from_address" placeholder="custom@example.com or Display Name &lt;custom@example.com&gt;" value="{{ defaults.from_address }}">
 
     <label for="to">To:</label>
-    <input type="text" name="to" id="to" required placeholder="recipient@example.com">
+    <input type="text" name="to" id="to" required placeholder="recipient@example.com" value="{{ defaults.to }}">
 
     <label for="cc">CC (optional):</label>
-    <input type="text" name="cc" id="cc" placeholder="cc1@example.com, cc2@example.com">
+    <input type="text" name="cc" id="cc" placeholder="cc1@example.com, cc2@example.com" value="{{ defaults.cc }}">
 
     <label for="bcc">BCC (optional):</label>
-    <input type="text" name="bcc" id="bcc" placeholder="bcc@example.com">
+    <input type="text" name="bcc" id="bcc" placeholder="bcc@example.com" value="{{ defaults.bcc }}">
 
     <label for="reply_to">Reply-To (optional):</label>
-    <input type="text" name="reply_to" id="reply_to" placeholder="reply@example.com">
+    <input type="text" name="reply_to" id="reply_to" placeholder="reply@example.com" value="{{ defaults.reply_to }}">
 
     <label for="subject">Subject (optional):</label>
-    <input type="text" name="subject" id="subject">
+    <input type="text" name="subject" id="subject" value="{{ defaults.subject }}">
 
     <label for="in_reply_to">In-Reply-To (optional):</label>
-    <input type="text" name="in_reply_to" id="in_reply_to" placeholder="&lt;message-id@example.com&gt;">
+    <input type="text" name="in_reply_to" id="in_reply_to" placeholder="&lt;message-id@example.com&gt;" value="{{ defaults.in_reply_to }}">
 
     <label for="priority">Priority:</label>
     <select name="priority" id="priority">
-      <option value="normal" selected>Normal</option>
-      <option value="lowest">Lowest</option>
-      <option value="low">Low</option>
-      <option value="high">High</option>
-      <option value="highest">Highest</option>
+      <option value="normal"{% if defaults.priority == "normal" %} selected{% endif %}>Normal</option>
+      <option value="lowest"{% if defaults.priority == "lowest" %} selected{% endif %}>Lowest</option>
+      <option value="low"{% if defaults.priority == "low" %} selected{% endif %}>Low</option>
+      <option value="high"{% if defaults.priority == "high" %} selected{% endif %}>High</option>
+      <option value="highest"{% if defaults.priority == "highest" %} selected{% endif %}>Highest</option>
     </select>
 
     <label for="body_format">Body Format:</label>
     <select name="body_format" id="body_format">
-      <option value="plain" selected>Plain Text</option>
-      <option value="html">HTML</option>
-      <option value="both">Both (Plain + HTML)</option>
+      <option value="plain"{% if defaults.body_format == "plain" %} selected{% endif %}>Plain Text</option>
+      <option value="html"{% if defaults.body_format == "html" %} selected{% endif %}>HTML</option>
+      <option value="both"{% if defaults.body_format == "both" %} selected{% endif %}>Both (Plain + HTML)</option>
     </select>
 
     <label for="body">Body:</label>
-    <textarea name="body" id="body" rows="12"></textarea>
+    <textarea name="body" id="body" rows="12">{{ defaults.body }}</textarea>
 
     <label for="custom_headers">Custom Headers (optional, one per line, format: Name: value):</label>
-    <textarea name="custom_headers" id="custom_headers" rows="3" placeholder="X-Custom-Header: value"></textarea>
+    <textarea name="custom_headers" id="custom_headers" rows="3" placeholder="X-Custom-Header: value">{{ defaults.custom_headers }}</textarea>
 
     <button type="submit">Send</button>
   </fieldset>

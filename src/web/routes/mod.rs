@@ -61,6 +61,8 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/queue/:id/flush", post(queue::flush_message))
         .route("/webmail", get(webmail::inbox))
         .route("/webmail/view/:filename", get(webmail::view_email))
+        .route("/webmail/download/:filename", get(webmail::download_email))
+        .route("/webmail/reply/:filename", get(webmail::reply_email))
         .route("/webmail/delete/:filename", post(webmail::delete_email))
         .route("/webmail/compose", get(webmail::compose))
         .route("/webmail/send", post(webmail::send_email))

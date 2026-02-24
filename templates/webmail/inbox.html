@@ -76,6 +76,8 @@
           </td>
           <td>
             <a href="/webmail/view/{{ email.filename }}?account_id={{ sel.id }}&folder={{ current_folder }}" class="button-small" aria-label="View email: {{ email.subject }}">View</a>
+            <a href="/webmail/reply/{{ email.filename }}?account_id={{ sel.id }}&folder={{ current_folder }}" class="button-small" aria-label="Reply to email: {{ email.subject }}">Reply</a>
+            <a href="/webmail/download/{{ email.filename }}?account_id={{ sel.id }}&folder={{ current_folder }}" class="button-small" aria-label="Download email: {{ email.subject }}">Download</a>
             <form method="post" action="/webmail/delete/{{ email.filename }}" class="form-inline">
               <input type="hidden" name="account_id" value="{{ sel.id }}">
               <input type="hidden" name="folder" value="{{ current_folder }}">

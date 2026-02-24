@@ -12,6 +12,10 @@
   <dt>Date</dt><dd>{{ date }}</dd>
   <dt>Subject</dt><dd>{{ subject }}</dd>
 </dl>
+<p>
+  <a href="/webmail/reply/{{ filename_b64 }}?account_id={{ account.id }}&folder={{ current_folder }}" class="button-small">Reply</a>
+  <a href="/webmail/download/{{ filename_b64 }}?account_id={{ account.id }}&folder={{ current_folder }}" class="button-small">Download (.eml)</a>
+</p>
 <form method="post" action="/webmail/delete/{{ filename_b64 }}" class="form-inline">
   <input type="hidden" name="account_id" value="{{ account.id }}">
   <input type="hidden" name="folder" value="{{ current_folder }}">
