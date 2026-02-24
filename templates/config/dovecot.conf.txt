@@ -40,7 +40,6 @@ auth_username_format = %u
 
 # Log directly to stdout (no syslog needed)
 log_path = /dev/stdout
-log_prefix = "dovecot: %s: "
 
 # Log authentication failures with client IP for fail2ban monitoring
 auth_verbose = yes
