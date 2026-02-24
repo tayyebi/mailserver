@@ -35,13 +35,13 @@ trap 'trap - TERM; kill 0' SIGTERM SIGINT SIGQUIT
 touch /var/log/mail.log
 
 dovecot -F 2>&1 | tee -a /var/log/mail.log &
-DOVECOT_PID=$!
+DOVECOT_PID=$!  # tee PID — exits when dovecot dies (pipe EOF)
 opendkim -f &
 OPENDKIM_PID=$!
 /usr/local/bin/mailserver serve &
 MAILSERVER_PID=$!
 postfix start-fg 2>&1 | tee -a /var/log/mail.log &
-POSTFIX_PID=$!
+POSTFIX_PID=$!  # tee PID — exits when postfix dies (pipe EOF)
 
 # Monitor all services — exit if any process dies
 while kill -0 $DOVECOT_PID 2>/dev/null && \
