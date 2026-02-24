@@ -6,8 +6,8 @@ mydestination = localhost
 inet_interfaces = all
 inet_protocols = all
 
-# Log directly to file (no syslog needed)
-maillog_file = /var/log/mail.log
+# Log directly to stdout (no syslog needed)
+maillog_file = /dev/stdout
 
 # Disable local alias database (we only use virtual domains)
 alias_maps =
