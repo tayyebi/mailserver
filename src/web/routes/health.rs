@@ -1,8 +1,11 @@
 use askama::Template;
 use axum::{extract::State, response::Html};
-use log::info;
+use log::{error, info};
+use std::path::Path;
+use std::process::Command;
 
 use crate::web::auth::AuthAdmin;
+use crate::web::routes::queue::parse_queue_output;
 use crate::web::AppState;
 
 #[derive(Template)]
@@ -10,83 +13,100 @@ use crate::web::AppState;
 struct HealthTemplate<'a> {
     nav_active: &'a str,
     flash: Option<&'a str>,
-    hostname: &'a str,
-    total: i64,
-    successes: i64,
-    failures: i64,
-    success_rate: String,
-    has_failures: bool,
-    recent_failures: Vec<HealthRow>,
+    outgoing_count: i64,
+    open_count: i64,
+    queue_summary: String,
+    queue_entries: Vec<QueueRow>,
+    queue_has_error: bool,
+    queue_error: String,
+    queue_has_entries: bool,
 }
 
+const POSTQUEUE_PATHS: [&str; 2] = ["/usr/sbin/postqueue", "/usr/bin/postqueue"];
+
 #[derive(Clone)]
-struct HealthRow {
-    created_at: String,
-    status: Option<i32>,
-    status_label: String,
-    cause: String,
+struct QueueRow {
+    id: String,
+    arrival_time: String,
     sender: String,
-    subject: String,
-    failed: bool,
+    recipients_display: String,
 }
 
 pub async fn page(_auth: AuthAdmin, State(state): State<AppState>) -> Html<String> {
     info!("[web] GET /health — delivery observability requested");
-    let (total, successes, raw_failures) = state.blocking_db(|db| db.get_delivery_health()).await;
-    let failures = total.saturating_sub(successes);
-    let success_rate_value = if total == 0 {
-        100.0
-    } else {
-        (successes as f64 / total as f64) * 100.0
-    };
-    let success_rate = format!("{:.1}", success_rate_value);
-
-    let recent_failures: Vec<HealthRow> = raw_failures
-        .into_iter()
-        .map(|log| {
-            let status_label = log
-                .response_status
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "error".to_string());
-            let has_error = !log.error.is_empty();
-            let cause_raw = if has_error {
-                log.error
-            } else {
-                log.response_body
-            };
-            let cause = if cause_raw.len() > 80 {
-                format!("{}…", &cause_raw[..80])
-            } else {
-                cause_raw
-            };
-            let failed = log
-                .response_status
-                .map(|s| s < 200 || s >= 400)
-                .unwrap_or(true)
-                || has_error;
-            HealthRow {
-                created_at: log.created_at,
-                status: log.response_status,
-                status_label,
-                cause,
-                sender: log.sender,
-                subject: log.subject,
-                failed,
-            }
-        })
-        .collect();
-    let has_failures = !recent_failures.is_empty();
+    let (outgoing_count, open_count) = state.blocking_db(|db| db.get_delivery_counters()).await;
+    let (queue_entries, queue_summary, queue_error) = read_queue_snapshot();
+    let queue_has_entries = !queue_entries.is_empty();
 
     let tmpl = HealthTemplate {
         nav_active: "Health",
         flash: None,
-        hostname: &state.hostname,
-        total,
-        successes,
-        failures,
-        success_rate,
-        has_failures,
-        recent_failures,
+        outgoing_count,
+        open_count,
+        queue_summary,
+        queue_entries,
+        queue_has_error: queue_error.is_some(),
+        queue_error: queue_error.unwrap_or_else(|| "".to_string()),
+        queue_has_entries,
     };
     Html(tmpl.render().expect("failed to render health template"))
+}
+
+fn read_queue_snapshot() -> (Vec<QueueRow>, String, Option<String>) {
+    let postqueue_bin = POSTQUEUE_PATHS
+        .into_iter()
+        .find(|path| Path::new(path).exists());
+
+    match postqueue_bin {
+        Some(bin) => match Command::new(bin).arg("-p").output() {
+            Ok(output) if output.status.success() => {
+                let raw = String::from_utf8_lossy(&output.stdout).to_string();
+                let summary = raw
+                    .lines()
+                    .find(|l| l.starts_with("--"))
+                    .unwrap_or("")
+                    .trim_start_matches("--")
+                    .trim()
+                    .to_string();
+                let mut entries = parse_queue_output(&raw)
+                    .into_iter()
+                    .map(|q| QueueRow {
+                        id: q.id,
+                        arrival_time: q.arrival_time,
+                        sender: q.sender,
+                        recipients_display: q.recipients.join(", "),
+                    })
+                    .collect::<Vec<_>>();
+                if entries.len() > 5 {
+                    entries.truncate(5);
+                }
+                (entries, summary, None)
+            }
+            Ok(output) => {
+                error!(
+                    "[health] postqueue failed with status {}: {}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                (
+                    Vec::new(),
+                    String::new(),
+                    Some("Failed to read queue output from postqueue.".to_string()),
+                )
+            }
+            Err(e) => {
+                error!("[health] failed to run postqueue: {}", e);
+                (
+                    Vec::new(),
+                    String::new(),
+                    Some("Failed to run postqueue command.".to_string()),
+                )
+            }
+        },
+        None => (
+            Vec::new(),
+            String::new(),
+            Some("postqueue binary not found in /usr/sbin or /usr/bin.".to_string()),
+        ),
+    }
 }

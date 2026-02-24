@@ -6,57 +6,41 @@
         <small>Delivery first</small>
         <h1>Health & Delivery</h1>
     </hgroup>
-    <p>Observe success rates and recent issues. Mail delivery must never be blocked, even if databases wobble.</p>
-    <div class="stats-grid">
-        <article>
-            <mark data-variant="success">{{ success_rate }}%</mark>
-            <strong>Success rate</strong>
-            <small>{{ successes }} / {{ total }} deliveries logged</small>
-        </article>
-        <article>
-            <mark data-variant="success">{{ successes }}</mark>
-            <strong>Successful events</strong>
-            <small>Webhooks / reinjections</small>
-        </article>
-        <article>
-            <mark data-variant="danger">{{ failures }}</mark>
-            <strong>Issues detected</strong>
-            <small>Last {{ total }} events</small>
-        </article>
-    </div>
+    <p>Observe live delivery health. Outgoing attempts and observed opens, plus current queue snapshot.</p>
+    <dl>
+        <dt>Outgoing messages (tracked)</dt>
+        <dd><mark data-variant="success">{{ outgoing_count }}</mark></dd>
+        <dt>Opens recorded</dt>
+        <dd><mark data-variant="success">{{ open_count }}</mark></dd>
+    </dl>
 </section>
 
 <section>
-    <h2>Recent delivery issues</h2>
-    {% if has_failures %}
-    <div class="table">
-        <div class="thead">
-            <div>When</div>
-            <div>Status</div>
-            <div>Cause</div>
-            <div>Sender</div>
-            <div>Subject</div>
-        </div>
-        {% for log in recent_failures %}
-        <div class="row">
-            <div>{{ log.created_at }}</div>
-            <div>
-                {% if log.failed %}
-                    <mark data-variant="danger">{{ log.status_label }}</mark>
-                {% else %}
-                    <mark data-variant="success">{{ log.status_label }}</mark>
-                {% endif %}
-            </div>
-            <div>
-                {{ log.cause }}
-            </div>
-            <div>{{ log.sender }}</div>
-            <div>{{ log.subject }}</div>
-        </div>
-        {% endfor %}
-    </div>
+    <h2>Postfix queue snapshot</h2>
+    {% if queue_has_error %}
+        <p><mark data-variant="danger">{{ queue_error }}</mark></p>
     {% else %}
-        <p>No recent failures — great job! Keep an eye on this page when making changes.</p>
+        <p>{{ queue_summary }}</p>
+        {% if queue_has_entries %}
+        <div class="table">
+            <div class="thead">
+                <div>Queue ID</div>
+                <div>Arrival</div>
+                <div>Sender</div>
+                <div>Recipients</div>
+            </div>
+            {% for entry in queue_entries %}
+            <div class="row">
+                <div>{{ entry.id }}</div>
+                <div>{{ entry.arrival_time }}</div>
+                <div>{{ entry.sender }}</div>
+                <div>{{ entry.recipients_display }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+            <p>No queued messages.</p>
+        {% endif %}
     {% endif %}
 </section>
 {% endblock %}

@@ -1357,6 +1357,22 @@ impl Database {
         (total, successes, recent_failures)
     }
 
+    /// Lightweight delivery counters for observability.
+    /// - outgoing_count: messages we attempted to send (tracked_messages rows)
+    /// - open_count: observed opens (pixel_opens rows)
+    pub fn get_delivery_counters(&self) -> (i64, i64) {
+        let mut conn = self.conn();
+        let outgoing_count: i64 = conn
+            .query_one("SELECT COUNT(*) FROM tracked_messages", &[])
+            .map(|row| row.get(0))
+            .unwrap_or(0);
+        let open_count: i64 = conn
+            .query_one("SELECT COUNT(*) FROM pixel_opens", &[])
+            .map(|row| row.get(0))
+            .unwrap_or(0);
+        (outgoing_count, open_count)
+    }
+
     // ── Fail2ban methods ──
 
     pub fn list_fail2ban_settings(&self) -> Vec<Fail2banSetting> {
