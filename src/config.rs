@@ -211,20 +211,8 @@ pub fn generate_postfix_master_cf(db: &Database) {
         }
     };
 
-    // The content filter is always active so that webhook events are logged for every
-    // processed message.  The `feature_filter_enabled` flag controls whether the filter
-    // applies content modifications (tracking pixels, footers, unsubscribe headers);
-    // it does NOT gate the filter pipeline itself.
-    let filter_line = "  -o content_filter=pixelfilter:local\n";
-    let filter_smtp_line = "  -o content_filter=pixelfilter-in:local\n";
-    let filter_service = "# Pixel filter service\npixelfilter unix -   n   n   -   10  pipe\n  flags=hq user=postfix argv=/usr/local/bin/mailserver filter -f ${sender} -- ${recipient}\npixelfilter-in unix -   n   n   -   10  pipe\n  flags=hq user=postfix argv=/usr/local/bin/mailserver filter --incoming -f ${sender} -- ${recipient}\n";
-
     let config = template
-        .replace("{{ generated_at }}", &generated_at())
-        .replace("{{ filter_smtp }}", filter_smtp_line)
-        .replace("{{ filter_submission }}", filter_line)
-        .replace("{{ filter_smtps }}", filter_line)
-        .replace("{{ filter_service }}", filter_service);
+        .replace("{{ generated_at }}", &generated_at());
 
     match fs::write("/etc/postfix/master.cf", config) {
         Ok(_) => debug!("[config] wrote /etc/postfix/master.cf"),
@@ -1061,21 +1049,21 @@ mod tests {
     }
 
     #[test]
-    fn master_cf_filter_service_constants_always_define_both_filter_directions() {
-        // The filter service constant must always configure both outgoing (pixelfilter)
+    fn master_cf_template_contains_both_filter_directions() {
+        // The master.cf template must always configure both outgoing (pixelfilter)
         // and incoming (pixelfilter-in) pipes so that webhooks fire for all email
         // regardless of the feature_filter_enabled setting.
-        let filter_service = "# Pixel filter service\npixelfilter unix -   n   n   -   10  pipe\n  flags=hq user=postfix argv=/usr/local/bin/mailserver filter -f ${sender} -- ${recipient}\npixelfilter-in unix -   n   n   -   10  pipe\n  flags=hq user=postfix argv=/usr/local/bin/mailserver filter --incoming -f ${sender} -- ${recipient}\n";
+        let template = load_template("postfix-master.cf.txt").unwrap();
         assert!(
-            filter_service.contains("pixelfilter unix"),
-            "filter service must include pixelfilter for outgoing email"
+            template.contains("pixelfilter unix"),
+            "master.cf template must include pixelfilter for outgoing email"
         );
         assert!(
-            filter_service.contains("pixelfilter-in unix"),
-            "filter service must include pixelfilter-in for incoming email"
+            template.contains("pixelfilter-in unix"),
+            "master.cf template must include pixelfilter-in for incoming email"
         );
         assert!(
-            filter_service.contains("--incoming"),
+            template.contains("--incoming"),
             "pixelfilter-in must pass --incoming flag to the filter subprocess"
         );
     }

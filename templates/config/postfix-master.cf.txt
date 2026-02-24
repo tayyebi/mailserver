@@ -3,9 +3,11 @@
 # service type  private unpriv  chroot  wakeup  maxproc command + args
 # ==========================================================================
 smtp      inet  n       -       n       -       -       smtpd
-{{ filter_smtp }}submission inet  n       -       n       -       -       smtpd
+  -o content_filter=pixelfilter-in:local
+submission inet  n       -       n       -       -       smtpd
   -o syslog_name=postfix/submission
-{{ filter_submission }}  -o smtpd_tls_security_level=encrypt
+  -o content_filter=pixelfilter:local
+  -o smtpd_tls_security_level=encrypt
   -o smtpd_tls_auth_only=no
   -o smtpd_sasl_auth_enable=yes
   -o smtpd_sasl_type=dovecot
@@ -13,7 +15,8 @@ smtp      inet  n       -       n       -       -       smtpd
   -o smtpd_recipient_restrictions=permit_sasl_authenticated,reject
 smtps     inet  n       -       n       -       -       smtpd
   -o syslog_name=postfix/smtps
-{{ filter_smtps }}  -o smtpd_tls_wrappermode=yes
+  -o content_filter=pixelfilter:local
+  -o smtpd_tls_wrappermode=yes
   -o smtpd_tls_auth_only=no
   -o smtpd_sasl_auth_enable=yes
   -o smtpd_sasl_type=dovecot
@@ -49,4 +52,8 @@ anvil     unix  -       -       n       -       1       anvil
 scache    unix  -       -       n       -       1       scache
 postlog   unix-dgram n  -       n       -       1       postlogd
 
-{{ filter_service }}
+# Pixel filter service
+pixelfilter unix -   n   n   -   10  pipe
+  flags=hq user=postfix argv=/usr/local/bin/mailserver filter -f ${sender} -- ${recipient}
+pixelfilter-in unix -   n   n   -   10  pipe
+  flags=hq user=postfix argv=/usr/local/bin/mailserver filter --incoming -f ${sender} -- ${recipient}
