@@ -82,6 +82,8 @@ disable_vrfy_command = yes
 # Limits
 message_size_limit = 31457280
 
+# Preserve environment variables from the container and pass them to pipe transports
+import_environment = TZ MAIL_CONFIG LANG DATABASE_URL HOSTNAME ADMIN_PORT
 # Export environment variables to pipe transport subprocesses (e.g. content filter)
 export_environment = TZ MAIL_CONFIG LANG DATABASE_URL HOSTNAME ADMIN_PORT
 

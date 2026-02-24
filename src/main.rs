@@ -32,8 +32,8 @@ fn main() {
                 "localhost".to_string()
             });
             let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
-                debug!("[main] DATABASE_URL not set, defaulting to postgres://mailserver:mailserver@db/mailserver");
-                "postgres://mailserver:mailserver@db/mailserver".to_string()
+                error!("[main] DATABASE_URL not set; ensure it is provided via environment");
+                std::process::exit(1);
             });
 
             info!(
@@ -69,8 +69,8 @@ fn main() {
         }
         "filter" => {
             let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
-                debug!("[filter] DATABASE_URL not set, defaulting to postgres://mailserver:mailserver@db/mailserver");
-                "postgres://mailserver:mailserver@db/mailserver".to_string()
+                error!("[filter] DATABASE_URL not set; ensure it is provided via environment");
+                std::process::exit(75);
             });
             // Prefer pixel_base_url stored in the database (if set), fall back to env var, then default
             let database = db::Database::open(&db_url);
@@ -140,8 +140,8 @@ fn main() {
         }
         "seed" => {
             let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
-                debug!("[seed] DATABASE_URL not set, defaulting to postgres://mailserver:mailserver@db/mailserver");
-                "postgres://mailserver:mailserver@db/mailserver".to_string()
+                error!("[seed] DATABASE_URL not set; ensure it is provided via environment");
+                std::process::exit(1);
             });
             let username = env::var("SEED_USER").unwrap_or_else(|_| {
                 debug!("[seed] SEED_USER not set, defaulting to admin");
@@ -163,8 +163,8 @@ fn main() {
         }
         "genconfig" => {
             let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
-                debug!("[genconfig] DATABASE_URL not set, defaulting to postgres://mailserver:mailserver@db/mailserver");
-                "postgres://mailserver:mailserver@db/mailserver".to_string()
+                error!("[genconfig] DATABASE_URL not set; ensure it is provided via environment");
+                std::process::exit(1);
             });
             let hostname = env::var("HOSTNAME").unwrap_or_else(|_| {
                 warn!("[genconfig] HOSTNAME not set, defaulting to localhost");
@@ -213,9 +213,7 @@ fn main() {
             println!("Environment variables:");
             println!("  ADMIN_PORT       Dashboard port (default: 8080)");
             println!("  HOSTNAME         Mail server hostname (default: localhost)");
-            println!(
-                "  DATABASE_URL    PostgreSQL connection string (default: postgres://mailserver:mailserver@db/mailserver)"
-            );
+            println!("  DATABASE_URL    PostgreSQL connection string (required)");
             println!("  PIXEL_BASE_URL   Base URL for tracking pixels");
             println!("  SEED_USER        Default admin username (default: admin)");
             println!("  SEED_PASS        Default admin password (default: admin)");
