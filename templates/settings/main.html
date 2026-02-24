@@ -88,19 +88,6 @@
   <button type="submit">Save Pixel Settings</button>
 </form>
 
-<h2>Webhook Notifications</h2>
-<p>When set, a POST request with JSON data will be sent to this URL each time an email is processed (incoming or outgoing). Leave blank to disable.</p>
-<form method="post" action="/settings/webhook">
-  <label>Webhook URL (optional)<br>
-    <input type="url" name="webhook_url" value="{{ webhook_url }}" placeholder="https://example.com/webhook">
-  </label>
-  <button type="submit">Save Webhook URL</button>
-</form>
-<form method="post" action="/settings/webhook/test" class="form-compact">
-  <button type="submit">Send Test Webhook</button>
-  <small><em>💡 Save the URL above before testing.</em></small>
-</form>
-
 <h2>Service Management</h2>
 <form method="post" action="/settings/restart-services" onsubmit="return confirm('This will restart Postfix, Dovecot, and OpenDKIM. Mail delivery will be briefly interrupted. Continue?')">
   <button type="submit">Restart Mail Services</button>
