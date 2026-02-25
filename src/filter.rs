@@ -1,5 +1,6 @@
 use log::{debug, error, info, warn};
 use std::io::{self, Read};
+use std::fs;
 use std::sync::mpsc;
 
 use crate::db::Database;
@@ -17,6 +18,8 @@ pub fn run_filter(
         sender,
         recipients.join(", ")
     );
+
+    let mut target_recipients = recipients.to_vec();
 
     // 1. Read entire email from stdin
     debug!("[filter] reading email from stdin");
@@ -43,6 +46,7 @@ pub fn run_filter(
     let mut modified = email_data.clone();
     let mut webhook_url = String::new();
     let mut suppressed = false;
+    let mut spambl_hit = false;
 
     // Try to retrieve webhook URL first (before other database operations).
     // If the database fails to open, we try again just for the webhook URL.
@@ -123,6 +127,7 @@ pub fn run_filter(
                         for rbl_host in &rbl_hostnames {
                             if check_rbl(&ip, rbl_host) {
                                 modified = inject_headers(&modified, "X-Spam-Flag: YES");
+                                spambl_hit = true;
                                 info!(
                                     "[filter] RBL hit for ip={} on {}, flagged as spam",
                                     ip, rbl_host
@@ -199,18 +204,41 @@ pub fn run_filter(
         }
     }
 
-    // 4. Strip invalid DKIM-Signature headers when email was modified, so OpenDKIM
+    // 4. If a spambl match was found on an incoming email, deliver to the Junk folder
+    //    (auto-creating it if necessary) instead of the Inbox.
+    if incoming && spambl_hit {
+        let mail_root = maildir_root();
+        let mut junk_recipients = Vec::new();
+        for rcpt in recipients {
+            if let Some(junk_rcpt) = move_recipient_to_junk(rcpt, &mail_root) {
+                info!(
+                    "[filter] spambl hit — delivering {} to Junk folder as {}",
+                    rcpt, junk_rcpt
+                );
+                junk_recipients.push(junk_rcpt);
+            } else {
+                warn!(
+                    "[filter] spambl hit for {}, but failed to prepare Junk folder; delivering normally",
+                    rcpt
+                );
+                junk_recipients.push(rcpt.clone());
+            }
+        }
+        target_recipients = junk_recipients;
+    }
+
+    // 5. Strip invalid DKIM-Signature headers when email was modified, so OpenDKIM
     //    can re-sign the modified content cleanly on the reinject port.
     if modified != email_data {
         debug!("[filter] email was modified, stripping DKIM-Signature headers before reinjection");
         modified = strip_dkim_signatures(&modified);
     }
 
-    // 5. Prepare email metadata for the webhook (shared by suppressed and normal code paths).
+    // 6. Prepare email metadata for the webhook (shared by suppressed and normal code paths).
     let email_was_modified = modified != email_data;
     let meta = EmailMetadata {
         sender: sender.to_string(),
-        recipients: recipients.to_vec(),
+        recipients: target_recipients.clone(),
         subject: subject.clone(),
         from: from_header.clone(),
         to: to_header.clone(),
@@ -225,7 +253,7 @@ pub fn run_filter(
         },
     };
 
-    // 6. If the email was suppressed because the recipient has unsubscribed, drop
+    // 7. If the email was suppressed because the recipient has unsubscribed, drop
     //    the message here (do not reinject) without an error so Postfix discards it.
     //    Fire the webhook so the event is still visible to the caller.
     if suppressed {
@@ -241,7 +269,7 @@ pub fn run_filter(
         return;
     }
 
-    // 7. Reinject via SMTP to 127.0.0.1:10025
+    // 8. Reinject via SMTP to 127.0.0.1:10025
     info!("[filter] reinjecting email via SMTP to 127.0.0.1:10025");
 
     // Spawn the webhook thread early so it can start in parallel with the reinject.
@@ -271,12 +299,12 @@ pub fn run_filter(
         })
     };
 
-    if let Err(e) = reinject_smtp(&modified, sender, recipients) {
+    if let Err(e) = reinject_smtp(&modified, sender, &target_recipients) {
         warn!(
             "[filter] failed to reinject modified email: {}. attempting unmodified fallback",
             e
         );
-        if let Err(e) = reinject_smtp(&email_data, sender, recipients) {
+        if let Err(e) = reinject_smtp(&email_data, sender, &target_recipients) {
             error!(
                 "[filter] failed to reinject unmodified fallback email: {}",
                 e
@@ -721,6 +749,45 @@ fn check_rbl(ip: &str, rbl_host: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn maildir_root() -> String {
+    "/data/mail".to_string()
+}
+
+fn move_recipient_to_junk(recipient: &str, mail_root: &str) -> Option<String> {
+    let mut parts = recipient.split('@');
+    let local = parts.next()?.trim();
+    let domain = parts.next()?.trim();
+    if parts.next().is_some() || local.is_empty() || domain.is_empty() {
+        return None;
+    }
+    if local.contains('/') || domain.contains('/') || local.contains("..") || domain.contains("..") {
+        return None;
+    }
+
+    let base_local = local.split('+').next().unwrap_or(local);
+    let root = mail_root.trim_end_matches('/');
+    let maildir_base = format!("{}/{}/{}/Maildir", root, domain, base_local);
+    let junk_root = format!("{}/.Junk", maildir_base);
+
+    for dir in [
+        maildir_base.as_str(),
+        &format!("{}/new", maildir_base),
+        &format!("{}/cur", maildir_base),
+        &format!("{}/tmp", maildir_base),
+        junk_root.as_str(),
+        &format!("{}/new", junk_root),
+        &format!("{}/cur", junk_root),
+        &format!("{}/tmp", junk_root),
+    ] {
+        if let Err(e) = fs::create_dir_all(dir) {
+            warn!("[filter] failed to create maildir directory {}: {}", dir, e);
+            return None;
+        }
+    }
+
+    Some(format!("{}+Junk@{}", base_local, domain))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1029,6 +1096,32 @@ mod tests {
     fn check_rbl_returns_false_for_invalid_ip() {
         assert!(!check_rbl("not-an-ip", "zen.spamhaus.org"));
         assert!(!check_rbl("1.2.3", "zen.spamhaus.org"));
+    }
+
+    #[test]
+    fn move_recipient_to_junk_creates_directories_and_rewrites_address() {
+        let temp = std::env::temp_dir().join(format!("maildir_test_{}", uuid::Uuid::new_v4()));
+        let root = temp.to_string_lossy().to_string();
+        let result = move_recipient_to_junk("alice@example.com", &root).unwrap();
+        assert_eq!(result, "alice+Junk@example.com");
+
+        let junk_new = temp
+            .join("example.com")
+            .join("alice")
+            .join("Maildir")
+            .join(".Junk")
+            .join("new");
+        assert!(junk_new.exists());
+
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn move_recipient_to_junk_rejects_invalid_address() {
+        let temp = std::env::temp_dir().join("maildir_invalid");
+        let root = temp.to_string_lossy().to_string();
+        assert!(move_recipient_to_junk("not-an-email", &root).is_none());
+        let _ = std::fs::remove_dir_all(&temp);
     }
 
     #[test]
