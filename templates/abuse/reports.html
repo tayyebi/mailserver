@@ -1,0 +1,122 @@
+{% extends "layout.html" %}
+{% block title %}Abuse Reports{% endblock %}
+{% block content %}
+<h1>Abuse Reports</h1>
+<p><a href="/abuse">← Back to Abuse Inboxes</a></p>
+<p>
+  Inbox: <strong>{{ inbox.account_username.as_deref().unwrap_or("?") }}@{{ inbox.account_domain.as_deref().unwrap_or("?") }}</strong>
+  {% if !inbox.label.is_empty() %} — {{ inbox.label }}{% endif %}
+</p>
+
+<div class="pagination-wrap">
+  <p>
+    {{ total_count }} abuse report{% if total_count != 1 %}s{% endif %} found.
+    Showing page {{ page }} of {{ total_pages }} ({{ page_size }} per page).
+  </p>
+  {% if total_pages > 1 %}
+  <div class="pagination-links">
+    {% if page > 1 %}
+    <a href="/abuse/{{ inbox.id }}/reports?page=1">First</a>
+    <a href="/abuse/{{ inbox.id }}/reports?page={{ page - 1 }}">Previous</a>
+    {% endif %}
+    {% if page < total_pages %}
+    <a href="/abuse/{{ inbox.id }}/reports?page={{ page + 1 }}">Next</a>
+    <a href="/abuse/{{ inbox.id }}/reports?page={{ total_pages }}">Last</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+{% if reports.is_empty() %}
+<p>No ARF abuse reports found in this inbox. Make sure the account's mailbox contains ARF feedback report emails (RFC 5965) with <code>Content-Type: multipart/report; report-type=feedback-report</code>.</p>
+{% else %}
+{% for report in reports %}
+<details open>
+  <summary>
+    <strong>{{ report.email_subject }}</strong>
+    <span class="report-date">{{ report.email_date }}</span>
+  </summary>
+  <div class="report-body">
+
+    <h3>Feedback Report Fields (RFC 5965)</h3>
+    <dl>
+      <dt>Feedback Type</dt>
+      <dd>
+        {% if report.fields.feedback_type == "abuse" %}
+        <mark data-variant="danger">abuse</mark>
+        {% else if report.fields.feedback_type == "spam" %}
+        <mark data-variant="danger">spam</mark>
+        {% else if report.fields.feedback_type == "fraud" %}
+        <mark data-variant="danger">fraud</mark>
+        {% else if report.fields.feedback_type == "virus" %}
+        <mark data-variant="danger">virus</mark>
+        {% else if report.fields.feedback_type == "not-spam" %}
+        <mark data-variant="success">not-spam</mark>
+        {% else %}
+        <mark data-variant="muted">{{ report.fields.feedback_type }}</mark>
+        {% endif %}
+      </dd>
+      <dt>Version</dt><dd>{{ report.fields.version }}</dd>
+      {% if !report.fields.user_agent.is_empty() %}
+      <dt>User-Agent</dt><dd>{{ report.fields.user_agent }}</dd>
+      {% endif %}
+      {% if !report.fields.reported_domain.is_empty() %}
+      <dt>Reported Domain</dt><dd><code>{{ report.fields.reported_domain }}</code></dd>
+      {% endif %}
+      {% if !report.fields.source_ip.is_empty() %}
+      <dt>Source IP</dt><dd><code>{{ report.fields.source_ip }}</code></dd>
+      {% endif %}
+      {% if !report.fields.arrival_date.is_empty() %}
+      <dt>Arrival Date</dt><dd>{{ report.fields.arrival_date }}</dd>
+      {% endif %}
+      {% if !report.fields.original_rcpt_to.is_empty() %}
+      <dt>Original Recipient</dt><dd><code>{{ report.fields.original_rcpt_to }}</code></dd>
+      {% endif %}
+      {% if !report.fields.original_mail_from.is_empty() %}
+      <dt>Original Sender</dt><dd><code>{{ report.fields.original_mail_from }}</code></dd>
+      {% endif %}
+    </dl>
+
+    {% if !report.original_subject.is_empty() || !report.original_from.is_empty() %}
+    <h3>Original Reported Message</h3>
+    <dl>
+      {% if !report.original_from.is_empty() %}
+      <dt>From</dt><dd>{{ report.original_from }}</dd>
+      {% endif %}
+      {% if !report.original_subject.is_empty() %}
+      <dt>Subject</dt><dd>{{ report.original_subject }}</dd>
+      {% endif %}
+    </dl>
+    {% endif %}
+
+  </div>
+</details>
+{% endfor %}
+{% endif %}
+
+<div class="pagination-wrap">
+  {% if total_pages > 1 %}
+  <p>Page {{ page }} of {{ total_pages }} ({{ total_count }} total)</p>
+  <div class="pagination-links">
+    {% if page > 1 %}
+      <a href="/abuse/{{ inbox.id }}/reports?page=1">First</a>
+      <a href="/abuse/{{ inbox.id }}/reports?page={{ page - 1 }}">Previous</a>
+    {% endif %}
+    {% if page < total_pages %}
+      <a href="/abuse/{{ inbox.id }}/reports?page={{ page + 1 }}">Next</a>
+      <a href="/abuse/{{ inbox.id }}/reports?page={{ total_pages }}">Last</a>
+    {% endif %}
+  </div>
+  {% else %}
+  <p>{{ total_count }} total report{% if total_count != 1 %}s{% endif %}</p>
+  {% endif %}
+</div>
+
+{% if !logs.is_empty() %}
+<details>
+  <summary>Verbose Log</summary>
+  <pre>{% for line in logs %}{{ line }}
+{% endfor %}</pre>
+</details>
+{% endif %}
+{% endblock %}

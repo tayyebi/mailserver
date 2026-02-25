@@ -1,3 +1,4 @@
+pub mod abuse;
 pub mod accounts;
 pub mod aliases;
 pub mod api_docs;
@@ -128,6 +129,9 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/dmarc", get(dmarc::list).post(dmarc::create))
         .route("/dmarc/:id/delete", post(dmarc::delete))
         .route("/dmarc/:id/reports", get(dmarc::reports))
+        .route("/abuse", get(abuse::list).post(abuse::create))
+        .route("/abuse/:id/delete", post(abuse::delete))
+        .route("/abuse/:id/reports", get(abuse::reports))
         .route("/relays/new", get(relays::new_form))
         .route("/relays", get(relays::list).post(relays::create))
         .route("/relays/:id/edit", get(relays::edit_form))
