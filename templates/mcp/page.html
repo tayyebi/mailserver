@@ -1,0 +1,156 @@
+{% extends "layout.html" %}
+{% block title %}MCP — Model Context Protocol{% endblock %}
+{% block content %}
+<section>
+    <hgroup>
+        <small>AI integration</small>
+        <h1>MCP — Model Context Protocol</h1>
+    </hgroup>
+    <p>This server exposes a <strong>JSON-RPC 2.0</strong> endpoint at <code>{{ endpoint_url }}</code> that AI agents can use to manage email via the <a href="https://modelcontextprotocol.io" target="_blank">Model Context Protocol</a>.</p>
+</section>
+
+<section>
+    <hgroup>
+        <small>Connection details</small>
+        <h2>Endpoint</h2>
+    </hgroup>
+    <dl>
+        <dt>URL</dt><dd><code>{{ endpoint_url }}</code></dd>
+        <dt>Method</dt><dd><code>POST</code></dd>
+        <dt>Content-Type</dt><dd><code>application/json</code></dd>
+        <dt>Authentication</dt><dd>HTTP Basic Auth — same admin username and password as the web UI</dd>
+        <dt>Protocol</dt><dd>JSON-RPC 2.0 / MCP 2024-11-05</dd>
+    </dl>
+</section>
+
+<section>
+    <hgroup>
+        <small>Available tools</small>
+        <h2>Tools</h2>
+    </hgroup>
+    <table>
+        <thead>
+            <tr><th>Tool</th><th>Description</th><th>Required parameters</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>list_accounts</code></td>
+                <td>List all mail accounts on the server</td>
+                <td>—</td>
+            </tr>
+            <tr>
+                <td><code>list_emails</code></td>
+                <td>List emails in a mail account's inbox or named folder (20 per page)</td>
+                <td><code>account_id</code></td>
+            </tr>
+            <tr>
+                <td><code>read_email</code></td>
+                <td>Read the full content of a single email</td>
+                <td><code>account_id</code>, <code>filename</code></td>
+            </tr>
+            <tr>
+                <td><code>send_email</code></td>
+                <td>Send an email from a mail account via the local SMTP server</td>
+                <td><code>account_id</code>, <code>to</code>, <code>subject</code>, <code>body</code></td>
+            </tr>
+            <tr>
+                <td><code>delete_email</code></td>
+                <td>Permanently delete an email from a mail account</td>
+                <td><code>account_id</code>, <code>filename</code></td>
+            </tr>
+        </tbody>
+    </table>
+</section>
+
+<section>
+    <hgroup>
+        <small>Quick start</small>
+        <h2>Usage example</h2>
+    </hgroup>
+    <details>
+        <summary>Initialize connection</summary>
+        <pre><code>curl -s -u admin:password -X POST {{ endpoint_url }} \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'</code></pre>
+    </details>
+    <details>
+        <summary>List available tools</summary>
+        <pre><code>curl -s -u admin:password -X POST {{ endpoint_url }} \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'</code></pre>
+    </details>
+    <details>
+        <summary>List accounts</summary>
+        <pre><code>curl -s -u admin:password -X POST {{ endpoint_url }} \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_accounts","arguments":{}}}'</code></pre>
+    </details>
+    <details>
+        <summary>List emails for account 1</summary>
+        <pre><code>curl -s -u admin:password -X POST {{ endpoint_url }} \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"list_emails","arguments":{"account_id":1}}}'</code></pre>
+    </details>
+    <details>
+        <summary>Send an email</summary>
+        <pre><code>curl -s -u admin:password -X POST {{ endpoint_url }} \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "jsonrpc":"2.0","id":5,"method":"tools/call",
+  "params":{
+    "name":"send_email",
+    "arguments":{
+      "account_id":1,
+      "to":"recipient@example.com",
+      "subject":"Hello from MCP",
+      "body":"This email was sent via the MCP API."
+    }
+  }
+}'</code></pre>
+    </details>
+</section>
+
+<section>
+    <hgroup>
+        <small>{{ total_calls }} total call(s)</small>
+        <h2>Call Logs</h2>
+    </hgroup>
+    {% if logs.is_empty() %}
+    <p>No MCP calls recorded yet.</p>
+    {% else %}
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Date</th>
+                <th>Method</th>
+                <th>Tool</th>
+                <th>Status</th>
+                <th>Duration</th>
+                <th>Error</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for l in logs %}
+        <tr>
+            <td>{{ l.id }}</td>
+            <td>{{ l.created_at }}</td>
+            <td><code>{{ l.method }}</code></td>
+            <td>{% if !l.tool.is_empty() %}<code>{{ l.tool }}</code>{% else %}—{% endif %}</td>
+            <td>{% if l.success %}<mark data-variant="success">ok</mark>{% else %}<mark data-variant="danger">error</mark>{% endif %}</td>
+            <td>{% if let Some(ms) = l.duration_ms %}{{ ms }} ms{% else %}—{% endif %}</td>
+            <td>{% if !l.error.is_empty() %}<small>{{ l.error }}</small>{% endif %}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% if total_pages > 1 %}
+    <nav>
+        {% if page > 1 %}<a href="/mcp?page={{ page - 1 }}">&laquo; Prev</a>{% endif %}
+        <span>Page {{ page }} / {{ total_pages }}</span>
+        {% if page < total_pages %}<a href="/mcp?page={{ page + 1 }}">Next &raquo;</a>{% endif %}
+    </nav>
+    {% endif %}
+    {% endif %}
+</section>
+{% endblock %}

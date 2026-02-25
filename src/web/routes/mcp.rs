@@ -15,7 +15,8 @@
 //!   `send_email`    — Send an email from an account
 //!   `delete_email`  — Delete an email from an account
 
-use axum::{extract::State, Json};
+use askama::Template;
+use axum::{extract::State, response::Html, Json};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use log::{info, warn};
@@ -212,6 +213,45 @@ pub fn tools_list_value() -> Value {
     })
 }
 
+// ── Admin page ────────────────────────────────────────────────────────────────
+
+const PAGE_SIZE_LOGS: i64 = 50;
+
+#[derive(Template)]
+#[template(path = "mcp/page.html")]
+struct McpPageTemplate<'a> {
+    nav_active: &'a str,
+    flash: Option<&'a str>,
+    endpoint_url: String,
+    total_calls: i64,
+    logs: Vec<crate::db::McpLog>,
+    page: i64,
+    total_pages: i64,
+}
+
+pub async fn page(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+) -> Html<String> {
+    info!("[web] GET /mcp — admin page");
+    let total_calls = state.blocking_db(|db| db.count_mcp_logs()).await;
+    let total_pages = ((total_calls + PAGE_SIZE_LOGS - 1) / PAGE_SIZE_LOGS).max(1);
+    let logs = state
+        .blocking_db(move |db| db.list_mcp_logs(PAGE_SIZE_LOGS, 0))
+        .await;
+    let endpoint_url = format!("https://{}/mcp", state.hostname);
+    let tmpl = McpPageTemplate {
+        nav_active: "MCP",
+        flash: None,
+        endpoint_url,
+        total_calls,
+        logs,
+        page: 1,
+        total_pages,
+    };
+    Html(tmpl.render().unwrap())
+}
+
 // ── HTTP handler ──────────────────────────────────────────────────────────────
 
 pub async fn handle(
@@ -222,6 +262,8 @@ pub async fn handle(
     info!("[mcp] method={}", req.method);
 
     let id = req.id.clone();
+    let method = req.method.clone();
+    let started = std::time::Instant::now();
 
     let result = match req.method.as_str() {
         "initialize" => Ok(json!({
@@ -238,17 +280,54 @@ pub async fn handle(
         "tools/call" => dispatch_tool_call(&state, &req).await,
         other => {
             warn!("[mcp] unknown method: {}", other);
-            return Json(McpResponse::err(
-                id,
-                -32601,
-                format!("Method not found: {}", other),
-            ));
+            let duration_ms = started.elapsed().as_millis() as i64;
+            let err_msg = format!("Method not found: {}", other);
+            let state2 = state.clone();
+            let method2 = method.clone();
+            let err2 = err_msg.clone();
+            tokio::spawn(async move {
+                state2.blocking_db(move |db| {
+                    db.log_mcp_call(&method2, None, false, &err2, duration_ms)
+                }).await;
+            });
+            return Json(McpResponse::err(id, -32601, err_msg));
         }
     };
 
+    let duration_ms = started.elapsed().as_millis() as i64;
+    let tool = if method == "tools/call" {
+        req.params
+            .as_ref()
+            .and_then(|p| p["name"].as_str())
+            .map(str::to_string)
+    } else {
+        None
+    };
+
     match result {
-        Ok(v) => Json(McpResponse::ok(id, v)),
-        Err(e) => Json(McpResponse::err(id, -32603, e)),
+        Ok(v) => {
+            let state2 = state.clone();
+            let method2 = method.clone();
+            let tool2 = tool.clone();
+            tokio::spawn(async move {
+                state2.blocking_db(move |db| {
+                    db.log_mcp_call(&method2, tool2.as_deref(), true, "", duration_ms)
+                }).await;
+            });
+            Json(McpResponse::ok(id, v))
+        }
+        Err(e) => {
+            let state2 = state.clone();
+            let method2 = method.clone();
+            let tool2 = tool.clone();
+            let e2 = e.clone();
+            tokio::spawn(async move {
+                state2.blocking_db(move |db| {
+                    db.log_mcp_call(&method2, tool2.as_deref(), false, &e2, duration_ms)
+                }).await;
+            });
+            Json(McpResponse::err(id, -32603, e))
+        }
     }
 }
 

@@ -284,6 +284,17 @@ pub struct CalDavCalendarWithAccount {
     pub account_domain: Option<String>,
 }
 
+#[derive(Clone, Serialize)]
+pub struct McpLog {
+    pub id: i64,
+    pub method: String,
+    pub tool: String,
+    pub success: bool,
+    pub error: String,
+    pub duration_ms: Option<i64>,
+    pub created_at: String,
+}
+
 fn load_available_migrations() -> Vec<(String, String)> {
     let mut migrations = Vec::new();
     let paths = vec!["migrations", "/app/migrations"];
@@ -3011,6 +3022,60 @@ impl Database {
         ) {
             error!("[db] failed to delete CalDAV object by filename: {}", e);
         }
+    }
+
+    // ── MCP log methods ──
+
+    pub fn log_mcp_call(
+        &self,
+        method: &str,
+        tool: Option<&str>,
+        success: bool,
+        error: &str,
+        duration_ms: i64,
+    ) {
+        debug!("[db] logging mcp call method={}", method);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
+            "INSERT INTO mcp_logs (method, tool, success, error, duration_ms, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6)",
+            &[&method, &tool, &success, &error, &duration_ms, &now()],
+        ) {
+            error!("[db] failed to log mcp call: {}", e);
+        }
+    }
+
+    pub fn count_mcp_logs(&self) -> i64 {
+        let mut conn = self.conn();
+        conn.query_one("SELECT COUNT(*) FROM mcp_logs", &[])
+            .map(|row| row.get(0))
+            .unwrap_or(0)
+    }
+
+    pub fn list_mcp_logs(&self, limit: i64, offset: i64) -> Vec<McpLog> {
+        debug!("[db] listing mcp logs limit={} offset={}", limit, offset);
+        let mut conn = self.conn();
+        let rows = conn
+            .query(
+                "SELECT id, method, tool, success, error, duration_ms, created_at
+                 FROM mcp_logs ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+                &[&limit, &offset],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list mcp logs: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| McpLog {
+                id: row.get(0),
+                method: row.get(1),
+                tool: row.get::<_, Option<String>>(2).unwrap_or_default(),
+                success: row.get(3),
+                error: row.get::<_, Option<String>>(4).unwrap_or_default(),
+                duration_ms: row.get(5),
+                created_at: row.get(6),
+            })
+            .collect()
     }
 }
 
