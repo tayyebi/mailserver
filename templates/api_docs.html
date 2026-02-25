@@ -6,22 +6,42 @@
         <small>Integration reference</small>
         <h1>REST API</h1>
     </hgroup>
-    <p>This mailserver exposes several HTTP endpoints for programmatic integration. All authenticated endpoints use HTTP Basic Auth with the admin credentials unless stated otherwise.</p>
+    <p>This mailserver exposes HTTP endpoints for programmatic email access. Authenticate with HTTP Basic Auth (admin credentials) or a Bearer token.</p>
 </section>
+
+{% if let Some(msg) = flash %}
+<output>{{ msg }}</output>
+{% endif %}
 
 <section>
     <hgroup>
-        <small>Live counters</small>
-        <h2>API Statistics</h2>
+        <small>Programmatic access</small>
+        <h2>Bearer Token</h2>
     </hgroup>
-    <div>
-        <article><data value="{{ stats.webhook_count }}">{{ stats.webhook_count }}</data><strong>Webhook Calls</strong><small>Events dispatched</small></article>
-        <article><data value="{{ stats.tracked_count }}">{{ stats.tracked_count }}</data><strong>Tracked Messages</strong><small>Pixels injected</small></article>
-        <article><data value="{{ stats.open_count }}">{{ stats.open_count }}</data><strong>Pixel Opens</strong><small>Engagement events</small></article>
-        <article><data value="{{ stats.unsubscribe_count }}">{{ stats.unsubscribe_count }}</data><strong>Unsubscribes</strong><small>Opt-out records</small></article>
-        <article><data value="{{ stats.domain_count }}">{{ stats.domain_count }}</data><strong>Domains</strong><small>Managed zones</small></article>
-        <article><data value="{{ stats.account_count }}">{{ stats.account_count }}</data><strong>Accounts</strong><small>Provisioned mailboxes</small></article>
-    </div>
+    <p>Generate a long-lived token to authenticate API requests without sending your admin password. Pass it as <code>Authorization: Bearer &lt;token&gt;</code>.</p>
+    {% if let Some(token) = api_token %}
+    {% if token != "" %}
+    <dl>
+        <dt>Current token</dt>
+        <dd><code style="word-break:break-all">{{ token }}</code></dd>
+    </dl>
+    {% endif %}
+    {% endif %}
+    <form method="post" action="/api/token/generate" onsubmit="return confirm('This will replace any existing token. Continue?')">
+        <button type="submit">Generate New Token</button>
+    </form>
+    {% if let Some(token) = api_token %}
+    {% if token != "" %}
+    <form method="post" action="/api/token/revoke" style="margin-top:0.5rem" onsubmit="return confirm('This will invalidate the current token. Continue?')">
+        <button type="submit">Revoke Token</button>
+    </form>
+    {% endif %}
+    {% endif %}
+    <details style="margin-top:1rem">
+        <summary>Usage example</summary>
+        <pre><code>curl -H "Authorization: Bearer &lt;your-token&gt;" \
+  https://{{ hostname }}/api/emails?account_id=1</code></pre>
+    </details>
 </section>
 
 <section>
@@ -29,7 +49,7 @@
         <small>Email operations</small>
         <h2>Email REST API</h2>
     </hgroup>
-    <p>RESTful JSON endpoints for listing, reading, sending, and deleting emails. Authentication: HTTP Basic Auth (admin credentials).</p>
+    <p>RESTful JSON endpoints for listing, reading, sending, and deleting emails. Authentication: HTTP Basic Auth (admin credentials) or Bearer token.</p>
     <table>
         <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
         <tbody>
@@ -40,7 +60,7 @@
         </tbody>
     </table>
     <dl>
-        <dt>Auth</dt><dd>HTTP Basic Auth (admin username / password)</dd>
+        <dt>Auth</dt><dd>HTTP Basic Auth (admin username / password) or <code>Authorization: Bearer &lt;token&gt;</code></dd>
         <dt>Content-Type</dt><dd><code>application/json</code> (for POST requests)</dd>
         <dt>filename</dt><dd>Base64url-encoded (no padding) email filename as returned by the list endpoint</dd>
         <dt>folder</dt><dd>Maildir subfolder (e.g. <code>.Sent</code>, <code>.Junk</code>). Omit or leave empty for INBOX.</dd>
@@ -48,7 +68,7 @@
     <details>
         <summary>Example: list emails</summary>
         <pre><code>GET /api/emails?account_id=1&amp;page=1
-Authorization: Basic &lt;base64(admin:password)&gt;</code></pre>
+Authorization: Bearer &lt;token&gt;</code></pre>
         <pre><code>{
   "account_id": 1,
   "folder": "INBOX",
@@ -71,7 +91,7 @@ Authorization: Basic &lt;base64(admin:password)&gt;</code></pre>
     <details>
         <summary>Example: read email</summary>
         <pre><code>GET /api/emails/&lt;filename&gt;?account_id=1
-Authorization: Basic &lt;base64(admin:password)&gt;</code></pre>
+Authorization: Bearer &lt;token&gt;</code></pre>
         <pre><code>{
   "filename": "base64url-encoded-filename",
   "subject": "Hello",
@@ -85,7 +105,7 @@ Authorization: Basic &lt;base64(admin:password)&gt;</code></pre>
     <details>
         <summary>Example: send email</summary>
         <pre><code>POST /api/emails
-Authorization: Basic &lt;base64(admin:password)&gt;
+Authorization: Bearer &lt;token&gt;
 Content-Type: application/json
 
 {
@@ -104,198 +124,9 @@ Content-Type: application/json
     <details>
         <summary>Example: delete email</summary>
         <pre><code>DELETE /api/emails/&lt;filename&gt;?account_id=1
-Authorization: Basic &lt;base64(admin:password)&gt;</code></pre>
+Authorization: Bearer &lt;token&gt;</code></pre>
         <pre><code>{"status": "deleted"}</code></pre>
     </details>
 </section>
-
-<section>
-    <hgroup>
-        <small>AI / LLM integration</small>
-        <h2>MCP — Model Context Protocol</h2>
-    </hgroup>
-    <p>JSON-RPC 2.0 endpoint for AI agents. Authentication: HTTP Basic Auth (admin credentials).</p>
-    <dl>
-        <dt>Endpoint</dt><dd><code>POST /mcp</code></dd>
-        <dt>Content-Type</dt><dd><code>application/json</code></dd>
-        <dt>Auth</dt><dd>HTTP Basic Auth (admin username / password)</dd>
-    </dl>
-    <details>
-        <summary>Available tools</summary>
-        <table>
-            <thead><tr><th>Tool</th><th>Description</th><th>Required params</th></tr></thead>
-            <tbody>
-                <tr><td><code>list_accounts</code></td><td>List all mail accounts on the server</td><td>—</td></tr>
-                <tr><td><code>list_emails</code></td><td>List emails in an account's inbox or folder (20 per page)</td><td><code>account_id</code></td></tr>
-                <tr><td><code>read_email</code></td><td>Read the full content of a single email</td><td><code>account_id</code>, <code>filename</code></td></tr>
-                <tr><td><code>send_email</code></td><td>Send an email from a mail account via the local SMTP server</td><td><code>account_id</code>, <code>to</code>, <code>subject</code>, <code>body</code></td></tr>
-                <tr><td><code>delete_email</code></td><td>Permanently delete an email from a mail account</td><td><code>account_id</code>, <code>filename</code></td></tr>
-            </tbody>
-        </table>
-        <details>
-            <summary>Example: initialize</summary>
-            <pre><code>POST /mcp
-Content-Type: application/json
-
-{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}</code></pre>
-        </details>
-        <details>
-            <summary>Example: list accounts</summary>
-            <pre><code>POST /mcp
-Content-Type: application/json
-
-{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_accounts","arguments":{}}}</code></pre>
-        </details>
-        <details>
-            <summary>Example: send email</summary>
-            <pre><code>POST /mcp
-Content-Type: application/json
-
-{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"send_email","arguments":{"account_id":1,"to":"recipient@example.com","subject":"Hello","body":"Hello from MCP"}}}</code></pre>
-        </details>
-    </details>
-</section>
-
-<section>
-    <hgroup>
-        <small>Outbound notifications</small>
-        <h2>Webhooks</h2>
-    </hgroup>
-    <p>Configure a webhook URL in <a href="/webhooks">Webhooks</a> to receive real-time event notifications. The server sends a <code>POST</code> request with a JSON body to your URL on each event.</p>
-    <dl>
-        <dt>Method</dt><dd><code>POST {webhook_url}</code></dd>
-        <dt>Content-Type</dt><dd><code>application/json</code></dd>
-    </dl>
-    <details>
-        <summary>Payload format</summary>
-        <pre><code>{
-  "event": "email.received",
-  "timestamp": "2024-01-01T12:00:00Z",
-  "sender": "sender@example.com",
-  "recipients": ["user@{{ hostname }}"],
-  "subject": "Hello",
-  "from": "Sender &lt;sender@example.com&gt;",
-  "to": "user@{{ hostname }}",
-  "cc": "",
-  "date": "2024-01-01T12:00:00Z",
-  "message_id": "&lt;unique@mailserver&gt;",
-  "size_bytes": 1234,
-  "modified": false
-}</code></pre>
-    </details>
-    <details>
-        <summary>Event types</summary>
-        <table>
-            <thead><tr><th>Event</th><th>Trigger</th></tr></thead>
-            <tbody>
-                <tr><td><code>email.received</code></td><td>Inbound email delivered to a mailbox</td></tr>
-                <tr><td><code>email.sent</code></td><td>Outbound email relayed through the server</td></tr>
-                <tr><td><code>domain.created</code></td><td>A new domain was added</td></tr>
-                <tr><td><code>domain.updated</code></td><td>A domain was modified</td></tr>
-                <tr><td><code>domain.deleted</code></td><td>A domain was removed</td></tr>
-                <tr><td><code>account.created</code></td><td>A new mailbox account was created</td></tr>
-                <tr><td><code>account.updated</code></td><td>A mailbox account was modified</td></tr>
-                <tr><td><code>account.deleted</code></td><td>A mailbox account was deleted</td></tr>
-                <tr><td><code>alias.created</code></td><td>A new alias was added</td></tr>
-                <tr><td><code>alias.deleted</code></td><td>An alias was removed</td></tr>
-                <tr><td><code>fail2ban.banned</code></td><td>An IP was banned by fail2ban</td></tr>
-                <tr><td><code>fail2ban.unbanned</code></td><td>An IP was unbanned</td></tr>
-                <tr><td><code>dmarc.report.parsed</code></td><td>A DMARC report was parsed</td></tr>
-                <tr><td><code>test</code></td><td>Manually triggered test webhook</td></tr>
-            </tbody>
-        </table>
-    </details>
-</section>
-
-<section>
-    <hgroup>
-        <small>Email open tracking</small>
-        <h2>Tracking Pixel</h2>
-    </hgroup>
-    <p>A 1×1 transparent GIF that records email open events when loaded by the recipient's mail client.</p>
-    <dl>
-        <dt>Endpoint</dt><dd><code>GET /pixel?id={message_id}</code></dd>
-        <dt>Auth</dt><dd>None (public)</dd>
-        <dt>Response</dt><dd><code>image/gif</code> — 1×1 transparent GIF</dd>
-    </dl>
-    <p>The pixel URL is automatically injected into outbound emails when tracking is enabled. Configure the pixel host in <a href="/settings">Settings</a>.</p>
-</section>
-
-<section>
-    <hgroup>
-        <small>Brand indicators</small>
-        <h2>BIMI Logo</h2>
-    </hgroup>
-    <p>Serves the BIMI (Brand Indicators for Message Identification) SVG logo for a domain.</p>
-    <dl>
-        <dt>Endpoint</dt><dd><code>GET /bimi/{domain}/logo.svg</code></dd>
-        <dt>Auth</dt><dd>None (public)</dd>
-        <dt>Response</dt><dd><code>image/svg+xml</code> — SVG logo, cached for 24 hours</dd>
-    </dl>
-    <p>Upload a BIMI SVG per domain in <a href="/domains">Domains</a>. The DNS <code>default._bimi.{domain}</code> TXT record must point to this URL.</p>
-</section>
-
-<section>
-    <hgroup>
-        <small>RFC 8058 opt-out</small>
-        <h2>Unsubscribe</h2>
-    </hgroup>
-    <p>Handles one-click unsubscribe requests embedded in outbound email headers.</p>
-    <table>
-        <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
-        <tbody>
-            <tr><td><code>GET</code></td><td><code>/unsubscribe?token={token}</code></td><td>Show confirmation page to the recipient</td></tr>
-            <tr><td><code>POST</code></td><td><code>/unsubscribe?token={token}</code></td><td>RFC 8058 one-click unsubscribe (mail client automated POST)</td></tr>
-        </tbody>
-    </table>
-    <p>Unsubscribe tokens are generated per outbound email when the List-Unsubscribe feature is enabled. Manage the opt-out list in <a href="/unsubscribe/list">Unsubscribe</a>.</p>
-</section>
-
-<section>
-    <hgroup>
-        <small>File storage</small>
-        <h2>WebDAV &amp; FileLink</h2>
-    </hgroup>
-    <p>Per-account file storage accessible via WebDAV. Authentication: HTTP Basic Auth (mail account credentials — <code>user@domain</code> / password).</p>
-    <h3>WebDAV</h3>
-    <table>
-        <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
-        <tbody>
-            <tr><td><code>PROPFIND</code></td><td><code>/dav/{email}/</code></td><td>List files and collection properties</td></tr>
-            <tr><td><code>GET</code></td><td><code>/dav/{email}/{filename}</code></td><td>Download a file</td></tr>
-            <tr><td><code>PUT</code></td><td><code>/dav/{email}/{filename}</code></td><td>Upload a file</td></tr>
-            <tr><td><code>DELETE</code></td><td><code>/dav/{email}/{filename}</code></td><td>Delete a file</td></tr>
-        </tbody>
-    </table>
-    <h3>FileLink (Thunderbird)</h3>
-    <table>
-        <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
-        <tbody>
-            <tr><td><code>POST</code></td><td><code>/filelink/upload</code></td><td>Upload a file (multipart/form-data field: <code>file</code>); returns a download token</td></tr>
-            <tr><td><code>GET</code></td><td><code>/filelink/download/{token}</code></td><td>Download a shared file (public, no auth)</td></tr>
-            <tr><td><code>DELETE</code></td><td><code>/filelink/delete/{token}</code></td><td>Delete a file</td></tr>
-        </tbody>
-    </table>
-    <p>Configure WebDAV settings and review stored files in <a href="/webdav">WebDAV</a>.</p>
-</section>
-
-<section>
-    <hgroup>
-        <small>Calendars &amp; scheduling</small>
-        <h2>CalDAV</h2>
-    </hgroup>
-    <p>CalDAV calendar server accessible by mail account credentials. Authentication: HTTP Basic Auth (<code>user@domain</code> / password).</p>
-    <table>
-        <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
-        <tbody>
-            <tr><td><code>PROPFIND</code></td><td><code>/caldav/{email}/</code></td><td>Discover calendars (DAV principal)</td></tr>
-            <tr><td><code>MKCALENDAR</code></td><td><code>/caldav/{email}/{calendar}/</code></td><td>Create a calendar collection</td></tr>
-            <tr><td><code>PUT</code></td><td><code>/caldav/{email}/{calendar}/{uid}.ics</code></td><td>Create or update a calendar event (iCalendar)</td></tr>
-            <tr><td><code>GET</code></td><td><code>/caldav/{email}/{calendar}/{uid}.ics</code></td><td>Retrieve a calendar event</td></tr>
-            <tr><td><code>DELETE</code></td><td><code>/caldav/{email}/{calendar}/{uid}.ics</code></td><td>Delete a calendar event</td></tr>
-            <tr><td><code>REPORT</code></td><td><code>/caldav/{email}/{calendar}/</code></td><td>Query events (calendar-query, calendar-multiget)</td></tr>
-        </tbody>
-    </table>
-    <p>Auto-discovery: <code>/.well-known/caldav</code> redirects to <code>/caldav/</code>. Manage calendars in <a href="/caldav">CalDAV</a>.</p>
-</section>
 {% endblock %}
+

@@ -63,6 +63,7 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/forwarding/:id/delete", post(forwarding::delete))
         .route("/forwarding/:id", post(forwarding::update))
         .route("/tracking", get(tracking::list))
+        .route("/tracking/pixel", post(tracking::update_pixel_settings))
         .route("/tracking/patterns", post(tracking::create_pattern))
         .route(
             "/tracking/patterns/:id/delete",
@@ -88,7 +89,6 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/settings/2fa", get(settings::setup_2fa))
         .route("/settings/2fa/enable", post(settings::enable_2fa))
         .route("/settings/2fa/disable", post(settings::disable_2fa))
-        .route("/settings/pixel", post(settings::update_pixel))
         .route("/settings/features", post(settings::update_features))
         .route("/settings/tls/regenerate", post(settings::regenerate_tls))
         .route("/settings/tls/cert.pem", get(settings::download_cert))
@@ -103,6 +103,8 @@ pub fn auth_routes() -> Router<AppState> {
         )
         .route("/configs", get(configs::page))
         .route("/api", get(api_docs::page))
+        .route("/api/token/generate", post(api_docs::generate_token))
+        .route("/api/token/revoke", post(api_docs::revoke_token))
         .route("/api/emails", get(api_email::list_emails).post(api_email::send_email))
         .route(
             "/api/emails/:filename",
@@ -129,6 +131,10 @@ pub fn auth_routes() -> Router<AppState> {
         )
         .route("/unsubscribe/list", get(unsubscribe::list))
         .route("/unsubscribe/:id/delete", post(unsubscribe::delete))
+        .route("/unsubscribe/patterns", post(unsubscribe::create_pattern))
+        .route("/unsubscribe/patterns/:id/delete", post(unsubscribe::delete_pattern))
+        .route("/unsubscribe/rules", post(unsubscribe::create_rule))
+        .route("/unsubscribe/rules/:id/delete", post(unsubscribe::delete_rule))
         .route("/spambl", get(spambl::list))
         .route("/spambl/toggle", post(spambl::toggle))
         .route("/webhooks", get(webhook::list))

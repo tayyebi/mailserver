@@ -89,6 +89,22 @@ pub struct TrackingRule {
 }
 
 #[derive(Clone, Serialize)]
+pub struct UnsubscribePattern {
+    pub id: i64,
+    pub pattern: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct UnsubscribeRule {
+    pub id: i64,
+    pub name: String,
+    pub match_mode: String,
+    pub conditions: Vec<TrackingCondition>,
+    pub created_at: String,
+}
+
+#[derive(Clone, Serialize)]
 pub struct Forwarding {
     pub id: i64,
     pub domain_id: i64,
@@ -591,6 +607,24 @@ impl Database {
             warn!("[db] admin not found: username={}", username);
         }
         result
+    }
+
+    pub fn get_first_admin(&self) -> Option<Admin> {
+        debug!("[db] looking up first admin");
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT id, username, password_hash, totp_secret, totp_enabled FROM admins LIMIT 1",
+            &[],
+        )
+        .ok()
+        .flatten()
+        .map(|row| Admin {
+            id: row.get::<_, i64>(0),
+            username: row.get::<_, String>(1),
+            password_hash: row.get::<_, String>(2),
+            totp_secret: row.get::<_, Option<String>>(3),
+            totp_enabled: row.get::<_, Option<bool>>(4).unwrap_or(false),
+        })
     }
 
     pub fn update_admin_password(&self, id: i64, hash: &str) {
@@ -1213,6 +1247,124 @@ impl Database {
         if let Err(e) = conn.execute("DELETE FROM tracking_rules WHERE id = $1", &[&id]) {
             error!("[db] failed to execute query: {}", e);
         }
+    }
+
+    pub fn list_unsubscribe_patterns(&self) -> Vec<UnsubscribePattern> {
+        debug!("[db] listing unsubscribe patterns");
+        let mut conn = self.conn();
+        let rows = conn
+            .query(
+                "SELECT id, pattern, created_at FROM unsubscribe_patterns ORDER BY id ASC",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list unsubscribe patterns: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| UnsubscribePattern {
+                id: row.get(0),
+                pattern: row.get(1),
+                created_at: row.get::<_, Option<String>>(2).unwrap_or_default(),
+            })
+            .collect()
+    }
+
+    pub fn create_unsubscribe_pattern(&self, pattern: &str) -> Result<i64, String> {
+        info!("[db] creating unsubscribe pattern: {}", pattern);
+        let mut conn = self.conn();
+        let row = conn
+            .query_one(
+                "INSERT INTO unsubscribe_patterns (pattern, created_at) VALUES ($1, $2) RETURNING id",
+                &[&pattern, &now()],
+            )
+            .map_err(|e| {
+                error!("[db] failed to create unsubscribe pattern {}: {}", pattern, e);
+                e.to_string()
+            })?;
+        let id: i64 = row.get(0);
+        info!("[db] unsubscribe pattern created: {} (id={})", pattern, id);
+        Ok(id)
+    }
+
+    pub fn delete_unsubscribe_pattern(&self, id: i64) {
+        warn!("[db] deleting unsubscribe pattern id={}", id);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute("DELETE FROM unsubscribe_patterns WHERE id = $1", &[&id]) {
+            error!("[db] failed to execute query: {}", e);
+        }
+    }
+
+    pub fn list_unsubscribe_rules(&self) -> Vec<UnsubscribeRule> {
+        debug!("[db] listing unsubscribe rules");
+        let mut conn = self.conn();
+        let rows = conn
+            .query(
+                "SELECT id, name, match_mode, conditions_json, created_at FROM unsubscribe_rules ORDER BY id ASC",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list unsubscribe rules: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| {
+                let conditions_json: String = row.get(3);
+                let conditions: Vec<TrackingCondition> =
+                    serde_json::from_str(&conditions_json).unwrap_or_default();
+                UnsubscribeRule {
+                    id: row.get(0),
+                    name: row.get(1),
+                    match_mode: row.get(2),
+                    conditions,
+                    created_at: row.get::<_, Option<String>>(4).unwrap_or_default(),
+                }
+            })
+            .collect()
+    }
+
+    pub fn create_unsubscribe_rule(
+        &self,
+        name: &str,
+        match_mode: &str,
+        conditions: &[TrackingCondition],
+    ) -> Result<i64, String> {
+        info!("[db] creating unsubscribe rule: {}", name);
+        let conditions_json = serde_json::to_string(conditions)
+            .map_err(|e| format!("failed to serialize conditions: {}", e))?;
+        let mut conn = self.conn();
+        let row = conn
+            .query_one(
+                "INSERT INTO unsubscribe_rules (name, match_mode, conditions_json, created_at) VALUES ($1, $2, $3, $4) RETURNING id",
+                &[&name, &match_mode, &conditions_json, &now()],
+            )
+            .map_err(|e| {
+                error!("[db] failed to create unsubscribe rule {}: {}", name, e);
+                e.to_string()
+            })?;
+        let id: i64 = row.get(0);
+        info!("[db] unsubscribe rule created: {} (id={})", name, id);
+        Ok(id)
+    }
+
+    pub fn delete_unsubscribe_rule(&self, id: i64) {
+        warn!("[db] deleting unsubscribe rule id={}", id);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute("DELETE FROM unsubscribe_rules WHERE id = $1", &[&id]) {
+            error!("[db] failed to execute query: {}", e);
+        }
+    }
+
+    pub fn get_api_token(&self) -> Option<String> {
+        self.get_setting("api_token")
+    }
+
+    pub fn set_api_token(&self, token: &str) {
+        self.set_setting("api_token", token);
+    }
+
+    pub fn verify_api_token(&self, token: &str) -> bool {
+        self.get_api_token().map(|t| t == token).unwrap_or(false)
     }
 
     /// Check if an email address exists as an active account

@@ -1,8 +1,150 @@
 {% extends "layout.html" %}
 {% block title %}Unsubscribe List{% endblock %}
 {% block content %}
-<h1>Unsubscribe List</h1>
-<p>Addresses that have opted out of mailing lists. Emails to these addresses from unsubscribe-enabled domains will be suppressed.</p>
+<section>
+    <hgroup>
+        <small>RFC 8058 one-click opt-out</small>
+        <h1>Unsubscribe</h1>
+    </hgroup>
+</section>
+
+<aside>
+    <h2>From Address Patterns</h2>
+    <p>List-Unsubscribe headers are injected into outbound HTML emails whose <strong>From</strong> address matches one of the patterns below. Use <code>*@domain.com</code> to match all senders on a domain, or an exact address like <code>newsletter@example.com</code>.</p>
+    <form method="post" action="/unsubscribe/patterns">
+        <label>Add pattern<br><input type="text" name="pattern" placeholder="*@example.com or user@example.com" required></label>
+        <button type="submit">Add</button>
+    </form>
+    {% if patterns.is_empty() %}
+    <p><small>No patterns configured — List-Unsubscribe injection is disabled for all senders.</small></p>
+    {% else %}
+    <table>
+        <thead><tr><th>Pattern</th><th>Added</th><th></th></tr></thead>
+        <tbody>
+        {% for p in patterns %}
+        <tr>
+            <td><code>{{ p.pattern }}</code></td>
+            <td>{{ p.created_at }}</td>
+            <td>
+                <form method="post" action="/unsubscribe/patterns/{{ p.id }}/delete" class="form-inline" onsubmit="return confirm('Remove this pattern?')">
+                    <button type="submit">Remove</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</aside>
+
+<aside>
+    <h2>Advanced Injection Rules</h2>
+    <p>Rules let you combine multiple conditions to decide whether a List-Unsubscribe header is injected. Each rule can match on <strong>sender</strong>, <strong>recipient</strong>, <strong>subject</strong>, or <strong>message size</strong>.</p>
+
+    <form method="post" action="/unsubscribe/rules" id="unsub-rule-form">
+        <label>Rule name<br><input type="text" name="name" placeholder="e.g. Newsletter campaign" required></label>
+        <label>Condition logic
+            <select name="match_mode">
+                <option value="AND">AND — all conditions must match</option>
+                <option value="OR">OR — any condition must match</option>
+            </select>
+        </label>
+        <input type="hidden" name="conditions_json" id="unsub_conditions_json" value="[]">
+        <div id="unsub-conditions-list"></div>
+        <button type="button" onclick="addUnsubCondition()">+ Add Condition</button>
+        <br><br>
+        <button type="submit">Save Rule</button>
+    </form>
+
+    {% if rules.is_empty() %}
+    <p><small>No rules configured.</small></p>
+    {% else %}
+    <table>
+        <thead><tr><th>Name</th><th>Logic</th><th>Conditions</th><th>Added</th><th></th></tr></thead>
+        <tbody>
+        {% for r in rules %}
+        <tr>
+            <td>{{ r.name }}</td>
+            <td><mark data-variant="muted">{{ r.match_mode }}</mark></td>
+            <td>
+                {% for c in r.conditions %}
+                <small><code>{{ c.field }} {{ c.operator }} "{{ c.value }}"</code></small>{% if !loop.last %}<br>{% endif %}
+                {% endfor %}
+                {% if r.conditions.is_empty() %}<em>—</em>{% endif %}
+            </td>
+            <td>{{ r.created_at }}</td>
+            <td>
+                <form method="post" action="/unsubscribe/rules/{{ r.id }}/delete" class="form-inline" onsubmit="return confirm('Remove this rule?')">
+                    <button type="submit">Remove</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</aside>
+
+<script>
+var unsubConditionIndex = 0;
+function addUnsubCondition() {
+    var idx = unsubConditionIndex++;
+    var row = document.createElement('div');
+    row.id = 'unsub-cond-' + idx;
+    row.style.display = 'flex';
+    row.style.gap = '0.5rem';
+    row.style.marginBottom = '0.5rem';
+    row.style.alignItems = 'center';
+    row.innerHTML =
+        '<select name="field_' + idx + '" onchange="updateUnsubConditions()">' +
+            '<option value="sender">Sender</option>' +
+            '<option value="recipient">Recipient</option>' +
+            '<option value="subject">Subject</option>' +
+            '<option value="size">Size (bytes)</option>' +
+        '</select>' +
+        '<select name="operator_' + idx + '" onchange="updateUnsubConditions()">' +
+            '<option value="contains">contains</option>' +
+            '<option value="not_contains">not contains</option>' +
+            '<option value="equals">equals</option>' +
+            '<option value="not_equals">not equals</option>' +
+            '<option value="starts_with">starts with</option>' +
+            '<option value="ends_with">ends with</option>' +
+            '<option value="larger_than">larger than</option>' +
+            '<option value="smaller_than">smaller than</option>' +
+        '</select>' +
+        '<input type="text" name="value_' + idx + '" placeholder="value" style="flex:1" oninput="updateUnsubConditions()" required>' +
+        '<button type="button" onclick="removeUnsubCondition(' + idx + ')">✕</button>';
+    document.getElementById('unsub-conditions-list').appendChild(row);
+    updateUnsubConditions();
+}
+function removeUnsubCondition(idx) {
+    var el = document.getElementById('unsub-cond-' + idx);
+    if (el) el.remove();
+    updateUnsubConditions();
+}
+function updateUnsubConditions() {
+    var list = document.getElementById('unsub-conditions-list');
+    var rows = list.children;
+    var conditions = [];
+    for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        var idx = row.id.replace('unsub-cond-', '');
+        var field = row.querySelector('[name="field_' + idx + '"]');
+        var operator = row.querySelector('[name="operator_' + idx + '"]');
+        var value = row.querySelector('[name="value_' + idx + '"]');
+        if (field && operator && value && value.value.trim() !== '') {
+            conditions.push({field: field.value, operator: operator.value, value: value.value.trim()});
+        }
+    }
+    document.getElementById('unsub_conditions_json').value = JSON.stringify(conditions);
+}
+document.getElementById('unsub-rule-form').addEventListener('submit', function() {
+    updateUnsubConditions();
+});
+</script>
+
+<h2>Opt-Out List</h2>
+<p>Addresses that have opted out of mailing lists. Emails to these addresses from unsubscribe-enabled senders will be suppressed.</p>
 {% if entries.is_empty() %}
 <p><em>No unsubscribe entries found.</em></p>
 {% else %}
@@ -32,3 +174,4 @@
 </table>
 {% endif %}
 {% endblock %}
+
