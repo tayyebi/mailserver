@@ -35,6 +35,113 @@
     </table>
     {% endif %}
 </aside>
+
+<aside>
+    <h2>Advanced Tracking Rules</h2>
+    <p>Rules let you combine multiple conditions (like Cloudflare firewall rules) to decide whether a tracking pixel is injected. Each rule can match on <strong>sender</strong>, <strong>recipient</strong>, <strong>subject</strong>, or <strong>message size</strong>.</p>
+
+    <form method="post" action="/tracking/rules" id="rule-form">
+        <label>Rule name<br><input type="text" name="name" placeholder="e.g. Newsletter campaign" required></label>
+        <label>Condition logic
+            <select name="match_mode">
+                <option value="AND">AND — all conditions must match</option>
+                <option value="OR">OR — any condition must match</option>
+            </select>
+        </label>
+        <input type="hidden" name="conditions_json" id="conditions_json" value="[]">
+        <div id="conditions-list"></div>
+        <button type="button" onclick="addCondition()">+ Add Condition</button>
+        <br><br>
+        <button type="submit">Save Rule</button>
+    </form>
+
+    {% if rules.is_empty() %}
+    <p><small>No rules configured.</small></p>
+    {% else %}
+    <table>
+        <thead><tr><th>Name</th><th>Logic</th><th>Conditions</th><th>Added</th><th></th></tr></thead>
+        <tbody>
+        {% for r in rules %}
+        <tr>
+            <td>{{ r.name }}</td>
+            <td><mark data-variant="muted">{{ r.match_mode }}</mark></td>
+            <td>
+                {% for c in r.conditions %}
+                <small><code>{{ c.field }} {{ c.operator }} "{{ c.value }}"</code></small>{% if !loop.last %}<br>{% endif %}
+                {% endfor %}
+                {% if r.conditions.is_empty() %}<em>—</em>{% endif %}
+            </td>
+            <td>{{ r.created_at }}</td>
+            <td>
+                <form method="post" action="/tracking/rules/{{ r.id }}/delete" class="form-inline" onsubmit="return confirm('Remove this rule?')">
+                    <button type="submit">Remove</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</aside>
+
+<script>
+var conditionIndex = 0;
+function addCondition() {
+    var idx = conditionIndex++;
+    var row = document.createElement('div');
+    row.id = 'cond-' + idx;
+    row.style.display = 'flex';
+    row.style.gap = '0.5rem';
+    row.style.marginBottom = '0.5rem';
+    row.style.alignItems = 'center';
+    row.innerHTML =
+        '<select name="field_' + idx + '" onchange="updateConditions()">' +
+            '<option value="sender">Sender</option>' +
+            '<option value="recipient">Recipient</option>' +
+            '<option value="subject">Subject</option>' +
+            '<option value="size">Size (bytes)</option>' +
+        '</select>' +
+        '<select name="operator_' + idx + '" onchange="updateConditions()">' +
+            '<option value="contains">contains</option>' +
+            '<option value="not_contains">not contains</option>' +
+            '<option value="equals">equals</option>' +
+            '<option value="not_equals">not equals</option>' +
+            '<option value="starts_with">starts with</option>' +
+            '<option value="ends_with">ends with</option>' +
+            '<option value="larger_than">larger than</option>' +
+            '<option value="smaller_than">smaller than</option>' +
+        '</select>' +
+        '<input type="text" name="value_' + idx + '" placeholder="value" style="flex:1" oninput="updateConditions()" required>' +
+        '<button type="button" onclick="removeCondition(' + idx + ')">✕</button>';
+    document.getElementById('conditions-list').appendChild(row);
+    updateConditions();
+}
+function removeCondition(idx) {
+    var el = document.getElementById('cond-' + idx);
+    if (el) el.remove();
+    updateConditions();
+}
+function updateConditions() {
+    var list = document.getElementById('conditions-list');
+    var rows = list.children;
+    var conditions = [];
+    for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        var idx = row.id.replace('cond-', '');
+        var field = row.querySelector('[name="field_' + idx + '"]');
+        var operator = row.querySelector('[name="operator_' + idx + '"]');
+        var value = row.querySelector('[name="value_' + idx + '"]');
+        if (field && operator && value && value.value.trim() !== '') {
+            conditions.push({field: field.value, operator: operator.value, value: value.value.trim()});
+        }
+    }
+    document.getElementById('conditions_json').value = JSON.stringify(conditions);
+}
+document.getElementById('rule-form').addEventListener('submit', function() {
+    updateConditions();
+});
+</script>
+
 <h2>Tracked Messages</h2>
 <table>
 <thead><tr><th>Message ID</th><th>Sender</th><th>Recipient</th><th>Subject</th><th>Date</th><th>Opens</th></tr></thead>

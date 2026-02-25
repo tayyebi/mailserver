@@ -15,13 +15,13 @@ use crate::web::AppState;
 
 // ── Helpers ──
 
-fn is_safe_path_component(s: &str) -> bool {
+pub(crate) fn is_safe_path_component(s: &str) -> bool {
     !s.is_empty() && !s.contains('/') && !s.contains('\\') && s != "." && s != ".."
 }
 
 /// Validate a Maildir subfolder name (e.g. ".Sent", ".Drafts.Sub").
 /// Empty string is valid and means INBOX.
-fn is_safe_folder(s: &str) -> bool {
+pub(crate) fn is_safe_folder(s: &str) -> bool {
     if s.is_empty() {
         return true; // INBOX
     }
@@ -32,7 +32,7 @@ fn is_safe_folder(s: &str) -> bool {
 const MAILDIR_ROOT: &str = "/data/mail";
 const PAGE_SIZE: usize = 20;
 
-fn maildir_path(domain: &str, username: &str) -> String {
+pub(crate) fn maildir_path(domain: &str, username: &str) -> String {
     format!("{}/{}/{}/Maildir", MAILDIR_ROOT, domain, username)
 }
 
@@ -43,7 +43,7 @@ fn sanitize_header_value(s: &str) -> String {
         .collect()
 }
 
-fn folder_root(maildir_base: &str, folder: &str) -> String {
+pub(crate) fn folder_root(maildir_base: &str, folder: &str) -> String {
     if folder.is_empty() {
         maildir_base.to_string()
     } else {
@@ -319,7 +319,7 @@ fn group_folders(folders: Vec<WebmailFolder>, current_folder: &str) -> Vec<Webma
 
 // ── Email reading ──
 
-fn read_emails(maildir_base: &str, folder: &str, logs: &mut Vec<String>) -> Vec<WebmailEmail> {
+pub(crate) fn read_emails(maildir_base: &str, folder: &str, logs: &mut Vec<String>) -> Vec<WebmailEmail> {
     let root = folder_root(maildir_base, folder);
     let mut emails = Vec::new();
 
@@ -1113,7 +1113,7 @@ fn urlencoding_simple(s: &str) -> String {
         .collect()
 }
 
-fn extract_body(parsed: &mailparse::ParsedMail) -> String {
+pub(crate) fn extract_body(parsed: &mailparse::ParsedMail) -> String {
     // Try to find text/plain part first
     if let Some(text) = find_body_part(parsed, "text/plain") {
         return text;
@@ -1129,7 +1129,7 @@ fn extract_body(parsed: &mailparse::ParsedMail) -> String {
     parsed.get_body().unwrap_or_default()
 }
 
-fn find_body_part(parsed: &mailparse::ParsedMail, mime_type: &str) -> Option<String> {
+pub(crate) fn find_body_part(parsed: &mailparse::ParsedMail, mime_type: &str) -> Option<String> {
     if parsed.subparts.is_empty() {
         let ctype = parsed.ctype.mimetype.to_lowercase();
         if ctype == mime_type {

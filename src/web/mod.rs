@@ -60,6 +60,7 @@ pub async fn start_server(state: AppState) {
     let pixel_routes = routes::pixel::routes();
     let bimi_routes = routes::bimi::routes();
     let unsubscribe_routes = routes::unsubscribe::public_routes();
+    let webdav_routes = routes::webdav::public_routes();
     let auth_routes = routes::auth_routes();
 
     let static_service = get_service(ServeDir::new(static_dir));
@@ -68,6 +69,7 @@ pub async fn start_server(state: AppState) {
         .merge(pixel_routes)
         .merge(bimi_routes)
         .merge(unsubscribe_routes)
+        .merge(webdav_routes)
         .merge(auth_routes)
         // CalDAV protocol handler — handles all HTTP methods on /caldav/{email}/...
         .route("/caldav/*path", axum::routing::any(routes::caldav::protocol_handler))

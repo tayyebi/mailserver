@@ -8,6 +8,7 @@ pub mod dmarc;
 pub mod domains;
 pub mod fail2ban;
 pub mod forwarding;
+pub mod mcp;
 pub mod pixel;
 pub mod queue;
 pub mod relays;
@@ -16,6 +17,7 @@ pub mod spambl;
 pub mod tracking;
 pub mod unsubscribe;
 pub mod webhook;
+pub mod webdav;
 pub mod webmail;
 
 use super::AppState;
@@ -59,6 +61,8 @@ pub fn auth_routes() -> Router<AppState> {
             "/tracking/patterns/:id/delete",
             post(tracking::delete_pattern),
         )
+        .route("/tracking/rules", post(tracking::create_rule))
+        .route("/tracking/rules/:id/delete", post(tracking::delete_rule))
         .route("/tracking/:msg_id", get(tracking::detail))
         .route("/queue", get(queue::list))
         .route("/queue/flush", post(queue::flush))
@@ -126,8 +130,7 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/relays/:id/delete", post(relays::delete))
         .route("/relays/:id", post(relays::update))
         .route("/relays/:id/assignments", post(relays::add_assignment))
-        .route(
-            "/relays/:id/assignments/:aid/delete",
+        .route("/relays/:id/assignments/:aid/delete",
             post(relays::remove_assignment),
         )
         .route("/caldav", get(caldav::admin_list))
@@ -143,4 +146,8 @@ pub fn auth_routes() -> Router<AppState> {
             "/caldav/admin/objects/:id/delete",
             post(caldav::admin_delete_object),
         )
+        .route("/mcp", post(mcp::handle))
+        .route("/webdav", get(webdav::list))
+        .route("/webdav/settings", post(webdav::update_settings))
+        .route("/webdav/:id/delete", post(webdav::admin_delete_file))
 }

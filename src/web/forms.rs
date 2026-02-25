@@ -206,11 +206,21 @@ pub struct RelayAssignmentForm {
 }
 
 #[derive(Deserialize)]
+pub struct WebDavSettingsForm {
+    #[serde(default)]
+    pub webdav_enabled: Option<String>,
+    #[serde(default)]
+    pub webdav_max_file_size_mb: Option<i64>,
+    #[serde(default)]
+    pub webdav_quota_mb: Option<i64>,
+}
+
 pub struct TrackingPatternForm {
     pub pattern: String,
 }
 
 #[derive(Deserialize)]
+<<<<<<< copilot/implement-caldev-server-admin-features
 pub struct CalDavCalendarForm {
     pub email: String,
     pub display_name: String,
@@ -218,4 +228,10 @@ pub struct CalDavCalendarForm {
     pub description: Option<String>,
     #[serde(default)]
     pub color: Option<String>,
+=======
+pub struct TrackingRuleForm {
+    pub name: String,
+    pub match_mode: String,
+    pub conditions_json: String,
+>>>>>>> main
 }
