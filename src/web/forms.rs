@@ -209,3 +209,10 @@ pub struct RelayAssignmentForm {
 pub struct TrackingPatternForm {
     pub pattern: String,
 }
+
+#[derive(Deserialize)]
+pub struct TrackingRuleForm {
+    pub name: String,
+    pub match_mode: String,
+    pub conditions_json: String,
+}

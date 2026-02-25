@@ -58,6 +58,8 @@ pub fn auth_routes() -> Router<AppState> {
             "/tracking/patterns/:id/delete",
             post(tracking::delete_pattern),
         )
+        .route("/tracking/rules", post(tracking::create_rule))
+        .route("/tracking/rules/:id/delete", post(tracking::delete_rule))
         .route("/tracking/:msg_id", get(tracking::detail))
         .route("/queue", get(queue::list))
         .route("/queue/flush", post(queue::flush))
