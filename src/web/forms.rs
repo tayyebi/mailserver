@@ -209,3 +209,13 @@ pub struct RelayAssignmentForm {
 pub struct TrackingPatternForm {
     pub pattern: String,
 }
+
+#[derive(Deserialize)]
+pub struct CalDavCalendarForm {
+    pub email: String,
+    pub display_name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub color: Option<String>,
+}

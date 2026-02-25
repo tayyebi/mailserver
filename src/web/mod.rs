@@ -69,6 +69,15 @@ pub async fn start_server(state: AppState) {
         .merge(bimi_routes)
         .merge(unsubscribe_routes)
         .merge(auth_routes)
+        // CalDAV protocol handler — handles all HTTP methods on /caldav/{email}/...
+        .route("/caldav/*path", axum::routing::any(routes::caldav::protocol_handler))
+        // RFC 6764 well-known redirect for CalDAV auto-discovery
+        .route(
+            "/.well-known/caldav",
+            axum::routing::any(|| async {
+                axum::response::Redirect::permanent("/caldav/")
+            }),
+        )
         .nest_service("/static", static_service)
         .fallback(handle_not_found)
         .with_state(state);

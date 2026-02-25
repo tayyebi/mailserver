@@ -1,0 +1,103 @@
+{% extends "layout.html" %}
+{% block title %}CalDAV Calendars{% endblock %}
+{% block content %}
+<section>
+    <hgroup>
+        <small>Calendar synchronization</small>
+        <h1>CalDAV Server</h1>
+    </hgroup>
+    <p>Manage CalDAV calendars for mail accounts. Clients connect to <code>/caldav/{email}/</code> using their mail account credentials.</p>
+</section>
+
+<section>
+    <h2>Create Calendar</h2>
+    <form method="post" action="/caldav/admin/calendars">
+        <label>Account email
+            <select name="email" required>
+                <option value="">— Select account —</option>
+                {% for a in accounts %}
+                {% if let Some(domain) = a.domain_name %}
+                <option value="{{ a.username }}@{{ domain }}">{{ a.username }}@{{ domain }}</option>
+                {% endif %}
+                {% endfor %}
+            </select>
+        </label>
+        <small>The mail account that will own this calendar.</small>
+        <label>Display name<br><input type="text" name="display_name" placeholder="My Calendar" required></label>
+        <small>The calendar name shown to CalDAV clients.</small>
+        <label>Description<br><input type="text" name="description" placeholder="Optional description"></label>
+        <label>Color<br><input type="color" name="color" value="#0000FF"></label>
+        <small>Calendar color displayed in client apps.</small>
+        <button type="submit">Create Calendar</button>
+    </form>
+</section>
+
+<section>
+    <h2>All Calendars</h2>
+    {% if calendars.is_empty() %}
+    <p>No CalDAV calendars have been created yet.</p>
+    {% else %}
+    <table>
+        <thead>
+            <tr>
+                <th>Account</th>
+                <th>Calendar</th>
+                <th>Color</th>
+                <th>Events</th>
+                <th>CalDAV URL</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for cal in calendars %}
+        <tr>
+            <td>
+                {% if let Some(username) = cal.account_username %}
+                {% if let Some(domain) = cal.account_domain %}
+                {{ username }}@{{ domain }}
+                {% endif %}
+                {% endif %}
+            </td>
+            <td>
+                <strong>{{ cal.display_name }}</strong>
+                {% if !cal.description.is_empty() %}
+                <br><small>{{ cal.description }}</small>
+                {% endif %}
+            </td>
+            <td>
+                <span style="display:inline-block;width:1.2em;height:1.2em;background:{{ cal.color }};border:1px solid #aaa;vertical-align:middle;border-radius:3px"></span>
+                {{ cal.color }}
+            </td>
+            <td>{{ cal.object_count }}</td>
+            <td>
+                {% if let Some(username) = cal.account_username %}
+                {% if let Some(domain) = cal.account_domain %}
+                <code>/caldav/{{ username }}@{{ domain }}/calendars/{{ cal.slug }}/</code>
+                {% endif %}
+                {% endif %}
+            </td>
+            <td>
+                <form method="post" action="/caldav/admin/calendars/{{ cal.id }}/delete" class="form-inline" onsubmit="return confirm('Delete calendar and all its events?')">
+                    <button type="submit">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</section>
+
+<section>
+    <h2>Client Setup</h2>
+    <details>
+        <summary>How to connect a CalDAV client</summary>
+        <dl>
+            <dt>Server URL</dt><dd><code>https://yourdomain.com/caldav/{email}/</code></dd>
+            <dt>Username</dt><dd>Full email address (e.g. <code>user@example.com</code>)</dd>
+            <dt>Password</dt><dd>Mail account password</dd>
+        </dl>
+        <p><small>Apple Calendar, Thunderbird, GNOME Calendar, and most other calendar apps support CalDAV auto-discovery via <code>/.well-known/caldav</code>.</small></p>
+    </details>
+</section>
+{% endblock %}
