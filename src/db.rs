@@ -1,6 +1,6 @@
 use log::{debug, error, info, warn};
 use postgres::{Client, NoTls};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 fn now() -> String {
@@ -69,6 +69,22 @@ pub struct Alias {
 pub struct TrackingPattern {
     pub id: i64,
     pub pattern: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct TrackingCondition {
+    pub field: String,    // "sender", "recipient", "subject", "size"
+    pub operator: String, // "contains", "not_contains", "equals", "not_equals", "starts_with", "ends_with", "larger_than", "smaller_than"
+    pub value: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct TrackingRule {
+    pub id: i64,
+    pub name: String,
+    pub match_mode: String, // "AND" or "OR"
+    pub conditions: Vec<TrackingCondition>,
     pub created_at: String,
 }
 
@@ -210,6 +226,19 @@ pub struct OutboundRelay {
 }
 
 #[derive(Clone, Serialize)]
+pub struct WebDavFile {
+    pub id: i64,
+    pub account_id: Option<i64>,
+    pub owner: String,
+    pub filename: String,
+    pub content_type: String,
+    pub size: i64,
+    pub token: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Serialize)]
 pub struct OutboundRelayAssignment {
     pub id: i64,
     pub relay_id: i64,
@@ -311,6 +340,64 @@ fn matches_from_pattern(pattern: &str, sender: &str) -> bool {
         return sender.ends_with(&format!("@{}", domain));
     }
     p == sender
+}
+
+fn evaluate_condition(
+    condition: &TrackingCondition,
+    sender: &str,
+    recipient: &str,
+    subject: &str,
+    size_bytes: usize,
+) -> bool {
+    let field_value = match condition.field.as_str() {
+        "sender" => sender.to_ascii_lowercase(),
+        "recipient" => recipient.to_ascii_lowercase(),
+        "subject" => subject.to_ascii_lowercase(),
+        "size" => size_bytes.to_string(),
+        _ => return false,
+    };
+    let cond_value = condition.value.to_ascii_lowercase();
+    match condition.operator.as_str() {
+        "contains" => field_value.contains(cond_value.as_str()),
+        "not_contains" => !field_value.contains(cond_value.as_str()),
+        "equals" => field_value == cond_value,
+        "not_equals" => field_value != cond_value,
+        "starts_with" => field_value.starts_with(cond_value.as_str()),
+        "ends_with" => field_value.ends_with(cond_value.as_str()),
+        "larger_than" => {
+            let threshold: usize = cond_value.parse().unwrap_or(0);
+            let val: usize = field_value.parse().unwrap_or(0);
+            val > threshold
+        }
+        "smaller_than" => {
+            let threshold: usize = cond_value.parse().unwrap_or(0);
+            let val: usize = field_value.parse().unwrap_or(0);
+            val < threshold
+        }
+        _ => false,
+    }
+}
+
+fn evaluate_rule(
+    rule: &TrackingRule,
+    sender: &str,
+    recipient: &str,
+    subject: &str,
+    size_bytes: usize,
+) -> bool {
+    if rule.conditions.is_empty() {
+        return false;
+    }
+    match rule.match_mode.as_str() {
+        "OR" => rule
+            .conditions
+            .iter()
+            .any(|c| evaluate_condition(c, sender, recipient, subject, size_bytes)),
+        _ => rule
+            .conditions
+            .iter()
+            .all(|c| evaluate_condition(c, sender, recipient, subject, size_bytes)),
+    }
 }
 
 impl Database {
@@ -908,13 +995,31 @@ impl Database {
             .collect()
     }
 
-    pub fn is_tracking_enabled_for_sender(&self, sender: &str) -> bool {
+    pub fn is_tracking_enabled(
+        &self,
+        sender: &str,
+        recipient: &str,
+        subject: &str,
+        size_bytes: usize,
+    ) -> bool {
         debug!("[db] checking tracking status for sender={}", sender);
-        let patterns = self.list_tracking_patterns();
         let sender_lower = sender.to_ascii_lowercase();
-        let enabled = patterns
+
+        // Check legacy from-address patterns first
+        let patterns = self.list_tracking_patterns();
+        if patterns
             .iter()
-            .any(|tp| matches_from_pattern(&tp.pattern, &sender_lower));
+            .any(|tp| matches_from_pattern(&tp.pattern, &sender_lower))
+        {
+            debug!("[db] tracking enabled for sender={} (pattern match)", sender);
+            return true;
+        }
+
+        // Check structured tracking rules
+        let rules = self.list_tracking_rules();
+        let enabled = rules
+            .iter()
+            .any(|rule| evaluate_rule(rule, &sender_lower, recipient, subject, size_bytes));
         debug!("[db] tracking enabled for sender={}: {}", sender, enabled);
         enabled
     }
@@ -961,6 +1066,66 @@ impl Database {
         warn!("[db] deleting tracking pattern id={}", id);
         let mut conn = self.conn();
         if let Err(e) = conn.execute("DELETE FROM tracking_patterns WHERE id = $1", &[&id]) {
+            error!("[db] failed to execute query: {}", e);
+        }
+    }
+
+    pub fn list_tracking_rules(&self) -> Vec<TrackingRule> {
+        debug!("[db] listing tracking rules");
+        let mut conn = self.conn();
+        let rows = conn
+            .query(
+                "SELECT id, name, match_mode, conditions_json, created_at FROM tracking_rules ORDER BY id ASC",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list tracking rules: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| {
+                let conditions_json: String = row.get(3);
+                let conditions: Vec<TrackingCondition> =
+                    serde_json::from_str(&conditions_json).unwrap_or_default();
+                TrackingRule {
+                    id: row.get(0),
+                    name: row.get(1),
+                    match_mode: row.get(2),
+                    conditions,
+                    created_at: row.get::<_, Option<String>>(4).unwrap_or_default(),
+                }
+            })
+            .collect()
+    }
+
+    pub fn create_tracking_rule(
+        &self,
+        name: &str,
+        match_mode: &str,
+        conditions: &[TrackingCondition],
+    ) -> Result<i64, String> {
+        info!("[db] creating tracking rule: {}", name);
+        let conditions_json = serde_json::to_string(conditions)
+            .map_err(|e| format!("failed to serialize conditions: {}", e))?;
+        let mut conn = self.conn();
+        let row = conn
+            .query_one(
+                "INSERT INTO tracking_rules (name, match_mode, conditions_json, created_at) VALUES ($1, $2, $3, $4) RETURNING id",
+                &[&name, &match_mode, &conditions_json, &now()],
+            )
+            .map_err(|e| {
+                error!("[db] failed to create tracking rule {}: {}", name, e);
+                e.to_string()
+            })?;
+        let id: i64 = row.get(0);
+        info!("[db] tracking rule created: {} (id={})", name, id);
+        Ok(id)
+    }
+
+    pub fn delete_tracking_rule(&self, id: i64) {
+        warn!("[db] deleting tracking rule id={}", id);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute("DELETE FROM tracking_rules WHERE id = $1", &[&id]) {
             error!("[db] failed to execute query: {}", e);
         }
     }
@@ -2238,6 +2403,223 @@ impl Database {
         }
     }
 
+    // ── WebDAV methods ──
+
+    pub fn list_webdav_files(&self) -> Vec<WebDavFile> {
+        debug!("[db] listing all webdav files");
+        let mut conn = self.conn();
+        let rows = conn
+            .query(
+                "SELECT id, account_id, owner, filename, content_type, size, token, created_at, updated_at
+                 FROM webdav_files ORDER BY owner, filename",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list webdav files: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| WebDavFile {
+                id: row.get(0),
+                account_id: row.get(1),
+                owner: row.get(2),
+                filename: row.get(3),
+                content_type: row.get(4),
+                size: row.get(5),
+                token: row.get(6),
+                created_at: row.get::<_, Option<String>>(7).unwrap_or_default(),
+                updated_at: row.get::<_, Option<String>>(8).unwrap_or_default(),
+            })
+            .collect()
+    }
+
+    pub fn list_webdav_files_for_owner(&self, owner: &str) -> Vec<WebDavFile> {
+        debug!("[db] listing webdav files for owner={}", owner);
+        let mut conn = self.conn();
+        let rows = conn
+            .query(
+                "SELECT id, account_id, owner, filename, content_type, size, token, created_at, updated_at
+                 FROM webdav_files WHERE owner = $1 ORDER BY filename",
+                &[&owner],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list webdav files for owner {}: {}", owner, e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| WebDavFile {
+                id: row.get(0),
+                account_id: row.get(1),
+                owner: row.get(2),
+                filename: row.get(3),
+                content_type: row.get(4),
+                size: row.get(5),
+                token: row.get(6),
+                created_at: row.get::<_, Option<String>>(7).unwrap_or_default(),
+                updated_at: row.get::<_, Option<String>>(8).unwrap_or_default(),
+            })
+            .collect()
+    }
+
+    pub fn get_webdav_file_by_token(&self, token: &str) -> Option<WebDavFile> {
+        debug!("[db] getting webdav file by token={}", token);
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT id, account_id, owner, filename, content_type, size, token, created_at, updated_at
+             FROM webdav_files WHERE token = $1",
+            &[&token],
+        )
+        .ok()
+        .flatten()
+        .map(|row| WebDavFile {
+            id: row.get(0),
+            account_id: row.get(1),
+            owner: row.get(2),
+            filename: row.get(3),
+            content_type: row.get(4),
+            size: row.get(5),
+            token: row.get(6),
+            created_at: row.get::<_, Option<String>>(7).unwrap_or_default(),
+            updated_at: row.get::<_, Option<String>>(8).unwrap_or_default(),
+        })
+    }
+
+    pub fn get_webdav_file_by_owner_and_name(&self, owner: &str, filename: &str) -> Option<WebDavFile> {
+        debug!("[db] getting webdav file owner={} filename={}", owner, filename);
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT id, account_id, owner, filename, content_type, size, token, created_at, updated_at
+             FROM webdav_files WHERE owner = $1 AND filename = $2",
+            &[&owner, &filename],
+        )
+        .ok()
+        .flatten()
+        .map(|row| WebDavFile {
+            id: row.get(0),
+            account_id: row.get(1),
+            owner: row.get(2),
+            filename: row.get(3),
+            content_type: row.get(4),
+            size: row.get(5),
+            token: row.get(6),
+            created_at: row.get::<_, Option<String>>(7).unwrap_or_default(),
+            updated_at: row.get::<_, Option<String>>(8).unwrap_or_default(),
+        })
+    }
+
+    pub fn upsert_webdav_file(
+        &self,
+        account_id: Option<i64>,
+        owner: &str,
+        filename: &str,
+        content_type: &str,
+        size: i64,
+        token: &str,
+    ) -> Result<i64, String> {
+        info!(
+            "[db] upserting webdav file owner={} filename={} size={}",
+            owner, filename, size
+        );
+        let mut conn = self.conn();
+        let ts = now();
+        let row = conn
+            .query_one(
+                "INSERT INTO webdav_files (account_id, owner, filename, content_type, size, token, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                 ON CONFLICT (owner, filename) DO UPDATE
+                   SET content_type = EXCLUDED.content_type, size = EXCLUDED.size, token = EXCLUDED.token, updated_at = EXCLUDED.updated_at
+                 RETURNING id",
+                &[&account_id, &owner, &filename, &content_type, &size, &token, &ts, &ts],
+            )
+            .map_err(|e| {
+                error!("[db] failed to upsert webdav file {}/{}: {}", owner, filename, e);
+                e.to_string()
+            })?;
+        let id: i64 = row.get(0);
+        info!("[db] webdav file upserted id={}", id);
+        Ok(id)
+    }
+
+    pub fn delete_webdav_file(&self, id: i64) -> Option<WebDavFile> {
+        warn!("[db] deleting webdav file id={}", id);
+        let mut conn = self.conn();
+        let file = conn
+            .query_opt(
+                "DELETE FROM webdav_files WHERE id = $1
+                 RETURNING id, account_id, owner, filename, content_type, size, token, created_at, updated_at",
+                &[&id],
+            )
+            .ok()
+            .flatten()
+            .map(|row| WebDavFile {
+                id: row.get(0),
+                account_id: row.get(1),
+                owner: row.get(2),
+                filename: row.get(3),
+                content_type: row.get(4),
+                size: row.get(5),
+                token: row.get(6),
+                created_at: row.get::<_, Option<String>>(7).unwrap_or_default(),
+                updated_at: row.get::<_, Option<String>>(8).unwrap_or_default(),
+            });
+        file
+    }
+
+    pub fn delete_webdav_file_by_owner_and_name(&self, owner: &str, filename: &str) -> Option<WebDavFile> {
+        warn!("[db] deleting webdav file owner={} filename={}", owner, filename);
+        let mut conn = self.conn();
+        conn.query_opt(
+            "DELETE FROM webdav_files WHERE owner = $1 AND filename = $2
+             RETURNING id, account_id, owner, filename, content_type, size, token, created_at, updated_at",
+            &[&owner, &filename],
+        )
+        .ok()
+        .flatten()
+        .map(|row| WebDavFile {
+            id: row.get(0),
+            account_id: row.get(1),
+            owner: row.get(2),
+            filename: row.get(3),
+            content_type: row.get(4),
+            size: row.get(5),
+            token: row.get(6),
+            created_at: row.get::<_, Option<String>>(7).unwrap_or_default(),
+            updated_at: row.get::<_, Option<String>>(8).unwrap_or_default(),
+        })
+    }
+
+    pub fn count_webdav_usage_for_owner(&self, owner: &str) -> i64 {
+        let mut conn = self.conn();
+        conn.query_one(
+            "SELECT COALESCE(SUM(size), 0) FROM webdav_files WHERE owner = $1",
+            &[&owner],
+        )
+        .map(|row| row.get(0))
+        .unwrap_or(0)
+    }
+
+    /// Returns the account_id and password_hash for an email address used for WebDAV auth.
+    pub fn get_account_for_webdav_auth(&self, email: &str) -> Option<(i64, String)> {
+        debug!("[db] webdav auth lookup for email={}", email);
+        let parts: Vec<&str> = email.splitn(2, '@').collect();
+        if parts.len() != 2 {
+            return None;
+        }
+        let username = parts[0];
+        let domain = parts[1];
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT a.id, a.password_hash
+             FROM accounts a
+             JOIN domains d ON a.domain_id = d.id
+             WHERE a.username = $1 AND d.domain = $2 AND a.active = TRUE AND d.active = TRUE",
+            &[&username, &domain],
+        )
+        .ok()
+        .flatten()
+        .map(|row| (row.get(0), row.get(1)))
+    }
+
     /// Returns all active relay assignments joined with relay info for config generation.
     pub fn get_active_relay_assignments_with_relay(
         &self,
@@ -2286,7 +2668,7 @@ impl Database {
 
 #[cfg(test)]
 mod tests {
-    use super::matches_from_pattern;
+    use super::{evaluate_condition, evaluate_rule, matches_from_pattern, TrackingCondition, TrackingRule};
 
     #[test]
     fn matches_from_pattern_wildcard_matches_all() {
@@ -2318,5 +2700,149 @@ mod tests {
     fn matches_from_pattern_case_insensitive() {
         assert!(matches_from_pattern("*@EXAMPLE.COM", "user@example.com"));
         assert!(matches_from_pattern("NEWS@Example.COM", "news@example.com"));
+    }
+
+    fn cond(field: &str, operator: &str, value: &str) -> TrackingCondition {
+        TrackingCondition {
+            field: field.to_string(),
+            operator: operator.to_string(),
+            value: value.to_string(),
+        }
+    }
+
+    fn rule_and(name: &str, conditions: Vec<TrackingCondition>) -> TrackingRule {
+        TrackingRule {
+            id: 1,
+            name: name.to_string(),
+            match_mode: "AND".to_string(),
+            conditions,
+            created_at: String::new(),
+        }
+    }
+
+    fn rule_or(name: &str, conditions: Vec<TrackingCondition>) -> TrackingRule {
+        TrackingRule {
+            id: 2,
+            name: name.to_string(),
+            match_mode: "OR".to_string(),
+            conditions,
+            created_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn condition_contains() {
+        let c = cond("subject", "contains", "newsletter");
+        assert!(evaluate_condition(&c, "", "", "My Newsletter", 0));
+        assert!(!evaluate_condition(&c, "", "", "Weekly digest", 0));
+    }
+
+    #[test]
+    fn condition_not_contains() {
+        let c = cond("sender", "not_contains", "@spam.com");
+        assert!(evaluate_condition(&c, "user@example.com", "", "", 0));
+        assert!(!evaluate_condition(&c, "user@spam.com", "", "", 0));
+    }
+
+    #[test]
+    fn condition_equals() {
+        let c = cond("recipient", "equals", "list@example.com");
+        assert!(evaluate_condition(&c, "", "list@example.com", "", 0));
+        assert!(!evaluate_condition(&c, "", "other@example.com", "", 0));
+    }
+
+    #[test]
+    fn condition_not_equals() {
+        let c = cond("recipient", "not_equals", "list@example.com");
+        assert!(!evaluate_condition(&c, "", "list@example.com", "", 0));
+        assert!(evaluate_condition(&c, "", "other@example.com", "", 0));
+    }
+
+    #[test]
+    fn condition_starts_with() {
+        let c = cond("subject", "starts_with", "re:");
+        assert!(evaluate_condition(&c, "", "", "Re: Hello", 0));
+        assert!(!evaluate_condition(&c, "", "", "Hello world", 0));
+    }
+
+    #[test]
+    fn condition_ends_with() {
+        let c = cond("sender", "ends_with", "@example.com");
+        assert!(evaluate_condition(&c, "news@example.com", "", "", 0));
+        assert!(!evaluate_condition(&c, "news@other.com", "", "", 0));
+    }
+
+    #[test]
+    fn condition_larger_than() {
+        let c = cond("size", "larger_than", "1000");
+        assert!(evaluate_condition(&c, "", "", "", 5000));
+        assert!(!evaluate_condition(&c, "", "", "", 500));
+        assert!(!evaluate_condition(&c, "", "", "", 1000));
+    }
+
+    #[test]
+    fn condition_smaller_than() {
+        let c = cond("size", "smaller_than", "1000");
+        assert!(evaluate_condition(&c, "", "", "", 500));
+        assert!(!evaluate_condition(&c, "", "", "", 5000));
+        assert!(!evaluate_condition(&c, "", "", "", 1000));
+    }
+
+    #[test]
+    fn condition_case_insensitive() {
+        let c = cond("subject", "contains", "NEWSLETTER");
+        assert!(evaluate_condition(&c, "", "", "My Newsletter Update", 0));
+    }
+
+    #[test]
+    fn evaluate_rule_and_all_match() {
+        let r = rule_and("test", vec![
+            cond("sender", "ends_with", "@example.com"),
+            cond("subject", "contains", "promo"),
+        ]);
+        assert!(evaluate_rule(&r, "news@example.com", "", "Promo offer", 0));
+    }
+
+    #[test]
+    fn evaluate_rule_and_one_fails() {
+        let r = rule_and("test", vec![
+            cond("sender", "ends_with", "@example.com"),
+            cond("subject", "contains", "promo"),
+        ]);
+        assert!(!evaluate_rule(&r, "news@other.com", "", "Promo offer", 0));
+    }
+
+    #[test]
+    fn evaluate_rule_or_one_matches() {
+        let r = rule_or("test", vec![
+            cond("sender", "ends_with", "@example.com"),
+            cond("subject", "contains", "promo"),
+        ]);
+        assert!(evaluate_rule(&r, "news@other.com", "", "Promo offer", 0));
+    }
+
+    #[test]
+    fn evaluate_rule_or_none_match() {
+        let r = rule_or("test", vec![
+            cond("sender", "ends_with", "@example.com"),
+            cond("subject", "contains", "promo"),
+        ]);
+        assert!(!evaluate_rule(&r, "news@other.com", "", "Weekly digest", 0));
+    }
+
+    #[test]
+    fn evaluate_rule_empty_conditions_returns_false() {
+        let r = rule_and("empty", vec![]);
+        assert!(!evaluate_rule(&r, "news@example.com", "", "Hello", 0));
+    }
+
+    #[test]
+    fn evaluate_rule_size_and_subject() {
+        let r = rule_and("big-promo", vec![
+            cond("size", "larger_than", "10000"),
+            cond("subject", "contains", "sale"),
+        ]);
+        assert!(evaluate_rule(&r, "", "", "Big Sale", 50000));
+        assert!(!evaluate_rule(&r, "", "", "Big Sale", 5000));
     }
 }
