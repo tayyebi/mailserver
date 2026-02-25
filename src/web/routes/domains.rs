@@ -139,6 +139,12 @@ struct EditTemplate<'a> {
     domain: crate::db::Domain,
 }
 
+/// View-model for the DNS runbook page.
+///
+/// `dmarc_rua` and `dmarc_ruf` are the fully-qualified RFC 5321 mailbox addresses
+/// (`local-part@domain`, §4.1.2) that will be embedded as `mailto:` URIs in the
+/// `_dmarc` TXT record (RFC 7489 §6.3).  When `None` the record falls back to
+/// `postmaster@<domain>` (RFC 5321 §4.5.1).
 #[derive(Template)]
 #[template(path = "domains/dns.html")]
 struct DnsTemplate<'a> {
@@ -151,7 +157,9 @@ struct DnsTemplate<'a> {
     dkim_record: String,
     bimi_logo_url: String,
     has_bimi: bool,
+    /// `rua=mailto:<rua>` aggregate-report destination (RFC 7489 §6.3).
     dmarc_rua: Option<String>,
+    /// `ruf=mailto:<ruf>` failure-report destination (RFC 7489 §6.3 / RFC 6591).
     dmarc_ruf: Option<String>,
     dmarc_inbox: Option<crate::db::DmarcInbox>,
     domain_accounts: Vec<Account>,
@@ -611,6 +619,13 @@ pub async fn remove_dmarc_inbox(
     Redirect::to(&format!("/domains/{}/dns", id)).into_response()
 }
 
+/// Set the `ruf` (failure report) inbox for a domain.
+///
+/// Updates the `ruf=` tag in the generated `_dmarc` TXT record.  DMARC failure reports
+/// (RFC 7489 §7.3) are forensic per-message reports delivered by the receiving MTA to the
+/// `ruf=mailto:<address>` URI over SMTP (RFC 5321 §3.1).  The address must be an RFC 5321
+/// mailbox (`local-part@domain`, §4.1.2) reachable via standard SMTP delivery (RFC 5321 §5).
+/// Reports are formatted as ARF messages per RFC 6591 / RFC 5965.
 pub async fn set_dmarc_ruf_inbox(
     _auth: AuthAdmin,
     State(state): State<AppState>,
@@ -634,6 +649,11 @@ pub async fn set_dmarc_ruf_inbox(
     Redirect::to(&format!("/domains/{}/dns", id)).into_response()
 }
 
+/// Remove the `ruf` failure-report inbox for a domain.
+///
+/// Clears the explicit `ruf=` inbox so the generated `_dmarc` TXT record reverts to the
+/// required RFC 5321 fallback address `postmaster@<domain>` (RFC 5321 §4.5.1), which every
+/// conforming SMTP server must accept.
 pub async fn remove_dmarc_ruf_inbox(
     _auth: AuthAdmin,
     State(state): State<AppState>,

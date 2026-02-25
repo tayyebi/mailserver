@@ -203,16 +203,40 @@ pub struct WebhookLog {
     pub created_at: String,
 }
 
+/// Represents a configured DMARC report inbox.
+///
+/// DMARC (RFC 7489) defines two reporting mechanisms published in the `_dmarc` TXT DNS record:
+///
+/// - `rua` (Reporting URI for Aggregate reports, RFC 7489 §6.3): a `mailto:` URI that receives
+///   daily XML summaries of DMARC evaluation results.  The `mailto:` scheme embeds an RFC 5321
+///   mailbox address (`local-part@domain`, §4.1.2) as the delivery target.
+///
+/// - `ruf` (Reporting URI for Failure reports, RFC 7489 §6.3 / RFC 6591): a `mailto:` URI that
+///   receives per-message forensic failure reports in ARF (Abuse Reporting Format, RFC 5965)
+///   format.  Like `rua`, the URI encodes an RFC 5321 mailbox address and the sending MTA
+///   delivers the report as an ordinary SMTP message (RFC 5321 §3.1).
+///
+/// Both URIs must follow RFC 5321 mailbox syntax: the local-part and domain are separated by
+/// `@` (RFC 5321 §4.1.2), and the domain must have a valid MX or A/AAAA record reachable
+/// over SMTP (RFC 5321 §5).  When no `ruf` inbox is configured the DNS record falls back to
+/// `postmaster@<domain>`, which every SMTP server is required to accept (RFC 5321 §4.5.1).
 #[derive(Clone, Serialize)]
 pub struct DmarcInbox {
     pub id: i64,
+    /// Account that receives aggregate reports (`rua=mailto:<account>`, RFC 7489 §6.3).
     pub account_id: i64,
     pub label: String,
     pub created_at: String,
+    /// RFC 5321 §4.1.2 local-part of the rua mailbox.
     pub account_username: Option<String>,
+    /// RFC 5321 §4.1.2 domain of the rua mailbox.
     pub account_domain: Option<String>,
+    /// Account that receives failure reports (`ruf=mailto:<account>`, RFC 7489 §6.3 / RFC 6591).
+    /// `None` means the `_dmarc` record should fall back to `postmaster@<domain>` (RFC 5321 §4.5.1).
     pub ruf_account_id: Option<i64>,
+    /// RFC 5321 §4.1.2 local-part of the ruf mailbox.
     pub ruf_account_username: Option<String>,
+    /// RFC 5321 §4.1.2 domain of the ruf mailbox.
     pub ruf_account_domain: Option<String>,
 }
 
@@ -2351,6 +2375,13 @@ impl Database {
         }
     }
 
+    /// Set or clear the `ruf` (failure report) destination account for an inbox.
+    ///
+    /// DMARC failure reports (RFC 7489 §7.3 / RFC 6591) are sent by receiving MTAs as individual
+    /// RFC 5321 SMTP messages to the address published in the `ruf=` tag.  Setting
+    /// `ruf_account_id` to `Some(id)` causes the generated `_dmarc` DNS record to use that
+    /// account's RFC 5321 mailbox address (`local-part@domain`); passing `None` removes the
+    /// explicit destination so the record falls back to `postmaster@<domain>` (RFC 5321 §4.5.1).
     pub fn set_dmarc_inbox_ruf(&self, id: i64, ruf_account_id: Option<i64>) {
         info!("[db] setting dmarc inbox ruf id={} ruf_account_id={:?}", id, ruf_account_id);
         let mut conn = self.conn();

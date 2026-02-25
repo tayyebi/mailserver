@@ -34,6 +34,12 @@
         {% if !dkim_record.is_empty() %}
         <tr><td>TXT</td><td><code>{{ dkim_selector }}._domainkey</code></td><td><code>v=DKIM1; k=rsa; p={{ dkim_record }}</code></td><td>DKIM signing key</td></tr>
         {% endif %}
+        {# DMARC record (RFC 7489 §6.3).
+           rua: aggregate report URI — receiving MTAs POST daily XML summaries to this
+                RFC 5321 mailbox address (local-part@domain, RFC 5321 §4.1.2) via SMTP.
+           ruf: failure report URI  — receiving MTAs deliver per-message forensic reports
+                in ARF format (RFC 6591 / RFC 5965) to this RFC 5321 mailbox address via SMTP.
+           Both fall back to postmaster@<domain> (RFC 5321 §4.5.1) when not configured. #}
         <tr><td>TXT</td><td>_dmarc</td><td><code>v=DMARC1; p=reject; adkim=s; aspf=s; fo=1; rua=mailto:{% if let Some(rua) = dmarc_rua %}{{ rua }}{% else %}postmaster@{{ domain_name }}{% endif %}; ruf=mailto:{% if let Some(ruf) = dmarc_ruf %}{{ ruf }}{% else %}postmaster@{{ domain_name }}{% endif %}</code></td><td>DMARC enforcement</td></tr>
         <tr><td>SRV</td><td>_autodiscover._tcp</td><td><code>0 0 443 {{ hostname }}.</code></td><td>Outlook autodiscover</td></tr>
         <tr><td>CNAME</td><td>autoconfig</td><td><code>{{ hostname }}.</code></td><td>Thunderbird autoconfig</td></tr>

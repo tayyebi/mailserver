@@ -1,1 +1,13 @@
+-- Add ruf_account_id to dmarc_inboxes.
+--
+-- DMARC (RFC 7489 §6.3) supports two separate reporting URIs in the _dmarc TXT record:
+--
+--   rua=mailto:<address>  Aggregate (summary) reports delivered daily via SMTP (RFC 5321 §3.1).
+--   ruf=mailto:<address>  Failure (forensic) reports sent per authentication failure (RFC 6591).
+--
+-- Both addresses follow RFC 5321 mailbox syntax (local-part@domain, §4.1.2).  When ruf is
+-- absent from the DNS record, receiving MTAs fall back to postmaster@<domain> per RFC 5321 §4.5.1.
+--
+-- This column stores the account whose RFC 5321 mailbox address will be emitted as the ruf=
+-- URI. ON DELETE SET NULL reverts the record to the postmaster fallback when the account is removed.
 ALTER TABLE dmarc_inboxes ADD COLUMN IF NOT EXISTS ruf_account_id BIGINT REFERENCES accounts(id) ON DELETE SET NULL;
