@@ -2,6 +2,7 @@ pub mod abuse;
 pub mod accounts;
 pub mod aliases;
 pub mod api_docs;
+pub mod api_email;
 pub mod bimi;
 pub mod caldav;
 pub mod configs;
@@ -102,6 +103,11 @@ pub fn auth_routes() -> Router<AppState> {
         )
         .route("/configs", get(configs::page))
         .route("/api", get(api_docs::page))
+        .route("/api/emails", get(api_email::list_emails).post(api_email::send_email))
+        .route(
+            "/api/emails/:filename",
+            get(api_email::get_email).delete(api_email::delete_email),
+        )
         .route("/fail2ban", get(fail2ban::overview))
         .route("/fail2ban/toggle", post(fail2ban::toggle_system))
         .route("/fail2ban/ban", post(fail2ban::ban_ip))

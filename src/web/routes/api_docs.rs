@@ -59,6 +59,7 @@ mod tests {
         };
         let rendered = tmpl.render().unwrap();
         assert!(rendered.contains("REST API"));
+        assert!(rendered.contains("/api/emails"));
         assert!(rendered.contains("/pixel"));
         assert!(rendered.contains("/mcp"));
     }
