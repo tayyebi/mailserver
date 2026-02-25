@@ -8,8 +8,11 @@ use log::{debug, info, warn};
 
 use crate::db::PixelOpen;
 use crate::web::auth::AuthAdmin;
-use crate::web::forms::TrackingPatternForm;
+use crate::web::forms::{TrackingPatternForm, TrackingRuleForm};
 use crate::web::AppState;
+
+// serde_json used for parsing conditions_json from the rule form
+use serde_json;
 
 // ── View models ──
 
@@ -32,6 +35,7 @@ struct ListTemplate<'a> {
     flash: Option<&'a str>,
     messages: Vec<TrackingRow>,
     patterns: Vec<crate::db::TrackingPattern>,
+    rules: Vec<crate::db::TrackingRule>,
 }
 
 #[derive(Template)]
@@ -86,12 +90,14 @@ pub async fn list(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Strin
     }
 
     let patterns = state.blocking_db(|db| db.list_tracking_patterns()).await;
+    let rules = state.blocking_db(|db| db.list_tracking_rules()).await;
 
     let tmpl = ListTemplate {
         nav_active: "Tracking",
         flash: None,
         messages,
         patterns,
+        rules,
     };
     Html(tmpl.render().unwrap())
 }
@@ -160,6 +166,35 @@ pub async fn delete_pattern(
     warn!("[web] POST /tracking/patterns/{}/delete — deleting pattern", id);
     state
         .blocking_db(move |db| db.delete_tracking_pattern(id))
+        .await;
+    Redirect::to("/tracking").into_response()
+}
+
+pub async fn create_rule(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Form(form): Form<TrackingRuleForm>,
+) -> Response {
+    info!("[web] POST /tracking/rules — creating rule name={}", form.name);
+    let name = form.name.trim().to_string();
+    let match_mode = if form.match_mode == "OR" { "OR" } else { "AND" }.to_string();
+    let conditions: Vec<crate::db::TrackingCondition> =
+        serde_json::from_str(&form.conditions_json).unwrap_or_default();
+    state
+        .blocking_db(move |db| db.create_tracking_rule(&name, &match_mode, &conditions))
+        .await
+        .ok();
+    Redirect::to("/tracking").into_response()
+}
+
+pub async fn delete_rule(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Response {
+    warn!("[web] POST /tracking/rules/{}/delete — deleting rule", id);
+    state
+        .blocking_db(move |db| db.delete_tracking_rule(id))
         .await;
     Redirect::to("/tracking").into_response()
 }
