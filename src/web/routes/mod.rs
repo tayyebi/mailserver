@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod aliases;
 pub mod bimi;
+pub mod caldav;
 pub mod configs;
 pub mod dashboard;
 pub mod dmarc;
@@ -131,6 +132,19 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/relays/:id/assignments", post(relays::add_assignment))
         .route("/relays/:id/assignments/:aid/delete",
             post(relays::remove_assignment),
+        )
+        .route("/caldav", get(caldav::admin_list))
+        .route(
+            "/caldav/admin/calendars",
+            post(caldav::admin_create_calendar),
+        )
+        .route(
+            "/caldav/admin/calendars/:id/delete",
+            post(caldav::admin_delete_calendar),
+        )
+        .route(
+            "/caldav/admin/objects/:id/delete",
+            post(caldav::admin_delete_object),
         )
         .route("/mcp", post(mcp::handle))
         .route("/webdav", get(webdav::list))

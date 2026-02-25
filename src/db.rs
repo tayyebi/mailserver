@@ -247,6 +247,43 @@ pub struct OutboundRelayAssignment {
     pub relay_name: Option<String>,
 }
 
+#[derive(Clone, Serialize)]
+pub struct CalDavCalendar {
+    pub id: i64,
+    pub account_id: i64,
+    pub slug: String,
+    pub display_name: String,
+    pub description: String,
+    pub color: String,
+    pub ctag: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct CalDavObject {
+    pub id: i64,
+    pub calendar_id: i64,
+    pub uid: String,
+    pub filename: String,
+    pub etag: String,
+    pub data: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct CalDavCalendarWithAccount {
+    pub id: i64,
+    pub account_id: i64,
+    pub slug: String,
+    pub display_name: String,
+    pub description: String,
+    pub color: String,
+    pub ctag: String,
+    pub object_count: i64,
+    pub account_username: Option<String>,
+    pub account_domain: Option<String>,
+}
+
 fn load_available_migrations() -> Vec<(String, String)> {
     let mut migrations = Vec::new();
     let paths = vec!["migrations", "/app/migrations"];
@@ -2662,6 +2699,264 @@ impl Database {
                 (relay, assignment)
             })
             .collect()
+    }
+
+    // ── Account helper ──
+
+    pub fn get_account_by_email(&self, email: &str) -> Option<Account> {
+        debug!("[db] looking up account by email={}", email);
+        let parts: Vec<&str> = email.splitn(2, '@').collect();
+        if parts.len() != 2 {
+            return None;
+        }
+        let username = parts[0];
+        let domain = parts[1];
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT a.id, a.domain_id, a.username, a.password_hash, a.name, a.active, a.quota, d.domain
+             FROM accounts a
+             JOIN domains d ON a.domain_id = d.id
+             WHERE LOWER(a.username) = LOWER($1) AND LOWER(d.domain) = LOWER($2)",
+            &[&username, &domain],
+        )
+        .ok()
+        .flatten()
+        .map(|row| Account {
+            id: row.get(0),
+            domain_id: row.get(1),
+            username: row.get(2),
+            password_hash: row.get(3),
+            name: row.get(4),
+            active: row.get(5),
+            quota: row.get(6),
+            domain_name: row.get(7),
+        })
+    }
+
+    // ── CalDAV methods ──
+
+    pub fn list_all_caldav_calendars(&self) -> Vec<CalDavCalendarWithAccount> {
+        debug!("[db] listing all CalDAV calendars");
+        let mut conn = self.conn();
+        let rows = conn
+            .query(
+                "SELECT c.id, c.account_id, c.slug, c.display_name, c.description, c.color, c.ctag,
+                        COUNT(o.id) AS object_count, a.username, d.domain
+                 FROM caldav_calendars c
+                 JOIN accounts a ON c.account_id = a.id
+                 JOIN domains d ON a.domain_id = d.id
+                 LEFT JOIN caldav_objects o ON o.calendar_id = c.id
+                 GROUP BY c.id, a.username, d.domain
+                 ORDER BY d.domain, a.username, c.display_name",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list CalDAV calendars: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| CalDavCalendarWithAccount {
+                id: row.get(0),
+                account_id: row.get(1),
+                slug: row.get(2),
+                display_name: row.get(3),
+                description: row.get(4),
+                color: row.get(5),
+                ctag: row.get(6),
+                object_count: row.get(7),
+                account_username: row.get(8),
+                account_domain: row.get(9),
+            })
+            .collect()
+    }
+
+    pub fn list_caldav_calendars_for_account(&self, account_id: i64) -> Vec<CalDavCalendar> {
+        debug!("[db] listing CalDAV calendars for account_id={}", account_id);
+        let mut conn = self.conn();
+        let rows = conn
+            .query(
+                "SELECT id, account_id, slug, display_name, description, color, ctag, created_at
+                 FROM caldav_calendars WHERE account_id = $1 ORDER BY display_name",
+                &[&account_id],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list CalDAV calendars for account: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| CalDavCalendar {
+                id: row.get(0),
+                account_id: row.get(1),
+                slug: row.get(2),
+                display_name: row.get(3),
+                description: row.get(4),
+                color: row.get(5),
+                ctag: row.get(6),
+                created_at: row.get::<_, Option<String>>(7).unwrap_or_default(),
+            })
+            .collect()
+    }
+
+    pub fn get_caldav_calendar_by_slug(&self, account_id: i64, slug: &str) -> Option<CalDavCalendar> {
+        debug!("[db] getting CalDAV calendar account_id={} slug={}", account_id, slug);
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT id, account_id, slug, display_name, description, color, ctag, created_at
+             FROM caldav_calendars WHERE account_id = $1 AND slug = $2",
+            &[&account_id, &slug],
+        )
+        .ok()
+        .flatten()
+        .map(|row| CalDavCalendar {
+            id: row.get(0),
+            account_id: row.get(1),
+            slug: row.get(2),
+            display_name: row.get(3),
+            description: row.get(4),
+            color: row.get(5),
+            ctag: row.get(6),
+            created_at: row.get::<_, Option<String>>(7).unwrap_or_default(),
+        })
+    }
+
+    pub fn create_caldav_calendar(
+        &self,
+        account_id: i64,
+        slug: &str,
+        display_name: &str,
+        description: &str,
+        color: &str,
+    ) -> Result<i64, String> {
+        info!("[db] creating CalDAV calendar account_id={} slug={}", account_id, slug);
+        let mut conn = self.conn();
+        let ts = now();
+        let ctag = uuid::Uuid::new_v4().to_string();
+        let row = conn
+            .query_one(
+                "INSERT INTO caldav_calendars (account_id, slug, display_name, description, color, ctag, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+                 RETURNING id",
+                &[&account_id, &slug, &display_name, &description, &color, &ctag, &ts],
+            )
+            .map_err(|e| {
+                error!("[db] failed to create CalDAV calendar: {}", e);
+                e.to_string()
+            })?;
+        let id: i64 = row.get(0);
+        info!("[db] CalDAV calendar created id={}", id);
+        Ok(id)
+    }
+
+    pub fn update_caldav_calendar_ctag(&self, id: i64) {
+        let ctag = uuid::Uuid::new_v4().to_string();
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
+            "UPDATE caldav_calendars SET ctag = $1, updated_at = $2 WHERE id = $3",
+            &[&ctag, &now(), &id],
+        ) {
+            error!("[db] failed to update CalDAV calendar ctag: {}", e);
+        }
+    }
+
+    pub fn delete_caldav_calendar(&self, id: i64) {
+        warn!("[db] deleting CalDAV calendar id={}", id);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute("DELETE FROM caldav_calendars WHERE id = $1", &[&id]) {
+            error!("[db] failed to delete CalDAV calendar: {}", e);
+        }
+    }
+
+    pub fn list_caldav_objects(&self, calendar_id: i64) -> Vec<CalDavObject> {
+        debug!("[db] listing CalDAV objects for calendar_id={}", calendar_id);
+        let mut conn = self.conn();
+        let rows = conn
+            .query(
+                "SELECT id, calendar_id, uid, filename, etag, data, created_at
+                 FROM caldav_objects WHERE calendar_id = $1 ORDER BY filename",
+                &[&calendar_id],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list CalDAV objects: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| CalDavObject {
+                id: row.get(0),
+                calendar_id: row.get(1),
+                uid: row.get(2),
+                filename: row.get(3),
+                etag: row.get(4),
+                data: row.get(5),
+                created_at: row.get::<_, Option<String>>(6).unwrap_or_default(),
+            })
+            .collect()
+    }
+
+    pub fn get_caldav_object_by_filename(&self, calendar_id: i64, filename: &str) -> Option<CalDavObject> {
+        debug!("[db] getting CalDAV object calendar_id={} filename={}", calendar_id, filename);
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT id, calendar_id, uid, filename, etag, data, created_at
+             FROM caldav_objects WHERE calendar_id = $1 AND filename = $2",
+            &[&calendar_id, &filename],
+        )
+        .ok()
+        .flatten()
+        .map(|row| CalDavObject {
+            id: row.get(0),
+            calendar_id: row.get(1),
+            uid: row.get(2),
+            filename: row.get(3),
+            etag: row.get(4),
+            data: row.get(5),
+            created_at: row.get::<_, Option<String>>(6).unwrap_or_default(),
+        })
+    }
+
+    pub fn create_or_update_caldav_object(
+        &self,
+        calendar_id: i64,
+        uid: &str,
+        filename: &str,
+        etag: &str,
+        data: &str,
+    ) -> Result<i64, String> {
+        info!("[db] upserting CalDAV object calendar_id={} filename={}", calendar_id, filename);
+        let mut conn = self.conn();
+        let ts = now();
+        let row = conn
+            .query_one(
+                "INSERT INTO caldav_objects (calendar_id, uid, filename, etag, data, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $6)
+                 ON CONFLICT (calendar_id, filename)
+                 DO UPDATE SET uid = EXCLUDED.uid, etag = EXCLUDED.etag, data = EXCLUDED.data, updated_at = EXCLUDED.updated_at
+                 RETURNING id",
+                &[&calendar_id, &uid, &filename, &etag, &data, &ts],
+            )
+            .map_err(|e| {
+                error!("[db] failed to upsert CalDAV object: {}", e);
+                e.to_string()
+            })?;
+        Ok(row.get(0))
+    }
+
+    pub fn delete_caldav_object(&self, id: i64) {
+        warn!("[db] deleting CalDAV object id={}", id);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute("DELETE FROM caldav_objects WHERE id = $1", &[&id]) {
+            error!("[db] failed to delete CalDAV object: {}", e);
+        }
+    }
+
+    pub fn delete_caldav_object_by_filename(&self, calendar_id: i64, filename: &str) {
+        warn!("[db] deleting CalDAV object calendar_id={} filename={}", calendar_id, filename);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
+            "DELETE FROM caldav_objects WHERE calendar_id = $1 AND filename = $2",
+            &[&calendar_id, &filename],
+        ) {
+            error!("[db] failed to delete CalDAV object by filename: {}", e);
+        }
     }
 }
 

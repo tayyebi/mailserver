@@ -220,8 +220,18 @@ pub struct TrackingPatternForm {
 }
 
 #[derive(Deserialize)]
+<<<<<<< copilot/implement-caldev-server-admin-features
+pub struct CalDavCalendarForm {
+    pub email: String,
+    pub display_name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub color: Option<String>,
+=======
 pub struct TrackingRuleForm {
     pub name: String,
     pub match_mode: String,
     pub conditions_json: String,
+>>>>>>> main
 }
