@@ -7,6 +7,7 @@ pub mod dmarc;
 pub mod domains;
 pub mod fail2ban;
 pub mod forwarding;
+pub mod mcp;
 pub mod pixel;
 pub mod queue;
 pub mod relays;
@@ -129,4 +130,5 @@ pub fn auth_routes() -> Router<AppState> {
             "/relays/:id/assignments/:aid/delete",
             post(relays::remove_assignment),
         )
+        .route("/mcp", post(mcp::handle))
 }
