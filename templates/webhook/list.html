@@ -41,7 +41,7 @@
   <td>{{ l.created_at }}</td>
   <td>{{ l.sender }}</td>
   <td>{{ l.subject }}</td>
-  <td><code>{{ l.url }}</code></td>
+  <td><code style="word-break:break-all;max-width:20ch;display:inline-block">{{ l.url }}</code></td>
   <td>{% if l.success %}<mark>{{ l.response_status }}</mark>{% else %}<strong>{{ l.response_status }}</strong>{% endif %}</td>
   <td>{{ l.duration_ms }}</td>
   <td>{% if !l.error.is_empty() %}<small>{{ l.error }}</small>{% endif %}</td>

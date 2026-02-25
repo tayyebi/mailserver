@@ -162,11 +162,7 @@ pub struct WebhookSettingsForm {
 #[derive(Deserialize)]
 pub struct FeatureToggleForm {
     #[serde(default)]
-    pub filter_enabled: Option<String>,
-    #[serde(default)]
     pub milter_enabled: Option<String>,
-    #[serde(default)]
-    pub unsubscribe_enabled: Option<String>,
 }
 
 #[derive(Deserialize)]

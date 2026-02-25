@@ -2,14 +2,17 @@ use askama::Template;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    response::{Html, IntoResponse, Response},
+    response::{Html, IntoResponse, Redirect, Response},
     routing::get,
+    Form,
     Router,
 };
 use log::{debug, info, warn};
 
+use serde_json;
+
 use crate::web::auth::AuthAdmin;
-use crate::web::forms::UnsubscribeQuery;
+use crate::web::forms::{TrackingPatternForm, TrackingRuleForm, UnsubscribeQuery};
 use crate::web::AppState;
 
 // ── Templates ──
@@ -20,6 +23,8 @@ struct ListTemplate<'a> {
     nav_active: &'a str,
     flash: Option<&'a str>,
     entries: Vec<crate::db::UnsubscribeEntry>,
+    patterns: Vec<crate::db::UnsubscribePattern>,
+    rules: Vec<crate::db::UnsubscribeRule>,
 }
 
 #[derive(Template)]
@@ -148,10 +153,14 @@ pub async fn list(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Strin
     info!("[web] GET /unsubscribe/list — listing unsubscribe entries");
     let entries = state.blocking_db(|db| db.list_unsubscribes()).await;
     debug!("[web] found {} unsubscribe entries", entries.len());
+    let patterns = state.blocking_db(|db| db.list_unsubscribe_patterns()).await;
+    let rules = state.blocking_db(|db| db.list_unsubscribe_rules()).await;
     let tmpl = ListTemplate {
         nav_active: "Unsubscribe",
         flash: None,
         entries,
+        patterns,
+        rules,
     };
     Html(tmpl.render().unwrap())
 }
@@ -167,4 +176,59 @@ pub async fn delete(
     );
     state.blocking_db(move |db| db.delete_unsubscribe(id)).await;
     axum::response::Redirect::to("/unsubscribe/list").into_response()
+}
+
+pub async fn create_pattern(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Form(form): Form<TrackingPatternForm>,
+) -> Response {
+    info!("[web] POST /unsubscribe/patterns — creating pattern={}", form.pattern);
+    let pattern = form.pattern.trim().to_string();
+    state
+        .blocking_db(move |db| db.create_unsubscribe_pattern(&pattern))
+        .await
+        .ok();
+    Redirect::to("/unsubscribe/list").into_response()
+}
+
+pub async fn delete_pattern(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Response {
+    warn!("[web] POST /unsubscribe/patterns/{}/delete — deleting pattern", id);
+    state
+        .blocking_db(move |db| db.delete_unsubscribe_pattern(id))
+        .await;
+    Redirect::to("/unsubscribe/list").into_response()
+}
+
+pub async fn create_rule(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Form(form): Form<TrackingRuleForm>,
+) -> Response {
+    info!("[web] POST /unsubscribe/rules — creating rule name={}", form.name);
+    let name = form.name.trim().to_string();
+    let match_mode = if form.match_mode == "OR" { "OR" } else { "AND" }.to_string();
+    let conditions: Vec<crate::db::TrackingCondition> =
+        serde_json::from_str(&form.conditions_json).unwrap_or_default();
+    state
+        .blocking_db(move |db| db.create_unsubscribe_rule(&name, &match_mode, &conditions))
+        .await
+        .ok();
+    Redirect::to("/unsubscribe/list").into_response()
+}
+
+pub async fn delete_rule(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Response {
+    warn!("[web] POST /unsubscribe/rules/{}/delete — deleting rule", id);
+    state
+        .blocking_db(move |db| db.delete_unsubscribe_rule(id))
+        .await;
+    Redirect::to("/unsubscribe/list").into_response()
 }

@@ -17,15 +17,9 @@
   —
   {% if milter_healthy %}<mark data-variant="success">● Healthy</mark>{% else %}<mark data-variant="danger">● Unavailable</mark>{% endif %}
 </dd>
-<dt>List-Unsubscribe Injection</dt>
-<dd>
-  {% if unsubscribe_enabled %}<mark data-variant="success">Enabled</mark>{% else %}<mark data-variant="muted">Disabled</mark>{% endif %}
-</dd>
 </dl>
 <form method="post" action="/settings/features">
-  <label><input type="checkbox" name="filter_enabled" value="on"{% if filter_enabled %} checked{% endif %}> Enable Content Filter (footer injection, tracking pixels)</label>
   <label><input type="checkbox" name="milter_enabled" value="on"{% if milter_enabled %} checked{% endif %}> Enable Milter / OpenDKIM (DKIM signing)</label>
-  <label><input type="checkbox" name="unsubscribe_enabled" value="on"{% if unsubscribe_enabled %} checked{% endif %}> Enable List-Unsubscribe Header Injection (RFC 8058 one-click unsubscribe)</label>
   <button type="submit">Save Feature Settings</button>
 </form>
 
@@ -70,22 +64,6 @@
 {% endif %}
 <form method="post" action="/settings/tls/regenerate" onsubmit="return confirm('This will replace the current TLS certificate with a new self-signed certificate. All connected clients may need to re-trust the certificate. Continue?')">
 <button type="submit">Regenerate Self-Signed Certificate</button>
-</form>
-
-<h2>Pixel Tracker</h2>
-<form method="post" action="/settings/pixel">
-  <label>Pixel Host<br>
-    <input type="text" name="pixel_host" value="{{ pixel_host }}" required>
-  </label>
-  <label>Pixel Port (optional)<br>
-    {% if pixel_port != "" %}
-      <input type="number" name="pixel_port" value="{{ pixel_port }}">
-    {% else %}
-      <input type="number" name="pixel_port" value="">
-    {% endif %}
-  </label>
-  <p>Computed pixel URL: <code>https://{{ pixel_host }}{% if pixel_port != "" %}:{{ pixel_port }}{% endif %}/pixel?id=</code></p>
-  <button type="submit">Save Pixel Settings</button>
 </form>
 
 <h2>Service Management</h2>

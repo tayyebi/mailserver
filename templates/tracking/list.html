@@ -7,6 +7,24 @@
         <h1>Tracking</h1>
     </hgroup>
 </section>
+
+<aside>
+    <h2>Pixel Tracker Settings</h2>
+    <form method="post" action="/tracking/pixel">
+      <label>Pixel Host<br>
+        <input type="text" name="pixel_host" value="{{ pixel_host }}" required>
+      </label>
+      <label>Pixel Port (optional)<br>
+        {% if pixel_port != "" %}
+          <input type="number" name="pixel_port" value="{{ pixel_port }}">
+        {% else %}
+          <input type="number" name="pixel_port" value="">
+        {% endif %}
+      </label>
+      <p>Computed pixel URL: <code>https://{{ pixel_host }}{% if pixel_port != "" %}:{{ pixel_port }}{% endif %}/pixel?id=</code></p>
+      <button type="submit">Save Pixel Settings</button>
+    </form>
+</aside>
 <aside>
     <h2>From Address Patterns</h2>
     <p>Tracking pixels are injected into outbound HTML emails whose <strong>From</strong> address matches one of the patterns below. Use <code>*@domain.com</code> to match all senders on a domain, or an exact address like <code>newsletter@example.com</code>.</p>

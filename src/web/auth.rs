@@ -51,6 +51,27 @@ where
                 unauthorized()
             })?;
 
+        // Bearer token authentication (for REST API)
+        if let Some(token) = auth_header.strip_prefix("Bearer ") {
+            let token = token.trim().to_string();
+            let valid = app_state
+                .blocking_db(move |db| db.verify_api_token(&token))
+                .await;
+            if !valid {
+                warn!("[web] invalid Bearer token for {}", parts.uri);
+                return Err(unauthorized());
+            }
+            let admin = app_state
+                .blocking_db(|db| db.get_first_admin())
+                .await
+                .ok_or_else(|| {
+                    error!("[web] no admin found for Bearer token auth");
+                    unauthorized()
+                })?;
+            info!("[web] Bearer token authentication succeeded");
+            return Ok(AuthAdmin { admin });
+        }
+
         if !auth_header.starts_with("Basic ") {
             warn!("[web] invalid Authorization scheme for {}", parts.uri);
             return Err(unauthorized());

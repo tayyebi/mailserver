@@ -36,6 +36,8 @@ struct ListTemplate<'a> {
     messages: Vec<TrackingRow>,
     patterns: Vec<crate::db::TrackingPattern>,
     rules: Vec<crate::db::TrackingRule>,
+    pixel_host: String,
+    pixel_port: String,
 }
 
 #[derive(Template)]
@@ -91,6 +93,7 @@ pub async fn list(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Strin
 
     let patterns = state.blocking_db(|db| db.list_tracking_patterns()).await;
     let rules = state.blocking_db(|db| db.list_tracking_rules()).await;
+    let (pixel_host, pixel_port) = load_pixel_settings(&state).await;
 
     let tmpl = ListTemplate {
         nav_active: "Tracking",
@@ -98,8 +101,77 @@ pub async fn list(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Strin
         messages,
         patterns,
         rules,
+        pixel_host,
+        pixel_port,
     };
     Html(tmpl.render().unwrap())
+}
+
+async fn load_pixel_settings(state: &AppState) -> (String, String) {
+    let default_host = state.hostname.clone();
+    let mut pixel_host = default_host;
+    let mut pixel_port = String::new();
+
+    if let Some(base) = state.blocking_db(|db| db.get_setting("pixel_base_url")).await {
+        let trimmed = base
+            .trim_end_matches("/pixel?id=")
+            .trim_end_matches("/pixel");
+        let no_scheme = trimmed
+            .strip_prefix("http://")
+            .or_else(|| trimmed.strip_prefix("https://"))
+            .unwrap_or(trimmed);
+        let host_port = no_scheme.split('/').next().unwrap_or(no_scheme);
+        if let Some((h, p)) = host_port.split_once(':') {
+            pixel_host = h.to_string();
+            pixel_port = p.to_string();
+        } else {
+            pixel_host = host_port.to_string();
+        }
+    } else if let Ok(env_val) = std::env::var("PIXEL_BASE_URL") {
+        let trimmed = env_val
+            .trim_end_matches("/pixel?id=")
+            .trim_end_matches("/pixel");
+        let no_scheme = trimmed
+            .strip_prefix("http://")
+            .or_else(|| trimmed.strip_prefix("https://"))
+            .unwrap_or(trimmed);
+        let host_port = no_scheme.split('/').next().unwrap_or(no_scheme);
+        if let Some((h, p)) = host_port.split_once(':') {
+            pixel_host = h.to_string();
+            pixel_port = p.to_string();
+        } else {
+            pixel_host = host_port.to_string();
+        }
+    }
+    (pixel_host, pixel_port)
+}
+
+pub async fn update_pixel_settings(
+    auth: AuthAdmin,
+    State(state): State<AppState>,
+    Form(form): Form<crate::web::forms::PixelSettingsForm>,
+) -> Response {
+    info!(
+        "[web] POST /tracking/pixel — update pixel host/port for username={}",
+        auth.admin.username
+    );
+    let host = form.pixel_host.trim().to_string();
+    if host.is_empty() {
+        return Redirect::to("/tracking").into_response();
+    }
+    let base = match form.pixel_port {
+        Some(p) if p > 0 && p != 80 => format!("http://{}:{}/pixel?id=", host, p),
+        _ => format!("http://{}/pixel?id=", host),
+    };
+    let base_for_db = base.clone();
+    state
+        .blocking_db(move |db| db.set_setting("pixel_base_url", &base_for_db))
+        .await;
+    info!(
+        "[web] pixel_base_url updated to {} by user={}",
+        base, auth.admin.username
+    );
+    Redirect::to("/tracking").into_response()
 }
 
 pub async fn detail(

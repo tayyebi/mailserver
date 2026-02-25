@@ -21,8 +21,6 @@ struct SettingsTemplate<'a> {
     nav_active: &'a str,
     flash: Option<&'a str>,
     admin: Admin,
-    pixel_host: String,
-    pixel_port: String,
     cert_subject: String,
     cert_issuer: String,
     cert_not_before: String,
@@ -32,7 +30,6 @@ struct SettingsTemplate<'a> {
     milter_enabled: bool,
     filter_healthy: bool,
     milter_healthy: bool,
-    unsubscribe_enabled: bool,
 }
 
 #[derive(Template)]
@@ -135,50 +132,6 @@ pub async fn page(auth: AuthAdmin, State(state): State<AppState>) -> Html<String
         auth.admin.username
     );
 
-    // determine pixel host/port from DB (fallback to env or server state)
-    let default_host = state.hostname.clone();
-    let default_port = state.admin_port.to_string();
-    let mut pixel_host = default_host.clone();
-    let mut pixel_port: String = default_port.clone();
-
-    if let Some(base) = state
-        .blocking_db(|db| db.get_setting("pixel_base_url"))
-        .await
-    {
-        // remove scheme and /pixel?id= suffix if present
-        let trimmed = base
-            .trim_end_matches("/pixel?id=")
-            .trim_end_matches("/pixel");
-        let no_scheme = trimmed
-            .strip_prefix("http://")
-            .or_else(|| trimmed.strip_prefix("https://"))
-            .unwrap_or(&trimmed);
-        let host_port = no_scheme.split('/').next().unwrap_or(no_scheme);
-        if let Some((h, p)) = host_port.split_once(':') {
-            pixel_host = h.to_string();
-            pixel_port = p.to_string();
-        } else {
-            pixel_host = host_port.to_string();
-            pixel_port = String::new();
-        }
-    } else if let Ok(env_val) = std::env::var("PIXEL_BASE_URL") {
-        let trimmed = env_val
-            .trim_end_matches("/pixel?id=")
-            .trim_end_matches("/pixel");
-        let no_scheme = trimmed
-            .strip_prefix("http://")
-            .or_else(|| trimmed.strip_prefix("https://"))
-            .unwrap_or(&trimmed);
-        let host_port = no_scheme.split('/').next().unwrap_or(no_scheme);
-        if let Some((h, p)) = host_port.split_once(':') {
-            pixel_host = h.to_string();
-            pixel_port = p.to_string();
-        } else {
-            pixel_host = host_port.to_string();
-            pixel_port = String::new();
-        }
-    }
-
     let (cert_subject, cert_issuer, cert_not_before, cert_not_after, cert_serial) =
         read_cert_info();
 
@@ -194,12 +147,6 @@ pub async fn page(auth: AuthAdmin, State(state): State<AppState>) -> Html<String
         .map(|v| v != "false")
         .unwrap_or(true);
 
-    let unsubscribe_enabled = state
-        .blocking_db(|db| db.get_setting("feature_unsubscribe_enabled"))
-        .await
-        .map(|v| v != "false")
-        .unwrap_or(true);
-
     let filter_healthy = check_filter_health();
     let milter_healthy = check_milter_health();
 
@@ -207,8 +154,6 @@ pub async fn page(auth: AuthAdmin, State(state): State<AppState>) -> Html<String
         nav_active: "Settings",
         flash: None,
         admin: auth.admin,
-        pixel_host,
-        pixel_port,
         cert_subject,
         cert_issuer,
         cert_not_before,
@@ -218,57 +163,8 @@ pub async fn page(auth: AuthAdmin, State(state): State<AppState>) -> Html<String
         milter_enabled,
         filter_healthy,
         milter_healthy,
-        unsubscribe_enabled,
     };
     Html(tmpl.render().unwrap())
-}
-
-pub async fn update_pixel(
-    auth: AuthAdmin,
-    State(state): State<AppState>,
-    Form(form): Form<crate::web::forms::PixelSettingsForm>,
-) -> Response {
-    info!(
-        "[web] POST /settings/pixel — update pixel host/port for username={}",
-        auth.admin.username
-    );
-    let host = form.pixel_host.trim();
-    if host.is_empty() {
-        let tmpl = ErrorTemplate {
-            nav_active: "Settings",
-            flash: None,
-            status_code: 400,
-            status_text: "Bad Request",
-            title: "Error",
-            message: "Host may not be empty.",
-            back_url: "/settings",
-            back_label: "Back",
-        };
-        return Html(tmpl.render().unwrap()).into_response();
-    }
-    let base = match form.pixel_port {
-        Some(p) if p > 0 && p != 80 => format!("http://{}:{}/pixel?id=", host, p),
-        _ => format!("http://{}/pixel?id=", host),
-    };
-    let base_for_db = base.clone();
-    state
-        .blocking_db(move |db| db.set_setting("pixel_base_url", &base_for_db))
-        .await;
-    info!(
-        "[web] pixel_base_url updated to {} by user={}",
-        base, auth.admin.username
-    );
-    let tmpl = ErrorTemplate {
-        nav_active: "Settings",
-        flash: None,
-        status_code: 200,
-        status_text: "OK",
-        title: "Success",
-        message: "Pixel tracker base URL updated.",
-        back_url: "/settings",
-        back_label: "Back to Settings",
-    };
-    Html(tmpl.render().unwrap()).into_response()
 }
 
 pub async fn update_features(
@@ -281,25 +177,19 @@ pub async fn update_features(
         auth.admin.username
     );
 
-    let filter_enabled = form.filter_enabled.is_some();
     let milter_enabled = form.milter_enabled.is_some();
-    let unsubscribe_enabled = form.unsubscribe_enabled.is_some();
 
-    let filter_val = if filter_enabled { "true" } else { "false" }.to_string();
     let milter_val = if milter_enabled { "true" } else { "false" }.to_string();
-    let unsub_val = if unsubscribe_enabled { "true" } else { "false" }.to_string();
 
     state
         .blocking_db(move |db| {
-            db.set_setting("feature_filter_enabled", &filter_val);
             db.set_setting("feature_milter_enabled", &milter_val);
-            db.set_setting("feature_unsubscribe_enabled", &unsub_val);
         })
         .await;
 
     info!(
-        "[web] features updated: filter={}, milter={}, unsubscribe={} by user={}",
-        filter_enabled, milter_enabled, unsubscribe_enabled, auth.admin.username
+        "[web] features updated: milter={} by user={}",
+        milter_enabled, auth.admin.username
     );
 
     // Regenerate Postfix configs to apply feature toggle changes
@@ -308,7 +198,7 @@ pub async fn update_features(
     fire_webhook(
         &state,
         "settings.features_updated",
-        serde_json::json!({"filter_enabled": filter_enabled, "milter_enabled": milter_enabled, "unsubscribe_enabled": unsubscribe_enabled}),
+        serde_json::json!({"milter_enabled": milter_enabled}),
     );
     let tmpl = ErrorTemplate {
         nav_active: "Settings",
