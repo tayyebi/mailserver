@@ -53,6 +53,11 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/forwarding/:id/delete", post(forwarding::delete))
         .route("/forwarding/:id", post(forwarding::update))
         .route("/tracking", get(tracking::list))
+        .route("/tracking/patterns", post(tracking::create_pattern))
+        .route(
+            "/tracking/patterns/:id/delete",
+            post(tracking::delete_pattern),
+        )
         .route("/tracking/:msg_id", get(tracking::detail))
         .route("/queue", get(queue::list))
         .route("/queue/flush", post(queue::flush))

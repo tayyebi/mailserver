@@ -51,8 +51,6 @@ pub struct AccountEditForm {
 pub struct AliasForm {
     pub source: String,
     pub destination: String,
-    #[serde(default)]
-    pub tracking_enabled: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -61,8 +59,6 @@ pub struct AliasEditForm {
     pub destination: String,
     #[serde(default)]
     pub active: Option<String>,
-    #[serde(default)]
-    pub tracking_enabled: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -206,5 +202,10 @@ pub struct RelayEditForm {
 #[derive(Deserialize)]
 pub struct RelayAssignmentForm {
     pub assignment_type: String,
+    pub pattern: String,
+}
+
+#[derive(Deserialize)]
+pub struct TrackingPatternForm {
     pub pattern: String,
 }

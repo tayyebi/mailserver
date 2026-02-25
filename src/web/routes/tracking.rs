@@ -1,12 +1,14 @@
 use askama::Template;
 use axum::{
     extract::{Path, State},
-    response::{Html, IntoResponse, Response},
+    response::{Html, IntoResponse, Redirect, Response},
+    Form,
 };
 use log::{debug, info, warn};
 
 use crate::db::PixelOpen;
 use crate::web::auth::AuthAdmin;
+use crate::web::forms::TrackingPatternForm;
 use crate::web::AppState;
 
 // ── View models ──
@@ -29,6 +31,7 @@ struct ListTemplate<'a> {
     nav_active: &'a str,
     flash: Option<&'a str>,
     messages: Vec<TrackingRow>,
+    patterns: Vec<crate::db::TrackingPattern>,
 }
 
 #[derive(Template)]
@@ -82,10 +85,13 @@ pub async fn list(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Strin
         });
     }
 
+    let patterns = state.blocking_db(|db| db.list_tracking_patterns()).await;
+
     let tmpl = ListTemplate {
         nav_active: "Tracking",
         flash: None,
         messages,
+        patterns,
     };
     Html(tmpl.render().unwrap())
 }
@@ -130,4 +136,30 @@ pub async fn detail(
         opens,
     };
     Html(tmpl.render().unwrap()).into_response()
+}
+
+pub async fn create_pattern(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Form(form): Form<TrackingPatternForm>,
+) -> Response {
+    info!("[web] POST /tracking/patterns — creating pattern={}", form.pattern);
+    let pattern = form.pattern.trim().to_string();
+    state
+        .blocking_db(move |db| db.create_tracking_pattern(&pattern))
+        .await
+        .ok();
+    Redirect::to("/tracking").into_response()
+}
+
+pub async fn delete_pattern(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Response {
+    warn!("[web] POST /tracking/patterns/{}/delete — deleting pattern", id);
+    state
+        .blocking_db(move |db| db.delete_tracking_pattern(id))
+        .await;
+    Redirect::to("/tracking").into_response()
 }

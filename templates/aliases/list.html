@@ -6,7 +6,7 @@
         <small>Routing intelligence</small>
         <h1>Aliases</h1>
     </hgroup>
-    <p>Use direct aliases for known senders and catch-alls for the rest. Keep tracking toggled where compliance allows.</p>
+    <p>Use direct aliases for known senders and catch-alls for the rest.</p>
     <a href="/aliases/new"><strong>Add alias</strong></a>
 </section>
 <aside>
@@ -15,17 +15,16 @@
     <progress value="{{ coverage_pct }}" max="100"></progress>
     <ul>
         <li>Create <code>*@domain.com</code> to scoop stray recipients.</li>
-        <li>Use tracking to learn which aliases are still receiving mail.</li>
         <li>Disable catch-all aliases temporarily instead of deleting them.</li>
     </ul>
 </aside>
 <table>
     <thead>
-        <tr><th>Domain</th><th>Source</th><th>Destination</th><th>Type</th><th>Tracking</th><th>Status</th><th>Actions</th></tr>
+        <tr><th>Domain</th><th>Source</th><th>Destination</th><th>Type</th><th>Status</th><th>Actions</th></tr>
     </thead>
     <tbody>
     {% if alias_rows.is_empty() %}
-        <tr><td colspan="7">No aliases yet — create one to start routing mail.</td></tr>
+        <tr><td colspan="6">No aliases yet — create one to start routing mail.</td></tr>
     {% else %}
         {% for a in alias_rows %}
         <tr>
@@ -33,7 +32,6 @@
             <td>{{ a.source }}</td>
             <td>{{ a.destination }}</td>
             <td>{{ a.type_label }}</td>
-            <td>{{ a.tracking_label }}</td>
             <td>{{ a.active_label }}</td>
             <td>
                 <a href="/aliases/{{ a.id }}/edit">Edit</a>

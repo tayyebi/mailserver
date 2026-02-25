@@ -35,7 +35,6 @@ struct AliasRow {
     source: String,
     destination: String,
     type_label: String,
-    tracking_label: String,
     active_label: String,
 }
 
@@ -126,11 +125,6 @@ pub async fn list(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Strin
                 } else {
                     "Targeted".to_string()
                 },
-                tracking_label: if a.tracking_enabled {
-                    "On".to_string()
-                } else {
-                    "Off".to_string()
-                },
                 active_label: if a.active {
                     "Active".to_string()
                 } else {
@@ -164,10 +158,9 @@ pub async fn create(
     State(state): State<AppState>,
     Form(form): Form<AliasForm>,
 ) -> Response {
-    let tracking = form.tracking_enabled.is_some();
     info!(
-        "[web] POST /aliases — creating alias source={}, destination={}, tracking={}",
-        form.source, form.destination, tracking
+        "[web] POST /aliases — creating alias source={}, destination={}",
+        form.source, form.destination
     );
 
     // Extract domain from source email
@@ -257,7 +250,7 @@ pub async fn create(
     let source = form.source.clone();
     let destination = form.destination.clone();
     let create_result = state
-        .blocking_db(move |db| db.create_alias(domain_id, &source, &destination, tracking))
+        .blocking_db(move |db| db.create_alias(domain_id, &source, &destination))
         .await;
     match create_result {
         Ok(id) => {
@@ -321,15 +314,14 @@ pub async fn update(
     Form(form): Form<AliasEditForm>,
 ) -> Response {
     let active = form.active.is_some();
-    let tracking = form.tracking_enabled.is_some();
     info!(
-        "[web] POST /aliases/{} — updating alias source={}, destination={}, active={}, tracking={}",
-        id, form.source, form.destination, active, tracking
+        "[web] POST /aliases/{} — updating alias source={}, destination={}, active={}",
+        id, form.source, form.destination, active
     );
     let source = form.source.clone();
     let destination = form.destination.clone();
     state
-        .blocking_db(move |db| db.update_alias(id, &source, &destination, active, tracking))
+        .blocking_db(move |db| db.update_alias(id, &source, &destination, active))
         .await;
     regen_configs(&state).await;
     fire_webhook(&state, "alias.updated", serde_json::json!({"id": id}));
