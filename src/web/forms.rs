@@ -206,6 +206,15 @@ pub struct RelayAssignmentForm {
 }
 
 #[derive(Deserialize)]
+pub struct WebDavSettingsForm {
+    #[serde(default)]
+    pub webdav_enabled: Option<String>,
+    #[serde(default)]
+    pub webdav_max_file_size_mb: Option<i64>,
+    #[serde(default)]
+    pub webdav_quota_mb: Option<i64>,
+}
+
 pub struct TrackingPatternForm {
     pub pattern: String,
 }
