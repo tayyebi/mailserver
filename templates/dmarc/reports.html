@@ -8,6 +8,25 @@
   {% if !inbox.label.is_empty() %} — {{ inbox.label }}{% endif %}
 </p>
 
+<div class="pagination-wrap">
+  <p>
+    {{ total_count }} DMARC report{% if total_count != 1 %}s{% endif %} found.
+    Showing page {{ page }} of {{ total_pages }} ({{ page_size }} per page).
+  </p>
+  {% if total_pages > 1 %}
+  <div class="pagination-links">
+    {% if page > 1 %}
+    <a href="/dmarc/{{ inbox.id }}/reports?page=1">First</a>
+    <a href="/dmarc/{{ inbox.id }}/reports?page={{ page - 1 }}">Previous</a>
+    {% endif %}
+    {% if page < total_pages %}
+    <a href="/dmarc/{{ inbox.id }}/reports?page={{ page + 1 }}">Next</a>
+    <a href="/dmarc/{{ inbox.id }}/reports?page={{ total_pages }}">Last</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
 {% if reports.is_empty() %}
 <p>No DMARC aggregate reports found in this inbox. Make sure the account's mailbox contains DMARC report emails with XML attachments (.xml, .xml.gz, or .zip).</p>
 {% else %}
@@ -116,6 +135,24 @@
 </details>
 {% endfor %}
 {% endif %}
+
+<div class="pagination-wrap">
+  {% if total_pages > 1 %}
+  <p>Page {{ page }} of {{ total_pages }} ({{ total_count }} total)</p>
+  <div class="pagination-links">
+    {% if page > 1 %}
+      <a href="/dmarc/{{ inbox.id }}/reports?page=1">First</a>
+      <a href="/dmarc/{{ inbox.id }}/reports?page={{ page - 1 }}">Previous</a>
+    {% endif %}
+    {% if page < total_pages %}
+      <a href="/dmarc/{{ inbox.id }}/reports?page={{ page + 1 }}">Next</a>
+      <a href="/dmarc/{{ inbox.id }}/reports?page={{ total_pages }}">Last</a>
+    {% endif %}
+  </div>
+  {% else %}
+  <p>{{ total_count }} total report{% if total_count != 1 %}s{% endif %}</p>
+  {% endif %}
+</div>
 
 {% if !logs.is_empty() %}
 <details>
