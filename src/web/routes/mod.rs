@@ -148,7 +148,7 @@ pub fn auth_routes() -> Router<AppState> {
             "/caldav/admin/objects/:id/delete",
             post(caldav::admin_delete_object),
         )
-        .route("/mcp", post(mcp::handle))
+        .route("/mcp", get(mcp::page).post(mcp::handle))
         .route("/webdav", get(webdav::list))
         .route("/webdav/settings", post(webdav::update_settings))
         .route("/webdav/:id/delete", post(webdav::admin_delete_file))
