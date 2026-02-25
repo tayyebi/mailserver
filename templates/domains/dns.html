@@ -34,7 +34,7 @@
         {% if !dkim_record.is_empty() %}
         <tr><td>TXT</td><td><code>{{ dkim_selector }}._domainkey</code></td><td><code>v=DKIM1; k=rsa; p={{ dkim_record }}</code></td><td>DKIM signing key</td></tr>
         {% endif %}
-        <tr><td>TXT</td><td>_dmarc</td><td><code>v=DMARC1; p=reject; adkim=s; aspf=s; fo=1; rua=mailto:{% if let Some(rua) = dmarc_rua %}{{ rua }}{% else %}postmaster@{{ domain_name }}{% endif %}; ruf=mailto:postmaster@{{ domain_name }}</code></td><td>DMARC enforcement</td></tr>
+        <tr><td>TXT</td><td>_dmarc</td><td><code>v=DMARC1; p=reject; adkim=s; aspf=s; fo=1; rua=mailto:{% if let Some(rua) = dmarc_rua %}{{ rua }}{% else %}postmaster@{{ domain_name }}{% endif %}; ruf=mailto:{% if let Some(ruf) = dmarc_ruf %}{{ ruf }}{% else %}postmaster@{{ domain_name }}{% endif %}</code></td><td>DMARC enforcement</td></tr>
         <tr><td>SRV</td><td>_autodiscover._tcp</td><td><code>0 0 443 {{ hostname }}.</code></td><td>Outlook autodiscover</td></tr>
         <tr><td>CNAME</td><td>autoconfig</td><td><code>{{ hostname }}.</code></td><td>Thunderbird autoconfig</td></tr>
         <tr><td>CNAME</td><td>autodiscover</td><td><code>{{ hostname }}.</code></td><td>Outlook autodiscover</td></tr>
@@ -66,7 +66,7 @@
     </hgroup>
     {% if let Some(inbox) = dmarc_inbox %}
     <p>
-        Reports are delivered to
+        Aggregate reports (rua) are delivered to
         <strong>{{ inbox.account_username.as_deref().unwrap_or("?") }}@{{ inbox.account_domain.as_deref().unwrap_or("?") }}</strong>.
         <a href="/dmarc/{{ inbox.id }}/reports">View reports →</a>
     </p>
@@ -78,7 +78,7 @@
     {% endif %}
     {% if !domain_accounts.is_empty() %}
     <form method="post" action="/domains/{{ domain_id }}/dmarc">
-        <label for="dmarc_account_id">Set DMARC inbox account:</label>
+        <label for="dmarc_account_id">Set DMARC rua inbox account:</label>
         <select name="account_id" id="dmarc_account_id" required>
             <option value="">— Select account —</option>
             {% for a in domain_accounts %}
@@ -89,6 +89,39 @@
     </form>
     {% else %}
     <p><small>Create an account for this domain first to enable DMARC reporting.</small></p>
+    {% endif %}
+</section>
+<section>
+    <hgroup>
+        <small>DMARC failure report inbox</small>
+        <h2>DMARC ruf</h2>
+    </hgroup>
+    {% if let Some(inbox) = dmarc_inbox %}
+    {% if let Some(ruf_username) = inbox.ruf_account_username.as_deref() %}
+    <p>
+        Failure reports (ruf) are delivered to
+        <strong>{{ ruf_username }}@{{ inbox.ruf_account_domain.as_deref().unwrap_or("?") }}</strong>.
+    </p>
+    <form method="post" action="/domains/{{ domain_id }}/dmarc/ruf/delete" class="form-inline">
+        <button type="submit" class="button-danger button-small">Remove ruf inbox</button>
+    </form>
+    {% else %}
+    <p>No DMARC failure report (ruf) inbox configured. Defaults to <code>postmaster@{{ domain_name }}</code>.</p>
+    {% endif %}
+    {% if !domain_accounts.is_empty() %}
+    <form method="post" action="/domains/{{ domain_id }}/dmarc/ruf">
+        <label for="dmarc_ruf_account_id">Set DMARC ruf inbox account:</label>
+        <select name="account_id" id="dmarc_ruf_account_id" required>
+            <option value="">— Select account —</option>
+            {% for a in domain_accounts %}
+            <option value="{{ a.id }}">{{ a.username }}@{{ a.domain_name.as_deref().unwrap_or("?") }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit">Save</button>
+    </form>
+    {% endif %}
+    {% else %}
+    <p><small>Configure a DMARC rua inbox above before setting an ruf inbox.</small></p>
     {% endif %}
 </section>
 <aside>

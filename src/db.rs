@@ -211,6 +211,9 @@ pub struct DmarcInbox {
     pub created_at: String,
     pub account_username: Option<String>,
     pub account_domain: Option<String>,
+    pub ruf_account_id: Option<i64>,
+    pub ruf_account_username: Option<String>,
+    pub ruf_account_domain: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -2176,10 +2179,13 @@ impl Database {
         let mut conn = self.conn();
         let rows = conn
             .query(
-                "SELECT di.id, di.account_id, di.label, di.created_at, a.username, d.domain
+                "SELECT di.id, di.account_id, di.label, di.created_at, a.username, d.domain,
+                        di.ruf_account_id, ra.username, rd.domain
                  FROM dmarc_inboxes di
                  JOIN accounts a ON di.account_id = a.id
                  LEFT JOIN domains d ON a.domain_id = d.id
+                 LEFT JOIN accounts ra ON di.ruf_account_id = ra.id
+                 LEFT JOIN domains rd ON ra.domain_id = rd.id
                  ORDER BY di.id ASC",
                 &[],
             )
@@ -2195,6 +2201,9 @@ impl Database {
                 created_at: row.get::<_, Option<String>>(3).unwrap_or_default(),
                 account_username: row.get(4),
                 account_domain: row.get(5),
+                ruf_account_id: row.get(6),
+                ruf_account_username: row.get(7),
+                ruf_account_domain: row.get(8),
             })
             .collect()
     }
@@ -2203,10 +2212,13 @@ impl Database {
         debug!("[db] getting dmarc inbox id={}", id);
         let mut conn = self.conn();
         conn.query_opt(
-            "SELECT di.id, di.account_id, di.label, di.created_at, a.username, d.domain
+            "SELECT di.id, di.account_id, di.label, di.created_at, a.username, d.domain,
+                    di.ruf_account_id, ra.username, rd.domain
              FROM dmarc_inboxes di
              JOIN accounts a ON di.account_id = a.id
              LEFT JOIN domains d ON a.domain_id = d.id
+             LEFT JOIN accounts ra ON di.ruf_account_id = ra.id
+             LEFT JOIN domains rd ON ra.domain_id = rd.id
              WHERE di.id = $1",
             &[&id],
         )
@@ -2219,6 +2231,9 @@ impl Database {
             created_at: row.get::<_, Option<String>>(3).unwrap_or_default(),
             account_username: row.get(4),
             account_domain: row.get(5),
+            ruf_account_id: row.get(6),
+            ruf_account_username: row.get(7),
+            ruf_account_domain: row.get(8),
         })
     }
 
@@ -2226,10 +2241,13 @@ impl Database {
         debug!("[db] getting dmarc inbox for domain={}", domain);
         let mut conn = self.conn();
         conn.query_opt(
-            "SELECT di.id, di.account_id, di.label, di.created_at, a.username, d.domain
+            "SELECT di.id, di.account_id, di.label, di.created_at, a.username, d.domain,
+                    di.ruf_account_id, ra.username, rd.domain
              FROM dmarc_inboxes di
              JOIN accounts a ON di.account_id = a.id
              JOIN domains d ON a.domain_id = d.id
+             LEFT JOIN accounts ra ON di.ruf_account_id = ra.id
+             LEFT JOIN domains rd ON ra.domain_id = rd.id
              WHERE d.domain = $1
              LIMIT 1",
             &[&domain],
@@ -2243,6 +2261,9 @@ impl Database {
             created_at: row.get::<_, Option<String>>(3).unwrap_or_default(),
             account_username: row.get(4),
             account_domain: row.get(5),
+            ruf_account_id: row.get(6),
+            ruf_account_username: row.get(7),
+            ruf_account_domain: row.get(8),
         })
     }
 
@@ -2250,10 +2271,13 @@ impl Database {
         debug!("[db] getting dmarc inbox for domain_id={}", domain_id);
         let mut conn = self.conn();
         conn.query_opt(
-            "SELECT di.id, di.account_id, di.label, di.created_at, a.username, d.domain
+            "SELECT di.id, di.account_id, di.label, di.created_at, a.username, d.domain,
+                    di.ruf_account_id, ra.username, rd.domain
              FROM dmarc_inboxes di
              JOIN accounts a ON di.account_id = a.id
              JOIN domains d ON a.domain_id = d.id
+             LEFT JOIN accounts ra ON di.ruf_account_id = ra.id
+             LEFT JOIN domains rd ON ra.domain_id = rd.id
              WHERE d.id = $1
              LIMIT 1",
             &[&domain_id],
@@ -2267,6 +2291,9 @@ impl Database {
             created_at: row.get::<_, Option<String>>(3).unwrap_or_default(),
             account_username: row.get(4),
             account_domain: row.get(5),
+            ruf_account_id: row.get(6),
+            ruf_account_username: row.get(7),
+            ruf_account_domain: row.get(8),
         })
     }
 
@@ -2321,6 +2348,17 @@ impl Database {
         let mut conn = self.conn();
         if let Err(e) = conn.execute("DELETE FROM dmarc_inboxes WHERE id = $1", &[&id]) {
             error!("[db] failed to execute query: {}", e);
+        }
+    }
+
+    pub fn set_dmarc_inbox_ruf(&self, id: i64, ruf_account_id: Option<i64>) {
+        info!("[db] setting dmarc inbox ruf id={} ruf_account_id={:?}", id, ruf_account_id);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
+            "UPDATE dmarc_inboxes SET ruf_account_id = $1 WHERE id = $2",
+            &[&ruf_account_id, &id],
+        ) {
+            error!("[db] failed to set dmarc inbox ruf: {}", e);
         }
     }
 

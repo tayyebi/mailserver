@@ -1,0 +1,1 @@
+ALTER TABLE dmarc_inboxes ADD COLUMN IF NOT EXISTS ruf_account_id BIGINT REFERENCES accounts(id) ON DELETE SET NULL;

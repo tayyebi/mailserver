@@ -152,6 +152,7 @@ struct DnsTemplate<'a> {
     bimi_logo_url: String,
     has_bimi: bool,
     dmarc_rua: Option<String>,
+    dmarc_ruf: Option<String>,
     dmarc_inbox: Option<crate::db::DmarcInbox>,
     domain_accounts: Vec<Account>,
 }
@@ -535,6 +536,11 @@ pub async fn dns_info(
         let dom = inbox.account_domain.as_ref()?;
         Some(format!("{}@{}", username, dom))
     });
+    let dmarc_ruf = dmarc_inbox.as_ref().and_then(|inbox| {
+        let username = inbox.ruf_account_username.as_ref()?;
+        let dom = inbox.ruf_account_domain.as_ref()?;
+        Some(format!("{}@{}", username, dom))
+    });
     let domain_id_for_accounts = domain.id;
     let domain_accounts = state
         .blocking_db(move |db| db.list_accounts_by_domain(domain_id_for_accounts))
@@ -551,6 +557,7 @@ pub async fn dns_info(
         bimi_logo_url,
         has_bimi,
         dmarc_rua,
+        dmarc_ruf,
         dmarc_inbox,
         domain_accounts,
     };
@@ -599,6 +606,50 @@ pub async fn remove_dmarc_inbox(
         let existing_id = existing_inbox.id;
         state
             .blocking_db(move |db| db.delete_dmarc_inbox(existing_id))
+            .await;
+    }
+    Redirect::to(&format!("/domains/{}/dns", id)).into_response()
+}
+
+pub async fn set_dmarc_ruf_inbox(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Form(form): Form<SetDmarcForm>,
+) -> Response {
+    info!(
+        "[web] POST /domains/{}/dmarc/ruf — setting DMARC ruf inbox account_id={}",
+        id, form.account_id
+    );
+    let account_id = form.account_id;
+    let existing = state
+        .blocking_db(move |db| db.get_dmarc_inbox_by_domain_id(id))
+        .await;
+    if let Some(existing_inbox) = existing {
+        let existing_id = existing_inbox.id;
+        state
+            .blocking_db(move |db| db.set_dmarc_inbox_ruf(existing_id, Some(account_id)))
+            .await;
+    }
+    Redirect::to(&format!("/domains/{}/dns", id)).into_response()
+}
+
+pub async fn remove_dmarc_ruf_inbox(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Response {
+    info!(
+        "[web] POST /domains/{}/dmarc/ruf/delete — removing DMARC ruf inbox",
+        id
+    );
+    let existing = state
+        .blocking_db(move |db| db.get_dmarc_inbox_by_domain_id(id))
+        .await;
+    if let Some(existing_inbox) = existing {
+        let existing_id = existing_inbox.id;
+        state
+            .blocking_db(move |db| db.set_dmarc_inbox_ruf(existing_id, None))
             .await;
     }
     Redirect::to(&format!("/domains/{}/dns", id)).into_response()
