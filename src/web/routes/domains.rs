@@ -139,6 +139,12 @@ struct EditTemplate<'a> {
     domain: crate::db::Domain,
 }
 
+/// View-model for the DNS runbook page.
+///
+/// `dmarc_rua` and `dmarc_ruf` are the fully-qualified RFC 5321 mailbox addresses
+/// (`local-part@domain`, §4.1.2) that will be embedded as `mailto:` URIs in the
+/// `_dmarc` TXT record (RFC 7489 §6.3).  When `None` the record falls back to
+/// `postmaster@<domain>` (RFC 5321 §4.5.1).
 #[derive(Template)]
 #[template(path = "domains/dns.html")]
 struct DnsTemplate<'a> {
@@ -151,7 +157,10 @@ struct DnsTemplate<'a> {
     dkim_record: String,
     bimi_logo_url: String,
     has_bimi: bool,
+    /// `rua=mailto:<rua>` aggregate-report destination (RFC 7489 §6.3).
     dmarc_rua: Option<String>,
+    /// `ruf=mailto:<ruf>` failure-report destination (RFC 7489 §6.3 / RFC 6591).
+    dmarc_ruf: Option<String>,
     dmarc_inbox: Option<crate::db::DmarcInbox>,
     domain_accounts: Vec<Account>,
 }
@@ -535,6 +544,11 @@ pub async fn dns_info(
         let dom = inbox.account_domain.as_ref()?;
         Some(format!("{}@{}", username, dom))
     });
+    let dmarc_ruf = dmarc_inbox.as_ref().and_then(|inbox| {
+        let username = inbox.ruf_account_username.as_ref()?;
+        let dom = inbox.ruf_account_domain.as_ref()?;
+        Some(format!("{}@{}", username, dom))
+    });
     let domain_id_for_accounts = domain.id;
     let domain_accounts = state
         .blocking_db(move |db| db.list_accounts_by_domain(domain_id_for_accounts))
@@ -551,6 +565,7 @@ pub async fn dns_info(
         bimi_logo_url,
         has_bimi,
         dmarc_rua,
+        dmarc_ruf,
         dmarc_inbox,
         domain_accounts,
     };
@@ -599,6 +614,62 @@ pub async fn remove_dmarc_inbox(
         let existing_id = existing_inbox.id;
         state
             .blocking_db(move |db| db.delete_dmarc_inbox(existing_id))
+            .await;
+    }
+    Redirect::to(&format!("/domains/{}/dns", id)).into_response()
+}
+
+/// Set the `ruf` (failure report) inbox for a domain.
+///
+/// Updates the `ruf=` tag in the generated `_dmarc` TXT record.  DMARC failure reports
+/// (RFC 7489 §7.3) are forensic per-message reports delivered by the receiving MTA to the
+/// `ruf=mailto:<address>` URI over SMTP (RFC 5321 §3.1).  The address must be an RFC 5321
+/// mailbox (`local-part@domain`, §4.1.2) reachable via standard SMTP delivery (RFC 5321 §5).
+/// Reports are formatted as ARF messages per RFC 6591 / RFC 5965.
+pub async fn set_dmarc_ruf_inbox(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Form(form): Form<SetDmarcForm>,
+) -> Response {
+    info!(
+        "[web] POST /domains/{}/dmarc/ruf — setting DMARC ruf inbox account_id={}",
+        id, form.account_id
+    );
+    let account_id = form.account_id;
+    let existing = state
+        .blocking_db(move |db| db.get_dmarc_inbox_by_domain_id(id))
+        .await;
+    if let Some(existing_inbox) = existing {
+        let existing_id = existing_inbox.id;
+        state
+            .blocking_db(move |db| db.set_dmarc_inbox_ruf(existing_id, Some(account_id)))
+            .await;
+    }
+    Redirect::to(&format!("/domains/{}/dns", id)).into_response()
+}
+
+/// Remove the `ruf` failure-report inbox for a domain.
+///
+/// Clears the explicit `ruf=` inbox so the generated `_dmarc` TXT record reverts to the
+/// required RFC 5321 fallback address `postmaster@<domain>` (RFC 5321 §4.5.1), which every
+/// conforming SMTP server must accept.
+pub async fn remove_dmarc_ruf_inbox(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Response {
+    info!(
+        "[web] POST /domains/{}/dmarc/ruf/delete — removing DMARC ruf inbox",
+        id
+    );
+    let existing = state
+        .blocking_db(move |db| db.get_dmarc_inbox_by_domain_id(id))
+        .await;
+    if let Some(existing_inbox) = existing {
+        let existing_id = existing_inbox.id;
+        state
+            .blocking_db(move |db| db.set_dmarc_inbox_ruf(existing_id, None))
             .await;
     }
     Redirect::to(&format!("/domains/{}/dns", id)).into_response()
