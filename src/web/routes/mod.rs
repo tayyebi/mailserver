@@ -1,5 +1,6 @@
 pub mod accounts;
 pub mod aliases;
+pub mod api_docs;
 pub mod bimi;
 pub mod caldav;
 pub mod configs;
@@ -97,6 +98,7 @@ pub fn auth_routes() -> Router<AppState> {
             post(settings::restart_container),
         )
         .route("/configs", get(configs::page))
+        .route("/api", get(api_docs::page))
         .route("/fail2ban", get(fail2ban::overview))
         .route("/fail2ban/toggle", post(fail2ban::toggle_system))
         .route("/fail2ban/ban", post(fail2ban::ban_ip))
