@@ -64,6 +64,40 @@
 
 <section>
     <hgroup>
+        <small>AI agent setup</small>
+        <h2>Claude Project File</h2>
+    </hgroup>
+    <p>Save the following as <code>email-agent.claude-project</code> to connect Claude to this mail server. Replace <code>YOUR_PASSWORD</code> with your admin password.</p>
+    <pre><code>{
+  "name": "Email Automation Agent",
+  "description": "An MCP-powered email assistant that manages inboxes, summarizes messages, drafts replies, and performs email operations safely.",
+  "instructions": [
+    "You are an email automation agent connected to an MCP server named 'mailserver'.",
+    "Use ONLY the provided MCP tools: list_accounts, list_emails, read_email, send_email, delete_email.",
+    "Never invent email content. Always call read_email before summarizing, replying, or deleting.",
+    "When asked to check inboxes, list accounts then list emails for each account.",
+    "When asked to reply, always read the email first, draft a reply, and ask for approval before sending.",
+    "When asked to delete, confirm the message by reading it, then ask for approval before deletion.",
+    "If instructions are ambiguous, ask for clarification.",
+    "Match the sender's tone when drafting replies unless instructed otherwise.",
+    "Keep summaries concise unless asked for detail.",
+    "Start each session by asking: 'Which email account or task would you like me to handle today?'"
+  ],
+  "mcpServers": {
+    "mailserver": {
+      "url": "{{ endpoint_url }}",
+      "auth": {
+        "type": "basic",
+        "username": "admin",
+        "password": "YOUR_PASSWORD"
+      }
+    }
+  }
+}</code></pre>
+</section>
+
+<section>
+    <hgroup>
         <small>Quick start</small>
         <h2>Usage example</h2>
     </hgroup>
