@@ -1,0 +1,21 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Pull latest code
+        run: |
+          docker run --rm \
+            -v /home/ubuntu/d/mailserver:/repo \
+            -w /repo \
+            alpine/git \
+            pull
+
+      - name: Rebuild and restart
+        run: |
+          docker compose -f /home/ubuntu/d/mailserver/docker-compose.yml up -d --build
