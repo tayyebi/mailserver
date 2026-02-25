@@ -51,8 +51,6 @@ pub struct AccountEditForm {
 pub struct AliasForm {
     pub source: String,
     pub destination: String,
-    #[serde(default)]
-    pub tracking_enabled: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -61,8 +59,6 @@ pub struct AliasEditForm {
     pub destination: String,
     #[serde(default)]
     pub active: Option<String>,
-    #[serde(default)]
-    pub tracking_enabled: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -217,4 +213,15 @@ pub struct WebDavSettingsForm {
     pub webdav_max_file_size_mb: Option<i64>,
     #[serde(default)]
     pub webdav_quota_mb: Option<i64>,
+}
+
+pub struct TrackingPatternForm {
+    pub pattern: String,
+}
+
+#[derive(Deserialize)]
+pub struct TrackingRuleForm {
+    pub name: String,
+    pub match_mode: String,
+    pub conditions_json: String,
 }

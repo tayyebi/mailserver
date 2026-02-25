@@ -65,7 +65,7 @@ pub fn run_filter(
             if !filter_enabled {
                 info!("[filter] content filter feature is disabled, bypassing");
             } else {
-                let tracking = db.is_tracking_enabled_for_sender(sender);
+                let tracking = db.is_tracking_enabled(sender, recipients.first().map(|s| s.as_str()).unwrap_or(""), &subject, size_bytes);
                 let footer_html = db.get_footer_for_sender(sender);
 
                 // Check if unsubscribe injection is enabled globally and per-domain
