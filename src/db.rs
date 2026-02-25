@@ -241,6 +241,16 @@ pub struct DmarcInbox {
 }
 
 #[derive(Clone, Serialize)]
+pub struct AbuseInbox {
+    pub id: i64,
+    pub account_id: i64,
+    pub label: String,
+    pub created_at: String,
+    pub account_username: Option<String>,
+    pub account_domain: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
 pub struct OutboundRelay {
     pub id: i64,
     pub name: String,
@@ -2390,6 +2400,83 @@ impl Database {
             &[&ruf_account_id, &id],
         ) {
             error!("[db] failed to set dmarc inbox ruf: {}", e);
+        }
+    }
+  
+    // ── Abuse inbox methods ──
+
+    pub fn list_abuse_inboxes(&self) -> Vec<AbuseInbox> {
+        debug!("[db] listing abuse inboxes");
+        let mut conn = self.conn();
+        let rows = conn
+            .query(
+                "SELECT ai.id, ai.account_id, ai.label, ai.created_at, a.username, d.domain
+                 FROM abuse_inboxes ai
+                 JOIN accounts a ON ai.account_id = a.id
+                 LEFT JOIN domains d ON a.domain_id = d.id
+                 ORDER BY ai.id ASC",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list abuse inboxes: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| AbuseInbox {
+                id: row.get(0),
+                account_id: row.get(1),
+                label: row.get::<_, Option<String>>(2).unwrap_or_default(),
+                created_at: row.get::<_, Option<String>>(3).unwrap_or_default(),
+                account_username: row.get(4),
+                account_domain: row.get(5),
+            })
+            .collect()
+    }
+
+    pub fn get_abuse_inbox(&self, id: i64) -> Option<AbuseInbox> {
+        debug!("[db] getting abuse inbox id={}", id);
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT ai.id, ai.account_id, ai.label, ai.created_at, a.username, d.domain
+             FROM abuse_inboxes ai
+             JOIN accounts a ON ai.account_id = a.id
+             LEFT JOIN domains d ON a.domain_id = d.id
+             WHERE ai.id = $1",
+            &[&id],
+        )
+        .ok()
+        .flatten()
+        .map(|row| AbuseInbox {
+            id: row.get(0),
+            account_id: row.get(1),
+            label: row.get::<_, Option<String>>(2).unwrap_or_default(),
+            created_at: row.get::<_, Option<String>>(3).unwrap_or_default(),
+            account_username: row.get(4),
+            account_domain: row.get(5),
+        })
+    }
+
+    pub fn create_abuse_inbox(&self, account_id: i64, label: &str) -> Result<i64, String> {
+        info!("[db] creating abuse inbox account_id={}", account_id);
+        let mut conn = self.conn();
+        let ts = now();
+        conn.query_one(
+            "INSERT INTO abuse_inboxes (account_id, label, created_at)
+             VALUES ($1, $2, $3) RETURNING id",
+            &[&account_id, &label, &ts],
+        )
+        .map(|row| row.get(0))
+        .map_err(|e| {
+            error!("[db] failed to create abuse inbox: {}", e);
+            e.to_string()
+        })
+    }
+
+    pub fn delete_abuse_inbox(&self, id: i64) {
+        warn!("[db] deleting abuse inbox id={}", id);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute("DELETE FROM abuse_inboxes WHERE id = $1", &[&id]) {
+            error!("[db] failed to execute query: {}", e);
         }
     }
 
