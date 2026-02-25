@@ -7,6 +7,7 @@ use axum::{
 use log::{debug, error, info, warn};
 use serde::Deserialize;
 
+use crate::db::Account;
 use crate::web::auth::AuthAdmin;
 use crate::web::fire_webhook;
 use crate::web::forms::{DomainEditForm, DomainForm};
@@ -151,12 +152,19 @@ struct DnsTemplate<'a> {
     bimi_logo_url: String,
     has_bimi: bool,
     dmarc_rua: Option<String>,
+    dmarc_inbox: Option<crate::db::DmarcInbox>,
+    domain_accounts: Vec<Account>,
 }
 
 #[derive(Deserialize)]
 pub struct DnsCheckQuery {
     #[serde(rename = "type")]
     pub check_type: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct SetDmarcForm {
+    pub account_id: i64,
 }
 
 #[derive(Template)]
@@ -518,15 +526,19 @@ pub async fn dns_info(
         .unwrap_or(false);
     let bimi_logo_url = format!("https://{}/bimi/{}/logo.svg", state.hostname, domain.domain);
 
-    let domain_name_for_dmarc = domain.domain.clone();
+    let domain_id_copy = domain.id;
     let dmarc_inbox = state
-        .blocking_db(move |db| db.get_dmarc_inbox_by_domain(&domain_name_for_dmarc))
+        .blocking_db(move |db| db.get_dmarc_inbox_by_domain_id(domain_id_copy))
         .await;
-    let dmarc_rua = dmarc_inbox.and_then(|inbox| {
-        let username = inbox.account_username?;
-        let domain = inbox.account_domain?;
-        Some(format!("{}@{}", username, domain))
+    let dmarc_rua = dmarc_inbox.as_ref().and_then(|inbox| {
+        let username = inbox.account_username.as_ref()?;
+        let dom = inbox.account_domain.as_ref()?;
+        Some(format!("{}@{}", username, dom))
     });
+    let domain_id_for_accounts = domain.id;
+    let domain_accounts = state
+        .blocking_db(move |db| db.list_accounts_by_domain(domain_id_for_accounts))
+        .await;
 
     let tmpl = DnsTemplate {
         nav_active: "Domains",
@@ -539,8 +551,57 @@ pub async fn dns_info(
         bimi_logo_url,
         has_bimi,
         dmarc_rua,
+        dmarc_inbox,
+        domain_accounts,
     };
     Html(tmpl.render().unwrap()).into_response()
+}
+
+pub async fn set_dmarc_inbox(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Form(form): Form<SetDmarcForm>,
+) -> Response {
+    info!(
+        "[web] POST /domains/{}/dmarc — setting DMARC inbox account_id={}",
+        id, form.account_id
+    );
+    let account_id = form.account_id;
+    let existing = state
+        .blocking_db(move |db| db.get_dmarc_inbox_by_domain_id(id))
+        .await;
+    if let Some(existing_inbox) = existing {
+        let existing_id = existing_inbox.id;
+        state
+            .blocking_db(move |db| db.delete_dmarc_inbox(existing_id))
+            .await;
+    }
+    let _ = state
+        .blocking_db(move |db| db.create_dmarc_inbox(account_id, ""))
+        .await;
+    Redirect::to(&format!("/domains/{}/dns", id)).into_response()
+}
+
+pub async fn remove_dmarc_inbox(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Response {
+    info!(
+        "[web] POST /domains/{}/dmarc/delete — removing DMARC inbox",
+        id
+    );
+    let existing = state
+        .blocking_db(move |db| db.get_dmarc_inbox_by_domain_id(id))
+        .await;
+    if let Some(existing_inbox) = existing {
+        let existing_id = existing_inbox.id;
+        state
+            .blocking_db(move |db| db.delete_dmarc_inbox(existing_id))
+            .await;
+    }
+    Redirect::to(&format!("/domains/{}/dns", id)).into_response()
 }
 
 pub async fn dns_check_run(

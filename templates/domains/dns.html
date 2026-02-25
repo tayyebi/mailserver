@@ -59,6 +59,38 @@
     <p><em>Generate a DKIM key to unlock signing coverage.</em></p>
     {% endif %}
 </section>
+<section>
+    <hgroup>
+        <small>DMARC report inbox</small>
+        <h2>DMARC</h2>
+    </hgroup>
+    {% if let Some(inbox) = dmarc_inbox %}
+    <p>
+        Reports are delivered to
+        <strong>{{ inbox.account_username.as_deref().unwrap_or("?") }}@{{ inbox.account_domain.as_deref().unwrap_or("?") }}</strong>.
+        <a href="/dmarc/{{ inbox.id }}/reports">View reports →</a>
+    </p>
+    <form method="post" action="/domains/{{ domain_id }}/dmarc/delete" class="form-inline">
+        <button type="submit" class="button-danger button-small">Remove DMARC inbox</button>
+    </form>
+    {% else %}
+    <p>No DMARC report inbox configured for this domain.</p>
+    {% endif %}
+    {% if !domain_accounts.is_empty() %}
+    <form method="post" action="/domains/{{ domain_id }}/dmarc">
+        <label for="dmarc_account_id">Set DMARC inbox account:</label>
+        <select name="account_id" id="dmarc_account_id" required>
+            <option value="">— Select account —</option>
+            {% for a in domain_accounts %}
+            <option value="{{ a.id }}"{% if let Some(inbox) = dmarc_inbox %}{% if inbox.account_id == a.id %} selected{% endif %}{% endif %}>{{ a.username }}@{{ a.domain_name.as_deref().unwrap_or("?") }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit">Save</button>
+    </form>
+    {% else %}
+    <p><small>Create an account for this domain first to enable DMARC reporting.</small></p>
+    {% endif %}
+</section>
 <aside>
     <h2>Reverse DNS</h2>
     <p>Ask your provider to point the PTR record for your public IP back to <code>{{ hostname }}</code>.</p>
