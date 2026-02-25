@@ -26,6 +26,91 @@
 
 <section>
     <hgroup>
+        <small>Email operations</small>
+        <h2>Email REST API</h2>
+    </hgroup>
+    <p>RESTful JSON endpoints for listing, reading, sending, and deleting emails. Authentication: HTTP Basic Auth (admin credentials).</p>
+    <table>
+        <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+        <tbody>
+            <tr><td><code>GET</code></td><td><code>/api/emails?account_id={id}&amp;folder={folder}&amp;page={page}</code></td><td>List emails in an account's inbox or folder (20 per page)</td></tr>
+            <tr><td><code>GET</code></td><td><code>/api/emails/{filename}?account_id={id}&amp;folder={folder}</code></td><td>Read the full content of a single email</td></tr>
+            <tr><td><code>POST</code></td><td><code>/api/emails</code></td><td>Send an email from a mail account</td></tr>
+            <tr><td><code>DELETE</code></td><td><code>/api/emails/{filename}?account_id={id}&amp;folder={folder}</code></td><td>Permanently delete an email</td></tr>
+        </tbody>
+    </table>
+    <dl>
+        <dt>Auth</dt><dd>HTTP Basic Auth (admin username / password)</dd>
+        <dt>Content-Type</dt><dd><code>application/json</code> (for POST requests)</dd>
+        <dt>filename</dt><dd>Base64url-encoded (no padding) email filename as returned by the list endpoint</dd>
+        <dt>folder</dt><dd>Maildir subfolder (e.g. <code>.Sent</code>, <code>.Junk</code>). Omit or leave empty for INBOX.</dd>
+    </dl>
+    <details>
+        <summary>Example: list emails</summary>
+        <pre><code>GET /api/emails?account_id=1&amp;page=1
+Authorization: Basic &lt;base64(admin:password)&gt;</code></pre>
+        <pre><code>{
+  "account_id": 1,
+  "folder": "INBOX",
+  "page": 1,
+  "total_pages": 3,
+  "total_count": 42,
+  "emails": [
+    {
+      "filename": "base64url-encoded-filename",
+      "subject": "Hello",
+      "from": "sender@example.com",
+      "to": "user@{{ hostname }}",
+      "date": "Mon, 1 Jan 2024 12:00:00 +0000",
+      "is_new": true,
+      "is_spam": false
+    }
+  ]
+}</code></pre>
+    </details>
+    <details>
+        <summary>Example: read email</summary>
+        <pre><code>GET /api/emails/&lt;filename&gt;?account_id=1
+Authorization: Basic &lt;base64(admin:password)&gt;</code></pre>
+        <pre><code>{
+  "filename": "base64url-encoded-filename",
+  "subject": "Hello",
+  "from": "sender@example.com",
+  "to": "user@{{ hostname }}",
+  "date": "Mon, 1 Jan 2024 12:00:00 +0000",
+  "body": "Email body text...",
+  "is_spam": false
+}</code></pre>
+    </details>
+    <details>
+        <summary>Example: send email</summary>
+        <pre><code>POST /api/emails
+Authorization: Basic &lt;base64(admin:password)&gt;
+Content-Type: application/json
+
+{
+  "account_id": 1,
+  "to": "recipient@example.com",
+  "subject": "Hello",
+  "body": "Hello from REST API",
+  "cc": "",
+  "bcc": "",
+  "reply_to": "",
+  "sender_name": "My Mailserver",
+  "body_format": "plain"
+}</code></pre>
+        <pre><code>{"status": "sent"}</code></pre>
+    </details>
+    <details>
+        <summary>Example: delete email</summary>
+        <pre><code>DELETE /api/emails/&lt;filename&gt;?account_id=1
+Authorization: Basic &lt;base64(admin:password)&gt;</code></pre>
+        <pre><code>{"status": "deleted"}</code></pre>
+    </details>
+</section>
+
+<section>
+    <hgroup>
         <small>AI / LLM integration</small>
         <h2>MCP — Model Context Protocol</h2>
     </hgroup>
