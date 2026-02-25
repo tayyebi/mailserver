@@ -204,6 +204,19 @@ pub struct OutboundRelay {
 }
 
 #[derive(Clone, Serialize)]
+pub struct WebDavFile {
+    pub id: i64,
+    pub account_id: Option<i64>,
+    pub owner: String,
+    pub filename: String,
+    pub content_type: String,
+    pub size: i64,
+    pub token: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Serialize)]
 pub struct OutboundRelayAssignment {
     pub id: i64,
     pub relay_id: i64,
@@ -2181,6 +2194,223 @@ impl Database {
         ) {
             error!("[db] failed to execute query: {}", e);
         }
+    }
+
+    // ── WebDAV methods ──
+
+    pub fn list_webdav_files(&self) -> Vec<WebDavFile> {
+        debug!("[db] listing all webdav files");
+        let mut conn = self.conn();
+        let rows = conn
+            .query(
+                "SELECT id, account_id, owner, filename, content_type, size, token, created_at, updated_at
+                 FROM webdav_files ORDER BY owner, filename",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list webdav files: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| WebDavFile {
+                id: row.get(0),
+                account_id: row.get(1),
+                owner: row.get(2),
+                filename: row.get(3),
+                content_type: row.get(4),
+                size: row.get(5),
+                token: row.get(6),
+                created_at: row.get::<_, Option<String>>(7).unwrap_or_default(),
+                updated_at: row.get::<_, Option<String>>(8).unwrap_or_default(),
+            })
+            .collect()
+    }
+
+    pub fn list_webdav_files_for_owner(&self, owner: &str) -> Vec<WebDavFile> {
+        debug!("[db] listing webdav files for owner={}", owner);
+        let mut conn = self.conn();
+        let rows = conn
+            .query(
+                "SELECT id, account_id, owner, filename, content_type, size, token, created_at, updated_at
+                 FROM webdav_files WHERE owner = $1 ORDER BY filename",
+                &[&owner],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list webdav files for owner {}: {}", owner, e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| WebDavFile {
+                id: row.get(0),
+                account_id: row.get(1),
+                owner: row.get(2),
+                filename: row.get(3),
+                content_type: row.get(4),
+                size: row.get(5),
+                token: row.get(6),
+                created_at: row.get::<_, Option<String>>(7).unwrap_or_default(),
+                updated_at: row.get::<_, Option<String>>(8).unwrap_or_default(),
+            })
+            .collect()
+    }
+
+    pub fn get_webdav_file_by_token(&self, token: &str) -> Option<WebDavFile> {
+        debug!("[db] getting webdav file by token={}", token);
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT id, account_id, owner, filename, content_type, size, token, created_at, updated_at
+             FROM webdav_files WHERE token = $1",
+            &[&token],
+        )
+        .ok()
+        .flatten()
+        .map(|row| WebDavFile {
+            id: row.get(0),
+            account_id: row.get(1),
+            owner: row.get(2),
+            filename: row.get(3),
+            content_type: row.get(4),
+            size: row.get(5),
+            token: row.get(6),
+            created_at: row.get::<_, Option<String>>(7).unwrap_or_default(),
+            updated_at: row.get::<_, Option<String>>(8).unwrap_or_default(),
+        })
+    }
+
+    pub fn get_webdav_file_by_owner_and_name(&self, owner: &str, filename: &str) -> Option<WebDavFile> {
+        debug!("[db] getting webdav file owner={} filename={}", owner, filename);
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT id, account_id, owner, filename, content_type, size, token, created_at, updated_at
+             FROM webdav_files WHERE owner = $1 AND filename = $2",
+            &[&owner, &filename],
+        )
+        .ok()
+        .flatten()
+        .map(|row| WebDavFile {
+            id: row.get(0),
+            account_id: row.get(1),
+            owner: row.get(2),
+            filename: row.get(3),
+            content_type: row.get(4),
+            size: row.get(5),
+            token: row.get(6),
+            created_at: row.get::<_, Option<String>>(7).unwrap_or_default(),
+            updated_at: row.get::<_, Option<String>>(8).unwrap_or_default(),
+        })
+    }
+
+    pub fn upsert_webdav_file(
+        &self,
+        account_id: Option<i64>,
+        owner: &str,
+        filename: &str,
+        content_type: &str,
+        size: i64,
+        token: &str,
+    ) -> Result<i64, String> {
+        info!(
+            "[db] upserting webdav file owner={} filename={} size={}",
+            owner, filename, size
+        );
+        let mut conn = self.conn();
+        let ts = now();
+        let row = conn
+            .query_one(
+                "INSERT INTO webdav_files (account_id, owner, filename, content_type, size, token, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                 ON CONFLICT (owner, filename) DO UPDATE
+                   SET content_type = EXCLUDED.content_type, size = EXCLUDED.size, token = EXCLUDED.token, updated_at = EXCLUDED.updated_at
+                 RETURNING id",
+                &[&account_id, &owner, &filename, &content_type, &size, &token, &ts, &ts],
+            )
+            .map_err(|e| {
+                error!("[db] failed to upsert webdav file {}/{}: {}", owner, filename, e);
+                e.to_string()
+            })?;
+        let id: i64 = row.get(0);
+        info!("[db] webdav file upserted id={}", id);
+        Ok(id)
+    }
+
+    pub fn delete_webdav_file(&self, id: i64) -> Option<WebDavFile> {
+        warn!("[db] deleting webdav file id={}", id);
+        let mut conn = self.conn();
+        let file = conn
+            .query_opt(
+                "DELETE FROM webdav_files WHERE id = $1
+                 RETURNING id, account_id, owner, filename, content_type, size, token, created_at, updated_at",
+                &[&id],
+            )
+            .ok()
+            .flatten()
+            .map(|row| WebDavFile {
+                id: row.get(0),
+                account_id: row.get(1),
+                owner: row.get(2),
+                filename: row.get(3),
+                content_type: row.get(4),
+                size: row.get(5),
+                token: row.get(6),
+                created_at: row.get::<_, Option<String>>(7).unwrap_or_default(),
+                updated_at: row.get::<_, Option<String>>(8).unwrap_or_default(),
+            });
+        file
+    }
+
+    pub fn delete_webdav_file_by_owner_and_name(&self, owner: &str, filename: &str) -> Option<WebDavFile> {
+        warn!("[db] deleting webdav file owner={} filename={}", owner, filename);
+        let mut conn = self.conn();
+        conn.query_opt(
+            "DELETE FROM webdav_files WHERE owner = $1 AND filename = $2
+             RETURNING id, account_id, owner, filename, content_type, size, token, created_at, updated_at",
+            &[&owner, &filename],
+        )
+        .ok()
+        .flatten()
+        .map(|row| WebDavFile {
+            id: row.get(0),
+            account_id: row.get(1),
+            owner: row.get(2),
+            filename: row.get(3),
+            content_type: row.get(4),
+            size: row.get(5),
+            token: row.get(6),
+            created_at: row.get::<_, Option<String>>(7).unwrap_or_default(),
+            updated_at: row.get::<_, Option<String>>(8).unwrap_or_default(),
+        })
+    }
+
+    pub fn count_webdav_usage_for_owner(&self, owner: &str) -> i64 {
+        let mut conn = self.conn();
+        conn.query_one(
+            "SELECT COALESCE(SUM(size), 0) FROM webdav_files WHERE owner = $1",
+            &[&owner],
+        )
+        .map(|row| row.get(0))
+        .unwrap_or(0)
+    }
+
+    /// Returns the account_id and password_hash for an email address used for WebDAV auth.
+    pub fn get_account_for_webdav_auth(&self, email: &str) -> Option<(i64, String)> {
+        debug!("[db] webdav auth lookup for email={}", email);
+        let parts: Vec<&str> = email.splitn(2, '@').collect();
+        if parts.len() != 2 {
+            return None;
+        }
+        let username = parts[0];
+        let domain = parts[1];
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT a.id, a.password_hash
+             FROM accounts a
+             JOIN domains d ON a.domain_id = d.id
+             WHERE a.username = $1 AND d.domain = $2 AND a.active = TRUE AND d.active = TRUE",
+            &[&username, &domain],
+        )
+        .ok()
+        .flatten()
+        .map(|row| (row.get(0), row.get(1)))
     }
 
     /// Returns all active relay assignments joined with relay info for config generation.

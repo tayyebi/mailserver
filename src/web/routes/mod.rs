@@ -15,6 +15,7 @@ pub mod spambl;
 pub mod tracking;
 pub mod unsubscribe;
 pub mod webhook;
+pub mod webdav;
 pub mod webmail;
 
 use super::AppState;
@@ -120,8 +121,10 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/relays/:id/delete", post(relays::delete))
         .route("/relays/:id", post(relays::update))
         .route("/relays/:id/assignments", post(relays::add_assignment))
-        .route(
-            "/relays/:id/assignments/:aid/delete",
+        .route("/relays/:id/assignments/:aid/delete",
             post(relays::remove_assignment),
         )
+        .route("/webdav", get(webdav::list))
+        .route("/webdav/settings", post(webdav::update_settings))
+        .route("/webdav/:id/delete", post(webdav::admin_delete_file))
 }

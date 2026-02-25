@@ -1,0 +1,77 @@
+{% extends "layout.html" %}
+{% block title %}WebDAV / FileLink{% endblock %}
+{% block content %}
+<section>
+    <hgroup>
+        <small>File storage</small>
+        <h1>WebDAV &amp; FileLink</h1>
+    </hgroup>
+    <p>WebDAV file storage for mail accounts. Clients connect at <code>/dav/{email}/</code> using their mail account credentials. Use the FileLink API at <code>/filelink/upload</code> for Thunderbird FileLink integration.</p>
+</section>
+
+<section>
+    <hgroup>
+        <small>Configuration</small>
+        <h2>Settings</h2>
+    </hgroup>
+    <form method="post" action="/webdav/settings">
+        <fieldset>
+            <label>
+                <input type="checkbox" name="webdav_enabled" value="on"{% if webdav_enabled %} checked{% endif %}>
+                Enable WebDAV &amp; FileLink
+            </label>
+            <label>Max file size (MB)
+                <input type="number" name="webdav_max_file_size_mb" value="{{ webdav_max_file_size_mb }}" min="1" max="2048">
+            </label>
+            <label>Per-user quota (MB, 0 = unlimited)
+                <input type="number" name="webdav_quota_mb" value="{{ webdav_quota_mb }}" min="0">
+            </label>
+        </fieldset>
+        <button type="submit">Save settings</button>
+    </form>
+</section>
+
+<section>
+    <hgroup>
+        <small>Thunderbird integration</small>
+        <h2>FileLink API</h2>
+    </hgroup>
+    <p>Thunderbird FileLink uploads use HTTP Basic Auth with the mail account credentials (<code>user@domain</code> / password).</p>
+    <ul>
+        <li><strong>Upload:</strong> <code>POST /filelink/upload</code> — multipart/form-data field <code>file</code></li>
+        <li><strong>Download:</strong> <code>GET /filelink/download/{token}</code> — public URL (no auth)</li>
+        <li><strong>Delete:</strong> <code>DELETE /filelink/delete/{token}</code> — authenticated</li>
+    </ul>
+    <p>WebDAV access: <code>PROPFIND/GET/PUT/DELETE /dav/{email}/</code> — Basic Auth with mail credentials.</p>
+</section>
+
+<section>
+    <hgroup>
+        <small>{{ files.len() }} file(s)</small>
+        <h2>Stored Files</h2>
+    </hgroup>
+    <table>
+        <thead>
+            <tr><th>Owner</th><th>Filename</th><th>Type</th><th>Size</th><th>Uploaded</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+        {% if files.is_empty() %}
+            <tr><td colspan="6">No files stored yet.</td></tr>
+        {% else %}
+            {% for f in files %}
+            <tr>
+                <td>{{ f.owner }}</td>
+                <td><a href="/filelink/download/{{ f.token }}" target="_blank">{{ f.filename }}</a></td>
+                <td>{{ f.content_type }}</td>
+                <td>{{ f.size }} B</td>
+                <td>{{ f.created_at }}</td>
+                <td>
+                    <form method="post" action="/webdav/{{ f.id }}/delete" class="form-inline" onsubmit="return confirm('Delete this file?')"><button type="submit">Delete</button></form>
+                </td>
+            </tr>
+            {% endfor %}
+        {% endif %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}
