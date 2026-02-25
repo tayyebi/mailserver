@@ -13,7 +13,7 @@ Send, receive, and manage email — with a sleek web admin panel, built-in webma
 
 Alpine · Postfix · Dovecot · OpenDKIM · Rust · PostgreSQL — all in one container.
 
-![Admin Dashboard](https://github.com/user-attachments/assets/921f8437-f852-4ec6-a9a2-416e55e54806)
+![Admin Overview](docs/screenshots/overview.jpg)
 
 </div>
 
@@ -40,6 +40,9 @@ Alpine · Postfix · Dovecot · OpenDKIM · Rust · PostgreSQL — all in one co
 | 🔁 **Outbound Relays** | Route outbound mail through external SMTP servers, assignable per domain, account, or alias |
 | 🔔 **Webhook Notifications** | Send HTTP webhooks on processed outbound emails |
 | ⚙️ **Config Viewer** | Inspect live Postfix/Dovecot/OpenDKIM configs from the UI |
+| 📁 **WebDAV File Storage** | Per-account WebDAV server at `/dav/{email}/` for file storage and sharing via FileLink |
+| 📅 **CalDAV Calendar Server** | Per-account CalDAV server at `/caldav/{email}/` for calendar sync with any CalDAV client |
+| 🤖 **MCP API** | Model Context Protocol endpoint for AI assistant integration (list/read/send/delete email) |
 
 ---
 
@@ -97,9 +100,13 @@ Enable TOTP-based 2FA from the Settings page. Once enabled, append your 6-digit 
 
 Add your mail domains, generate DKIM signing keys with one click, and get a ready-to-use DNS runbook showing every record you need (MX, SPF, DKIM, DMARC, PTR).
 
+![Domains](docs/screenshots/domains.jpg)
+
 ### Accounts
 
 Create email accounts for your users. Set display names, passwords, and per-account storage quotas.
+
+![Accounts](docs/screenshots/accounts.jpg)
 
 ### Aliases & Catch-all
 
@@ -113,9 +120,13 @@ Set up rules to forward mail from a local address to any external email address.
 
 When tracking is enabled on an alias, outgoing emails get a tiny invisible tracking pixel injected into the HTML body. Every time the recipient opens the email, a record is created. View detailed per-message open reports from the **Tracking** section.
 
+![Tracking](docs/screenshots/tracking.jpg)
+
 ### Webmail
 
 A lightweight webmail client is built right into the admin panel. Browse folders, read messages, compose new emails (with CC, BCC, Reply-To, priority, and custom headers), and delete messages — all without leaving the browser.
+
+![Webmail](docs/screenshots/webmail.jpg)
 
 ### Fail2ban
 
@@ -125,6 +136,8 @@ Mailserver includes a built-in fail2ban system that monitors Postfix and Dovecot
 - Manually ban or unban individual IPs or CIDR ranges
 - Maintain a permanent whitelist and blacklist
 - Review a full audit log of all ban/unban events
+
+![Fail2ban](docs/screenshots/fail2ban.jpg)
 
 ### Queue
 
@@ -145,6 +158,18 @@ Inspect the live Postfix, Dovecot, and OpenDKIM configuration files generated fr
 ### Outbound Relays
 
 Configure external SMTP relays to route outbound mail through third-party providers (e.g. SendGrid, SES, or a corporate relay). Relays can be assigned globally or scoped to a specific domain, account, or alias, with support for PLAIN and LOGIN authentication.
+
+### WebDAV File Storage
+
+Each mail account gets a personal WebDAV drive at `/dav/{email}/`. Users can mount it in their OS file manager, upload/download files, and share individual files via one-time FileLink download URLs — all authenticated with their mail credentials.
+
+### CalDAV Calendar Server
+
+A built-in CalDAV server at `/caldav/{email}/` lets users sync calendars using any CalDAV-compatible client (Thunderbird, Apple Calendar, DAVx⁵ on Android, etc.). Calendars are created from the admin panel and are scoped per mail account.
+
+### MCP API (AI Assistant Integration)
+
+A [Model Context Protocol](https://modelcontextprotocol.io/) endpoint at `POST /mcp` exposes mail operations to AI assistants and automation tools. Supported tools: `list_accounts`, `list_emails`, `read_email`, `send_email`, `delete_email`. Authentication uses the same admin credentials.
 
 ---
 

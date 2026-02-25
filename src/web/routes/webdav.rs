@@ -843,7 +843,7 @@ pub async fn filelink_delete(
 pub fn public_routes() -> axum::Router<AppState> {
     use axum::routing::{any, delete, get, post};
     axum::Router::new()
-        .route("/dav/{*path}", any(dav_handler))
+        .route("/dav/*path", any(dav_handler))
         .route("/filelink/upload", post(filelink_upload))
         .route("/filelink/download/{token}", get(filelink_download))
         .route("/filelink/delete/{token}", delete(filelink_delete))

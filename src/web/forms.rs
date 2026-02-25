@@ -215,12 +215,12 @@ pub struct WebDavSettingsForm {
     pub webdav_quota_mb: Option<i64>,
 }
 
+#[derive(Deserialize)]
 pub struct TrackingPatternForm {
     pub pattern: String,
 }
 
 #[derive(Deserialize)]
-<<<<<<< copilot/implement-caldev-server-admin-features
 pub struct CalDavCalendarForm {
     pub email: String,
     pub display_name: String,
@@ -228,10 +228,11 @@ pub struct CalDavCalendarForm {
     pub description: Option<String>,
     #[serde(default)]
     pub color: Option<String>,
-=======
+}
+
+#[derive(Deserialize)]
 pub struct TrackingRuleForm {
     pub name: String,
     pub match_mode: String,
     pub conditions_json: String,
->>>>>>> main
 }
