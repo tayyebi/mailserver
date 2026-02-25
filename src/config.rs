@@ -1157,7 +1157,6 @@ mod tests {
             source: source.to_string(),
             destination: destination.to_string(),
             active: true,
-            tracking_enabled: false,
             sort_order: 0,
             domain_name: Some(domain.to_string()),
         }

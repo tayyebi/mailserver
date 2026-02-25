@@ -5,7 +5,6 @@
 <aside>
     <h2>Routing notes</h2>
     <p>Toggle <strong>Active</strong> instead of deleting when you want to pause a catch-all.</p>
-    <p><small>Tracking helps confirm whether a legacy alias is still in use.</small></p>
 </aside>
 <form method="post" action="/aliases/{{ alias.id }}">
 <label>Source Email<br><input type="text" name="source" value="{{ alias.source }}" pattern="[\*]?[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}" required></label>
@@ -13,7 +12,6 @@
 <label>Destination Email<br><input type="text" name="destination" value="{{ alias.destination }}" pattern="[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}" required></label>
 <small>Must be an existing mailbox account. Messages will be delivered here.</small>
 <label><input type="checkbox" name="active" value="on"{% if alias.active %} checked{% endif %}> Active</label>
-<label><input type="checkbox" name="tracking_enabled" value="on"{% if alias.tracking_enabled %} checked{% endif %}> Enable Tracking</label>
 <button type="submit">Save</button>
 </form>
 {% endblock %}

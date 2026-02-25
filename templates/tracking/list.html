@@ -1,7 +1,41 @@
 {% extends "layout.html" %}
 {% block title %}Tracking{% endblock %}
 {% block content %}
-<h1>Tracking</h1>
+<section>
+    <hgroup>
+        <small>Outbound pixel tracking</small>
+        <h1>Tracking</h1>
+    </hgroup>
+</section>
+<aside>
+    <h2>From Address Patterns</h2>
+    <p>Tracking pixels are injected into outbound HTML emails whose <strong>From</strong> address matches one of the patterns below. Use <code>*@domain.com</code> to match all senders on a domain, or an exact address like <code>newsletter@example.com</code>.</p>
+    <form method="post" action="/tracking/patterns">
+        <label>Add pattern<br><input type="text" name="pattern" placeholder="*@example.com or user@example.com" required></label>
+        <button type="submit">Add</button>
+    </form>
+    {% if patterns.is_empty() %}
+    <p><small>No patterns configured — tracking is disabled for all senders.</small></p>
+    {% else %}
+    <table>
+        <thead><tr><th>Pattern</th><th>Added</th><th></th></tr></thead>
+        <tbody>
+        {% for p in patterns %}
+        <tr>
+            <td><code>{{ p.pattern }}</code></td>
+            <td>{{ p.created_at }}</td>
+            <td>
+                <form method="post" action="/tracking/patterns/{{ p.id }}/delete" class="form-inline" onsubmit="return confirm('Remove this pattern?')">
+                    <button type="submit">Remove</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</aside>
+<h2>Tracked Messages</h2>
 <table>
 <thead><tr><th>Message ID</th><th>Sender</th><th>Recipient</th><th>Subject</th><th>Date</th><th>Opens</th></tr></thead>
 <tbody>
@@ -15,6 +49,9 @@
     <td>{{ m.open_count }}</td>
 </tr>
 {% endfor %}
+{% if messages.is_empty() %}
+<tr><td colspan="6">No tracked messages yet.</td></tr>
+{% endif %}
 </tbody>
 </table>
 {% endblock %}
