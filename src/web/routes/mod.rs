@@ -7,6 +7,7 @@ pub mod dmarc;
 pub mod domains;
 pub mod fail2ban;
 pub mod forwarding;
+pub mod mcp;
 pub mod pixel;
 pub mod queue;
 pub mod relays;
@@ -131,6 +132,7 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/relays/:id/assignments/:aid/delete",
             post(relays::remove_assignment),
         )
+        .route("/mcp", post(mcp::handle))
         .route("/webdav", get(webdav::list))
         .route("/webdav/settings", post(webdav::update_settings))
         .route("/webdav/:id/delete", post(webdav::admin_delete_file))
