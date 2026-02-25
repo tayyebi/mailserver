@@ -34,6 +34,8 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/domains/:id/edit", get(domains::edit_form))
         .route("/domains/:id/delete", post(domains::delete))
         .route("/domains/:id/dkim", post(domains::generate_dkim))
+        .route("/domains/:id/dmarc", post(domains::set_dmarc_inbox))
+        .route("/domains/:id/dmarc/delete", post(domains::remove_dmarc_inbox))
         .route("/domains/:id/dns", get(domains::dns_info))
         .route("/domains/:id/check", get(domains::dns_check_run))
         .route("/domains/:id", post(domains::update))

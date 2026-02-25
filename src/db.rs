@@ -2235,6 +2235,60 @@ impl Database {
         })
     }
 
+    pub fn get_dmarc_inbox_by_domain_id(&self, domain_id: i64) -> Option<DmarcInbox> {
+        debug!("[db] getting dmarc inbox for domain_id={}", domain_id);
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT di.id, di.account_id, di.label, di.created_at, a.username, d.domain
+             FROM dmarc_inboxes di
+             JOIN accounts a ON di.account_id = a.id
+             JOIN domains d ON a.domain_id = d.id
+             WHERE d.id = $1
+             LIMIT 1",
+            &[&domain_id],
+        )
+        .ok()
+        .flatten()
+        .map(|row| DmarcInbox {
+            id: row.get(0),
+            account_id: row.get(1),
+            label: row.get::<_, Option<String>>(2).unwrap_or_default(),
+            created_at: row.get::<_, Option<String>>(3).unwrap_or_default(),
+            account_username: row.get(4),
+            account_domain: row.get(5),
+        })
+    }
+
+    pub fn list_accounts_by_domain(&self, domain_id: i64) -> Vec<Account> {
+        debug!("[db] listing accounts for domain_id={}", domain_id);
+        let mut conn = self.conn();
+        let rows = conn
+            .query(
+                "SELECT a.id, a.domain_id, a.username, a.password_hash, a.name, a.active, a.quota, d.domain
+                 FROM accounts a
+                 LEFT JOIN domains d ON a.domain_id = d.id
+                 WHERE a.domain_id = $1
+                 ORDER BY a.username",
+                &[&domain_id],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list accounts for domain: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| Account {
+                id: row.get(0),
+                domain_id: row.get(1),
+                username: row.get(2),
+                password_hash: row.get(3),
+                name: row.get(4),
+                active: row.get(5),
+                quota: row.get(6),
+                domain_name: row.get(7),
+            })
+            .collect()
+    }
+
     pub fn create_dmarc_inbox(&self, account_id: i64, label: &str) -> Result<i64, String> {
         info!("[db] creating dmarc inbox account_id={}", account_id);
         let mut conn = self.conn();
