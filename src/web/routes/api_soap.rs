@@ -47,9 +47,12 @@ fn xml_escape(s: &str) -> String {
 /// Wrap `body` in a SOAP 1.1 Envelope and return a `text/xml` HTTP response.
 fn soap_response(status: StatusCode, body: &str) -> Response {
     let xml = format!(
-        "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
-         <soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" \
-         xmlns:tns=\"{TNS}\">\n  <soap:Body>{body}\n  </soap:Body>\n</soap:Envelope>\n",
+        r#"<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="{TNS}">
+  <soap:Body>{body}
+  </soap:Body>
+</soap:Envelope>
+"#,
         TNS = TNS,
         body = body
     );
@@ -64,10 +67,11 @@ fn soap_response(status: StatusCode, body: &str) -> Response {
 /// Return a SOAP 1.1 Fault inside an Envelope.
 fn soap_fault(code: &str, message: &str) -> Response {
     let body = format!(
-        "\n    <soap:Fault>\
-         \n      <faultcode>{code}</faultcode>\
-         \n      <faultstring>{msg}</faultstring>\
-         \n    </soap:Fault>",
+        r#"
+    <soap:Fault>
+      <faultcode>{code}</faultcode>
+      <faultstring>{msg}</faultstring>
+    </soap:Fault>"#,
         code = xml_escape(code),
         msg = xml_escape(message),
     );
@@ -355,17 +359,19 @@ async fn handle_list_emails(
     let folder_display = if folder.is_empty() { "INBOX" } else { folder.as_str() };
 
     let mut emails_xml = String::new();
+    use std::fmt::Write as FmtWrite;
     for e in emails.iter().skip(start).take(PAGE_SIZE) {
-        emails_xml.push_str(&format!(
-            "\n        <email>\
-             \n          <filename>{}</filename>\
-             \n          <subject>{}</subject>\
-             \n          <from>{}</from>\
-             \n          <to>{}</to>\
-             \n          <date>{}</date>\
-             \n          <isNew>{}</isNew>\
-             \n          <isSpam>{}</isSpam>\
-             \n        </email>",
+        writeln!(emails_xml,
+            r#"
+        <email>
+          <filename>{}</filename>
+          <subject>{}</subject>
+          <from>{}</from>
+          <to>{}</to>
+          <date>{}</date>
+          <isNew>{}</isNew>
+          <isSpam>{}</isSpam>
+        </email>"#,
             xml_escape(&e.filename),
             xml_escape(&e.subject),
             xml_escape(&e.from),
@@ -373,19 +379,19 @@ async fn handle_list_emails(
             xml_escape(&e.date),
             e.is_new,
             e.is_spam,
-        ));
+        ).ok();
     }
 
     let body = format!(
-        "\n    <tns:ListEmailsResponse>\
-         \n      <accountId>{account_id}</accountId>\
-         \n      <folder>{folder}</folder>\
-         \n      <page>{page}</page>\
-         \n      <totalPages>{total_pages}</totalPages>\
-         \n      <totalCount>{total}</totalCount>\
-         \n      <emails>{emails_xml}\
-         \n      </emails>\
-         \n    </tns:ListEmailsResponse>",
+        r#"
+    <tns:ListEmailsResponse>
+      <accountId>{account_id}</accountId>
+      <folder>{folder}</folder>
+      <page>{page}</page>
+      <totalPages>{total_pages}</totalPages>
+      <totalCount>{total}</totalCount>
+      <emails>{emails_xml}      </emails>
+    </tns:ListEmailsResponse>"#,
         account_id = account_id,
         folder = xml_escape(folder_display),
         page = page,
@@ -511,15 +517,16 @@ async fn handle_get_email(
     let email_body = extract_body(&parsed);
 
     let body = format!(
-        "\n    <tns:GetEmailResponse>\
-         \n      <filename>{filename}</filename>\
-         \n      <subject>{subject}</subject>\
-         \n      <from>{from}</from>\
-         \n      <to>{to}</to>\
-         \n      <date>{date}</date>\
-         \n      <body>{body}</body>\
-         \n      <isSpam>{is_spam}</isSpam>\
-         \n    </tns:GetEmailResponse>",
+        r#"
+    <tns:GetEmailResponse>
+      <filename>{filename}</filename>
+      <subject>{subject}</subject>
+      <from>{from}</from>
+      <to>{to}</to>
+      <date>{date}</date>
+      <body>{body}</body>
+      <isSpam>{is_spam}</isSpam>
+    </tns:GetEmailResponse>"#,
         filename = xml_escape(&filename_b64),
         subject = xml_escape(&subject),
         from = xml_escape(&from),
@@ -644,9 +651,10 @@ async fn handle_send_email(
     {
         Ok(_) => {
             info!("[soap] email sent to {}", to);
-            let body = "\n    <tns:SendEmailResponse>\
-                        \n      <status>sent</status>\
-                        \n    </tns:SendEmailResponse>";
+            let body = r#"
+    <tns:SendEmailResponse>
+      <status>sent</status>
+    </tns:SendEmailResponse>"#;
             soap_response(StatusCode::OK, body)
         }
         Err(e) => soap_fault("soap:Server", &format!("SMTP error: {}", e)),
@@ -711,9 +719,10 @@ async fn handle_delete_email(
                 );
             }
             info!("[soap] deleted email: {}", candidate);
-            let body = "\n    <tns:DeleteEmailResponse>\
-                        \n      <status>deleted</status>\
-                        \n    </tns:DeleteEmailResponse>";
+            let body = r#"
+    <tns:DeleteEmailResponse>
+      <status>deleted</status>
+    </tns:DeleteEmailResponse>"#;
             return soap_response(StatusCode::OK, body);
         }
     }

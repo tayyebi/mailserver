@@ -140,6 +140,31 @@ body > header nav a[aria-current="page"]::before {
   transform: scaleY(1);
 }
 
+/* ── Nav groups (two-level navigation) ── */
+
+body > header nav .nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+body > header nav .nav-group-label {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--color-text-subtle);
+  padding-block: var(--space-xs);
+  padding-inline: var(--space-xs);
+  margin-block-start: var(--space-md);
+  border-block-start: var(--border-width) solid var(--glass-border);
+  padding-block-start: var(--space-md);
+}
+
+body > header nav .nav-group a {
+  padding-inline-start: calc(var(--space-md) + var(--space-sm));
+}
+
 /* ── Page wrapper fills remaining space ── */
 
 .page-wrapper {

@@ -23,26 +23,46 @@
   <small>Control Panel</small>
   <nav>
     <a href="/"{% if nav_active == "Dashboard" %} aria-current="page"{% endif %}>Dashboard</a>
-    <a href="/domains"{% if nav_active == "Domains" %} aria-current="page"{% endif %}>Domains</a>
-    <a href="/accounts"{% if nav_active == "Accounts" %} aria-current="page"{% endif %}>Accounts</a>
-    <a href="/aliases"{% if nav_active == "Aliases" %} aria-current="page"{% endif %}>Aliases</a>
-    <a href="/forwarding"{% if nav_active == "Forwarding" %} aria-current="page"{% endif %}>Forwarding</a>
-    <a href="/tracking"{% if nav_active == "Tracking" %} aria-current="page"{% endif %}>Tracking</a>
-    <a href="/webhooks"{% if nav_active == "Webhooks" %} aria-current="page"{% endif %}>Webhooks</a>
-    <a href="/unsubscribe/list"{% if nav_active == "Unsubscribe" %} aria-current="page"{% endif %}>Unsubscribe</a>
-    <a href="/queue"{% if nav_active == "Queue" %} aria-current="page"{% endif %}>Queue</a>
-    <a href="/webmail"{% if nav_active == "Webmail" %} aria-current="page"{% endif %}>Webmail</a>
-    <a href="/relays"{% if nav_active == "Relays" %} aria-current="page"{% endif %}>Relays</a>
-    <a href="/caldav"{% if nav_active == "CalDAV" %} aria-current="page"{% endif %}>CalDAV</a>
-    <a href="/webdav"{% if nav_active == "WebDAV" %} aria-current="page"{% endif %}>WebDAV</a>
-    <a href="/mcp"{% if nav_active == "MCP" %} aria-current="page"{% endif %}>MCP</a>
-    <a href="/fail2ban"{% if nav_active == "Fail2ban" %} aria-current="page"{% endif %}>Fail2ban</a>
-    <a href="/spambl"{% if nav_active == "Spambl" %} aria-current="page"{% endif %}>Spambl</a>
-    <a href="/dmarc"{% if nav_active == "DMARC" %} aria-current="page"{% endif %}>DMARC</a>
-    <a href="/abuse"{% if nav_active == "Abuse" %} aria-current="page"{% endif %}>Abuse</a>
-    <a href="/configs"{% if nav_active == "Configs" %} aria-current="page"{% endif %}>Configs</a>
-    <a href="/api"{% if nav_active == "API" %} aria-current="page"{% endif %}>API</a>
-    <a href="/settings"{% if nav_active == "Settings" %} aria-current="page"{% endif %}>Settings</a>
+
+    <div class="nav-group">
+      <span class="nav-group-label">Mail</span>
+      <a href="/domains"{% if nav_active == "Domains" %} aria-current="page"{% endif %}>Domains</a>
+      <a href="/accounts"{% if nav_active == "Accounts" %} aria-current="page"{% endif %}>Accounts</a>
+      <a href="/aliases"{% if nav_active == "Aliases" %} aria-current="page"{% endif %}>Aliases</a>
+      <a href="/forwarding"{% if nav_active == "Forwarding" %} aria-current="page"{% endif %}>Forwarding</a>
+      <a href="/relays"{% if nav_active == "Relays" %} aria-current="page"{% endif %}>Relays</a>
+    </div>
+
+    <div class="nav-group">
+      <span class="nav-group-label">Processing</span>
+      <a href="/queue"{% if nav_active == "Queue" %} aria-current="page"{% endif %}>Queue</a>
+      <a href="/tracking"{% if nav_active == "Tracking" %} aria-current="page"{% endif %}>Tracking</a>
+      <a href="/unsubscribe/list"{% if nav_active == "Unsubscribe" %} aria-current="page"{% endif %}>Unsubscribe</a>
+      <a href="/spambl"{% if nav_active == "Spambl" %} aria-current="page"{% endif %}>Spambl</a>
+      <a href="/dmarc"{% if nav_active == "DMARC" %} aria-current="page"{% endif %}>DMARC</a>
+      <a href="/abuse"{% if nav_active == "Abuse" %} aria-current="page"{% endif %}>Abuse</a>
+      <a href="/fail2ban"{% if nav_active == "Fail2ban" %} aria-current="page"{% endif %}>Fail2ban</a>
+    </div>
+
+    <div class="nav-group">
+      <span class="nav-group-label">Clients</span>
+      <a href="/webmail"{% if nav_active == "Webmail" %} aria-current="page"{% endif %}>Webmail</a>
+      <a href="/caldav"{% if nav_active == "CalDAV" %} aria-current="page"{% endif %}>CalDAV</a>
+      <a href="/webdav"{% if nav_active == "WebDAV" %} aria-current="page"{% endif %}>WebDAV</a>
+    </div>
+
+    <div class="nav-group">
+      <span class="nav-group-label">Integration</span>
+      <a href="/api"{% if nav_active == "API" %} aria-current="page"{% endif %}>API</a>
+      <a href="/webhooks"{% if nav_active == "Webhooks" %} aria-current="page"{% endif %}>Webhooks</a>
+      <a href="/mcp"{% if nav_active == "MCP" %} aria-current="page"{% endif %}>MCP</a>
+    </div>
+
+    <div class="nav-group">
+      <span class="nav-group-label">System</span>
+      <a href="/configs"{% if nav_active == "Configs" %} aria-current="page"{% endif %}>Configs</a>
+      <a href="/settings"{% if nav_active == "Settings" %} aria-current="page"{% endif %}>Settings</a>
+    </div>
   </nav>
 </header>
 <div class="page-wrapper">
