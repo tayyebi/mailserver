@@ -33,6 +33,24 @@ use super::webmail::{
 const PROTOCOL_VERSION: &str = "2024-11-05";
 const PAGE_SIZE: usize = 20;
 
+// ── Harness rules ─────────────────────────────────────────────────────────────
+
+/// Rules surfaced to AI clients on every `initialize` response and shown on
+/// the admin page.  They act as a behavioural harness — guardrails that keep
+/// the AI focused and prevent runaway or destructive behaviour.
+pub fn harness_rules() -> Vec<&'static str> {
+    vec![
+        "Only act on accounts and emails that the user has explicitly named. Do not autonomously iterate over all accounts or all emails.",
+        "Always call read_email before replying to, forwarding, or deleting a message.",
+        "Ask for explicit user approval before sending or permanently deleting any email.",
+        "Never send an email to more than one new recipient unless the user has listed each address individually.",
+        "If completing a task would require more than five sequential tool calls, pause and ask the user for confirmation before continuing.",
+        "Never send email from an account other than the one the user has explicitly specified.",
+        "Do not disclose the content of emails to anyone outside the current conversation.",
+        "When in doubt about the user's intent, ask for clarification instead of guessing.",
+    ]
+}
+
 // ── JSON-RPC 2.0 types ───────────────────────────────────────────────────────
 
 #[derive(Deserialize, Serialize)]
@@ -237,6 +255,7 @@ struct McpPageTemplate<'a> {
     logs: Vec<crate::db::McpLog>,
     page: i64,
     total_pages: i64,
+    harness_rules: Vec<&'static str>,
 }
 
 pub async fn page(
@@ -262,6 +281,7 @@ pub async fn page(
         logs,
         page,
         total_pages,
+        harness_rules: harness_rules(),
     };
     Html(tmpl.render().unwrap())
 }
@@ -292,7 +312,8 @@ pub async fn handle(
             },
             "capabilities": {
                 "tools": {}
-            }
+            },
+            "instructions": harness_rules().join("\n")
         })),
         "tools/list" => Ok(tools_list_value()),
         "tools/call" => dispatch_tool_call(&state, &req).await,
@@ -803,5 +824,31 @@ mod tests {
         let required = list_emails["inputSchema"]["required"].as_array().unwrap();
         let req_names: Vec<&str> = required.iter().map(|v| v.as_str().unwrap()).collect();
         assert!(req_names.contains(&"account_id"));
+    }
+
+    #[test]
+    fn harness_rules_is_non_empty() {
+        let rules = harness_rules();
+        assert!(!rules.is_empty(), "harness_rules() must return at least one rule");
+    }
+
+    #[test]
+    fn harness_rules_are_non_empty_strings() {
+        for rule in harness_rules() {
+            assert!(!rule.trim().is_empty(), "every harness rule must be non-empty");
+        }
+    }
+
+    #[test]
+    fn initialize_instructions_contains_harness_rules() {
+        // Simulate building the instructions string the way handle() does.
+        let instructions = harness_rules().join("\n");
+        for rule in harness_rules() {
+            assert!(
+                instructions.contains(rule),
+                "instructions string must contain rule: {}",
+                rule
+            );
+        }
     }
 }

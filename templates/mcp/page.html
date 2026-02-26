@@ -64,6 +64,19 @@
 
 <section>
     <hgroup>
+        <small>AI guardrails</small>
+        <h2>Harness</h2>
+    </hgroup>
+    <p>These rules are returned in the <code>instructions</code> field of every <code>initialize</code> response and govern how AI agents connected to this server must behave. They are designed to prevent unintended or destructive actions.</p>
+    <ol>
+        {% for rule in harness_rules %}
+        <li>{{ rule }}</li>
+        {% endfor %}
+    </ol>
+</section>
+
+<section>
+    <hgroup>
         <small>AI agent setup</small>
         <h2>Claude Project File</h2>
     </hgroup>
