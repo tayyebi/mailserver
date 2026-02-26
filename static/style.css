@@ -476,6 +476,27 @@ body > header nav a[aria-current="page"] {
   font-weight: 600;
 }
 
+/* ── Nav groups (two-level navigation) ── */
+
+.nav-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.nav-group-label {
+  display: block;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-subtle);
+  padding-block: var(--space-xs);
+  padding-inline: var(--space-md);
+  margin-block-start: var(--space-sm);
+  cursor: default;
+  user-select: none;
+}
+
 /* ── Main ── */
 
 main {
