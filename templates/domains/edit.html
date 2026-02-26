@@ -5,8 +5,6 @@
 <form method="post" action="/domains/{{ domain.id }}">
 <label>Domain Name<br><input type="text" name="domain" value="{{ domain.domain }}" required></label>
 <label><input type="checkbox" name="active" value="on"{% if domain.active %} checked{% endif %}> Active</label>
-<label>Footer HTML (optional)<br><textarea name="footer_html" rows="6">{{ domain.footer_html.as_deref().unwrap_or("") }}</textarea></label>
-<small>Leave blank to disable footer injection for this domain.</small>
 <label>BIMI SVG (optional)<br><textarea name="bimi_svg" rows="6">{{ domain.bimi_svg.as_deref().unwrap_or("") }}</textarea></label>
 <small>Paste your SVG Tiny 1.2 logo markup here. It will be served at <code>/bimi/{{ domain.domain }}/logo.svg</code>.</small>
 <label><input type="checkbox" name="unsubscribe_enabled" value="on"{% if domain.unsubscribe_enabled %} checked{% endif %}> Enable List-Unsubscribe header injection for outbound emails</label>

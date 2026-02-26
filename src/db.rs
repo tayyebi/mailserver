@@ -105,6 +105,22 @@ pub struct UnsubscribeRule {
 }
 
 #[derive(Clone, Serialize)]
+pub struct FooterPattern {
+    pub id: i64,
+    pub pattern: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct FooterRule {
+    pub id: i64,
+    pub name: String,
+    pub match_mode: String,
+    pub conditions: Vec<TrackingCondition>,
+    pub created_at: String,
+}
+
+#[derive(Clone, Serialize)]
 pub struct Forwarding {
     pub id: i64,
     pub domain_id: i64,
@@ -481,22 +497,21 @@ fn evaluate_condition(
 }
 
 fn evaluate_rule(
-    rule: &TrackingRule,
+    match_mode: &str,
+    conditions: &[TrackingCondition],
     sender: &str,
     recipient: &str,
     subject: &str,
     size_bytes: usize,
 ) -> bool {
-    if rule.conditions.is_empty() {
+    if conditions.is_empty() {
         return false;
     }
-    match rule.match_mode.as_str() {
-        "OR" => rule
-            .conditions
+    match match_mode {
+        "OR" => conditions
             .iter()
             .any(|c| evaluate_condition(c, sender, recipient, subject, size_bytes)),
-        _ => rule
-            .conditions
+        _ => conditions
             .iter()
             .all(|c| evaluate_condition(c, sender, recipient, subject, size_bytes)),
     }
@@ -744,7 +759,6 @@ impl Database {
     pub fn create_domain(
         &self,
         domain: &str,
-        footer_html: &str,
         bimi_svg: &str,
         unsubscribe_enabled: bool,
     ) -> Result<i64, String> {
@@ -754,9 +768,9 @@ impl Database {
         let row = conn
             .query_one(
                 "INSERT INTO domains (domain, footer_html, bimi_svg, unsubscribe_enabled, created_at, updated_at)
-                 VALUES ($1, $2, $3, $4, $5, $6)
+                 VALUES ($1, '', $2, $3, $4, $5)
                  RETURNING id",
-                &[&domain, &footer_html, &bimi_svg, &unsubscribe_enabled, &ts, &ts],
+                &[&domain, &bimi_svg, &unsubscribe_enabled, &ts, &ts],
             )
             .map_err(|e| {
                 error!("[db] failed to create domain {}: {}", domain, e);
@@ -772,25 +786,23 @@ impl Database {
         id: i64,
         domain: &str,
         active: bool,
-        footer_html: &str,
         bimi_svg: &str,
         unsubscribe_enabled: bool,
     ) {
         info!(
-            "[db] updating domain id={}, domain={}, active={}, footer_present={}, bimi_present={}, unsubscribe_enabled={}",
+            "[db] updating domain id={}, domain={}, active={}, bimi_present={}, unsubscribe_enabled={}",
             id,
             domain,
             active,
-            !footer_html.trim().is_empty(),
             !bimi_svg.trim().is_empty(),
             unsubscribe_enabled
         );
         let mut conn = self.conn();
         if let Err(e) = conn.execute(
             "UPDATE domains
-             SET domain = $1, active = $2, footer_html = $3, bimi_svg = $4, unsubscribe_enabled = $5, updated_at = $6
-             WHERE id = $7",
-            &[&domain, &active, &footer_html, &bimi_svg, &unsubscribe_enabled, &now(), &id],
+             SET domain = $1, active = $2, bimi_svg = $3, unsubscribe_enabled = $4, updated_at = $5
+             WHERE id = $6",
+            &[&domain, &active, &bimi_svg, &unsubscribe_enabled, &now(), &id],
         ) {
             error!("[db] failed to execute query: {}", e);
         }
@@ -829,24 +841,6 @@ impl Database {
                AND bimi_svg IS NOT NULL
                AND bimi_svg <> ''",
             &[&domain],
-        )
-        .ok()
-        .flatten()
-        .map(|row| row.get(0))
-    }
-
-    pub fn get_footer_for_sender(&self, sender: &str) -> Option<String> {
-        let domain_part = sender.split('@').nth(1)?.trim().to_lowercase();
-        if domain_part.is_empty() {
-            return None;
-        }
-        let mut conn = self.conn();
-        conn.query_opt(
-            "SELECT footer_html FROM domains
-             WHERE lower(domain) = lower($1)
-               AND footer_html IS NOT NULL
-               AND footer_html <> ''",
-            &[&domain_part],
         )
         .ok()
         .flatten()
@@ -1139,7 +1133,7 @@ impl Database {
         let rules = self.list_tracking_rules();
         let enabled = rules
             .iter()
-            .any(|rule| evaluate_rule(rule, &sender_lower, recipient, subject, size_bytes));
+            .any(|rule| evaluate_rule(&rule.match_mode, &rule.conditions, &sender_lower, recipient, subject, size_bytes));
         debug!("[db] tracking enabled for sender={}: {}", sender, enabled);
         enabled
     }
@@ -1352,6 +1346,141 @@ impl Database {
         warn!("[db] deleting unsubscribe rule id={}", id);
         let mut conn = self.conn();
         if let Err(e) = conn.execute("DELETE FROM unsubscribe_rules WHERE id = $1", &[&id]) {
+            error!("[db] failed to execute query: {}", e);
+        }
+    }
+
+    // ── Footer methods ──
+
+    pub fn is_footer_enabled(
+        &self,
+        sender: &str,
+        recipient: &str,
+        subject: &str,
+        size_bytes: usize,
+    ) -> bool {
+        debug!("[db] checking footer status for sender={}", sender);
+        let sender_lower = sender.to_ascii_lowercase();
+
+        let patterns = self.list_footer_patterns();
+        if patterns
+            .iter()
+            .any(|p| matches_from_pattern(&p.pattern, &sender_lower))
+        {
+            debug!("[db] footer enabled for sender={} (pattern match)", sender);
+            return true;
+        }
+
+        let rules = self.list_footer_rules();
+        let enabled = rules
+            .iter()
+            .any(|rule| evaluate_rule(&rule.match_mode, &rule.conditions, &sender_lower, recipient, subject, size_bytes));
+        debug!("[db] footer enabled for sender={}: {}", sender, enabled);
+        enabled
+    }
+
+    pub fn list_footer_patterns(&self) -> Vec<FooterPattern> {
+        debug!("[db] listing footer patterns");
+        let mut conn = self.conn();
+        let rows = conn
+            .query(
+                "SELECT id, pattern, created_at FROM footer_patterns ORDER BY id ASC",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list footer patterns: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| FooterPattern {
+                id: row.get(0),
+                pattern: row.get(1),
+                created_at: row.get::<_, Option<String>>(2).unwrap_or_default(),
+            })
+            .collect()
+    }
+
+    pub fn create_footer_pattern(&self, pattern: &str) -> Result<i64, String> {
+        info!("[db] creating footer pattern: {}", pattern);
+        let mut conn = self.conn();
+        let row = conn
+            .query_one(
+                "INSERT INTO footer_patterns (pattern, created_at) VALUES ($1, $2) RETURNING id",
+                &[&pattern, &now()],
+            )
+            .map_err(|e| {
+                error!("[db] failed to create footer pattern {}: {}", pattern, e);
+                e.to_string()
+            })?;
+        let id: i64 = row.get(0);
+        info!("[db] footer pattern created: {} (id={})", pattern, id);
+        Ok(id)
+    }
+
+    pub fn delete_footer_pattern(&self, id: i64) {
+        warn!("[db] deleting footer pattern id={}", id);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute("DELETE FROM footer_patterns WHERE id = $1", &[&id]) {
+            error!("[db] failed to execute query: {}", e);
+        }
+    }
+
+    pub fn list_footer_rules(&self) -> Vec<FooterRule> {
+        debug!("[db] listing footer rules");
+        let mut conn = self.conn();
+        let rows = conn
+            .query(
+                "SELECT id, name, match_mode, conditions_json, created_at FROM footer_rules ORDER BY id ASC",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list footer rules: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| {
+                let conditions_json: String = row.get(3);
+                let conditions: Vec<TrackingCondition> =
+                    serde_json::from_str(&conditions_json).unwrap_or_default();
+                FooterRule {
+                    id: row.get(0),
+                    name: row.get(1),
+                    match_mode: row.get(2),
+                    conditions,
+                    created_at: row.get::<_, Option<String>>(4).unwrap_or_default(),
+                }
+            })
+            .collect()
+    }
+
+    pub fn create_footer_rule(
+        &self,
+        name: &str,
+        match_mode: &str,
+        conditions: &[TrackingCondition],
+    ) -> Result<i64, String> {
+        info!("[db] creating footer rule: {}", name);
+        let conditions_json = serde_json::to_string(conditions)
+            .map_err(|e| format!("failed to serialize conditions: {}", e))?;
+        let mut conn = self.conn();
+        let row = conn
+            .query_one(
+                "INSERT INTO footer_rules (name, match_mode, conditions_json, created_at) VALUES ($1, $2, $3, $4) RETURNING id",
+                &[&name, &match_mode, &conditions_json, &now()],
+            )
+            .map_err(|e| {
+                error!("[db] failed to create footer rule {}: {}", name, e);
+                e.to_string()
+            })?;
+        let id: i64 = row.get(0);
+        info!("[db] footer rule created: {} (id={})", name, id);
+        Ok(id)
+    }
+
+    pub fn delete_footer_rule(&self, id: i64) {
+        warn!("[db] deleting footer rule id={}", id);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute("DELETE FROM footer_rules WHERE id = $1", &[&id]) {
             error!("[db] failed to execute query: {}", e);
         }
     }
@@ -3525,7 +3654,7 @@ mod tests {
             cond("sender", "ends_with", "@example.com"),
             cond("subject", "contains", "promo"),
         ]);
-        assert!(evaluate_rule(&r, "news@example.com", "", "Promo offer", 0));
+        assert!(evaluate_rule(&r.match_mode, &r.conditions, "news@example.com", "", "Promo offer", 0));
     }
 
     #[test]
@@ -3534,7 +3663,7 @@ mod tests {
             cond("sender", "ends_with", "@example.com"),
             cond("subject", "contains", "promo"),
         ]);
-        assert!(!evaluate_rule(&r, "news@other.com", "", "Promo offer", 0));
+        assert!(!evaluate_rule(&r.match_mode, &r.conditions, "news@other.com", "", "Promo offer", 0));
     }
 
     #[test]
@@ -3543,7 +3672,7 @@ mod tests {
             cond("sender", "ends_with", "@example.com"),
             cond("subject", "contains", "promo"),
         ]);
-        assert!(evaluate_rule(&r, "news@other.com", "", "Promo offer", 0));
+        assert!(evaluate_rule(&r.match_mode, &r.conditions, "news@other.com", "", "Promo offer", 0));
     }
 
     #[test]
@@ -3552,13 +3681,13 @@ mod tests {
             cond("sender", "ends_with", "@example.com"),
             cond("subject", "contains", "promo"),
         ]);
-        assert!(!evaluate_rule(&r, "news@other.com", "", "Weekly digest", 0));
+        assert!(!evaluate_rule(&r.match_mode, &r.conditions, "news@other.com", "", "Weekly digest", 0));
     }
 
     #[test]
     fn evaluate_rule_empty_conditions_returns_false() {
         let r = rule_and("empty", vec![]);
-        assert!(!evaluate_rule(&r, "news@example.com", "", "Hello", 0));
+        assert!(!evaluate_rule(&r.match_mode, &r.conditions, "news@example.com", "", "Hello", 0));
     }
 
     #[test]
@@ -3567,7 +3696,7 @@ mod tests {
             cond("size", "larger_than", "10000"),
             cond("subject", "contains", "sale"),
         ]);
-        assert!(evaluate_rule(&r, "", "", "Big Sale", 50000));
-        assert!(!evaluate_rule(&r, "", "", "Big Sale", 5000));
+        assert!(evaluate_rule(&r.match_mode, &r.conditions, "", "", "Big Sale", 50000));
+        assert!(!evaluate_rule(&r.match_mode, &r.conditions, "", "", "Big Sale", 5000));
     }
 }

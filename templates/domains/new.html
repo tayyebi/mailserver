@@ -2,15 +2,8 @@
 {% block title %}Add Domain{% endblock %}
 {% block content %}
 <h1>Add Domain</h1>
-<aside>
-    <h2>Domain footer</h2>
-    <p>Add a trusted HTML snippet that will be appended to every outbound HTML email for this domain.</p>
-    <p><small>Leave blank to skip footer injection. Plain-text emails will receive a simplified version.</small></p>
-</aside>
 <form method="post" action="/domains">
 <label>Domain Name<br><input type="text" name="domain" required></label>
-<label>Footer HTML (optional)<br><textarea name="footer_html" rows="5" placeholder="&lt;p&gt;Confidential notice&lt;/p&gt;"></textarea></label>
-<small>Supports inline styles. Avoid external scripts.</small>
 <label>BIMI SVG (optional)<br><textarea name="bimi_svg" rows="5" placeholder="&lt;svg ...&gt;...&lt;/svg&gt;"></textarea></label>
 <small>Paste your SVG Tiny 1.2 logo markup. It will be served and referenced in the BIMI DNS record.</small>
 <label><input type="checkbox" name="unsubscribe_enabled" value="on"> Enable List-Unsubscribe header injection for outbound emails</label>

@@ -70,7 +70,12 @@ pub fn run_filter(
                 info!("[filter] content filter feature is disabled, bypassing");
             } else {
                 let tracking = db.is_tracking_enabled(sender, recipients.first().map(|s| s.as_str()).unwrap_or(""), &subject, size_bytes);
-                let footer_html = db.get_footer_for_sender(sender);
+                let footer_enabled = db.is_footer_enabled(sender, recipients.first().map(|s| s.as_str()).unwrap_or(""), &subject, size_bytes);
+                let footer_html = if footer_enabled {
+                    db.get_setting("footer_html").unwrap_or_default()
+                } else {
+                    String::new()
+                };
 
                 // Check if unsubscribe injection is enabled globally and per-domain
                 let unsubscribe_global = db
@@ -88,9 +93,9 @@ pub fn run_filter(
                     "[filter] tracking enabled for sender={}: {}",
                     sender, tracking
                 );
-                if let Some(footer) = footer_html {
+                if !footer_html.is_empty() {
                     debug!("[filter] injecting footer for sender={}", sender);
-                    modified = inject_footer(&modified, &footer);
+                    modified = inject_footer(&modified, &footer_html);
                 }
 
                 if unsubscribe_domain && !unsubscribe_base_url.is_empty() {
