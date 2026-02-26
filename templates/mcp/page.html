@@ -166,7 +166,7 @@
         </thead>
         <tbody>
         {% for l in logs %}
-        <tr>
+        <tr style="cursor:pointer" title="Click to view full request" onclick="showMcpLog(this)" data-body="{% if let Some(b) = l.request_body.as_ref() %}{{ b }}{% endif %}">
             <td>{{ l.id }}</td>
             <td>{{ l.created_at }}</td>
             <td><code>{{ l.method }}</code></td>
@@ -187,4 +187,25 @@
     {% endif %}
     {% endif %}
 </section>
+
+<dialog id="mcp-log-dialog" style="max-width:780px;width:95%;padding:1.5rem;border:1px solid var(--color-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <strong>Full Request Dump</strong>
+        <button type="button" onclick="document.getElementById('mcp-log-dialog').close()" style="background:none;border:none;font-size:1.25rem;cursor:pointer;line-height:1" aria-label="Close">&times;</button>
+    </div>
+    <pre id="mcp-log-body" style="overflow:auto;max-height:60vh;background:var(--color-bg-subtle);padding:1rem;border-radius:var(--radius-md);font-size:var(--font-size-sm);white-space:pre-wrap;word-break:break-all"></pre>
+</dialog>
+<script>
+function showMcpLog(row) {
+    var raw = row.dataset.body || '';
+    var display = raw;
+    if (raw) {
+        try { display = JSON.stringify(JSON.parse(raw), null, 2); } catch(e) {}
+    } else {
+        display = '(no request body recorded)';
+    }
+    document.getElementById('mcp-log-body').textContent = display;
+    document.getElementById('mcp-log-dialog').showModal();
+}
+</script>
 {% endblock %}

@@ -16,7 +16,7 @@
 //!   `delete_email`  — Delete an email from an account
 
 use askama::Template;
-use axum::{extract::State, response::Html, Json};
+use axum::{extract::{Query, State}, response::Html, Json};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use log::{info, warn};
@@ -35,7 +35,7 @@ const PAGE_SIZE: usize = 20;
 
 // ── JSON-RPC 2.0 types ───────────────────────────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct McpRequest {
     #[allow(dead_code)]
     pub jsonrpc: Option<String>,
@@ -217,6 +217,16 @@ pub fn tools_list_value() -> Value {
 
 const PAGE_SIZE_LOGS: i64 = 50;
 
+#[derive(Deserialize)]
+pub struct McpPageQuery {
+    #[serde(default = "default_page")]
+    pub page: i64,
+}
+
+fn default_page() -> i64 {
+    1
+}
+
 #[derive(Template)]
 #[template(path = "mcp/page.html")]
 struct McpPageTemplate<'a> {
@@ -232,12 +242,16 @@ struct McpPageTemplate<'a> {
 pub async fn page(
     _auth: AuthAdmin,
     State(state): State<AppState>,
+    Query(params): Query<McpPageQuery>,
 ) -> Html<String> {
     info!("[web] GET /mcp — admin page");
+    let page = params.page.max(1);
     let total_calls = state.blocking_db(|db| db.count_mcp_logs()).await;
     let total_pages = ((total_calls + PAGE_SIZE_LOGS - 1) / PAGE_SIZE_LOGS).max(1);
+    let page = page.min(total_pages);
+    let offset = (page - 1) * PAGE_SIZE_LOGS;
     let logs = state
-        .blocking_db(move |db| db.list_mcp_logs(PAGE_SIZE_LOGS, 0))
+        .blocking_db(move |db| db.list_mcp_logs(PAGE_SIZE_LOGS, offset))
         .await;
     let endpoint_url = format!("https://{}/mcp", state.hostname);
     let tmpl = McpPageTemplate {
@@ -246,7 +260,7 @@ pub async fn page(
         endpoint_url,
         total_calls,
         logs,
-        page: 1,
+        page,
         total_pages,
     };
     Html(tmpl.render().unwrap())
@@ -264,6 +278,10 @@ pub async fn handle(
     let id = req.id.clone();
     let method = req.method.clone();
     let started = std::time::Instant::now();
+    let request_body = serde_json::to_string(&req).unwrap_or_else(|e| {
+        warn!("[mcp] failed to serialize request for logging: {}", e);
+        "(serialization failed)".to_string()
+    });
 
     let result = match req.method.as_str() {
         "initialize" => Ok(json!({
@@ -285,9 +303,10 @@ pub async fn handle(
             let state2 = state.clone();
             let method2 = method.clone();
             let err2 = err_msg.clone();
+            let body2 = request_body.clone();
             tokio::spawn(async move {
                 state2.blocking_db(move |db| {
-                    db.log_mcp_call(&method2, None, false, &err2, duration_ms)
+                    db.log_mcp_call(&method2, None, false, &err2, duration_ms, Some(&body2))
                 }).await;
             });
             return Json(McpResponse::err(id, -32601, err_msg));
@@ -309,9 +328,10 @@ pub async fn handle(
             let state2 = state.clone();
             let method2 = method.clone();
             let tool2 = tool.clone();
+            let body2 = request_body.clone();
             tokio::spawn(async move {
                 state2.blocking_db(move |db| {
-                    db.log_mcp_call(&method2, tool2.as_deref(), true, "", duration_ms)
+                    db.log_mcp_call(&method2, tool2.as_deref(), true, "", duration_ms, Some(&body2))
                 }).await;
             });
             Json(McpResponse::ok(id, v))
@@ -321,9 +341,10 @@ pub async fn handle(
             let method2 = method.clone();
             let tool2 = tool.clone();
             let e2 = e.clone();
+            let body2 = request_body.clone();
             tokio::spawn(async move {
                 state2.blocking_db(move |db| {
-                    db.log_mcp_call(&method2, tool2.as_deref(), false, &e2, duration_ms)
+                    db.log_mcp_call(&method2, tool2.as_deref(), false, &e2, duration_ms, Some(&body2))
                 }).await;
             });
             Json(McpResponse::err(id, -32603, e))
