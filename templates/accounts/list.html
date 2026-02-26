@@ -7,6 +7,7 @@
     <summary>About accounts</summary>
     <p>Accounts use full email addresses for login. For example, <code>john@example.com</code> is the login for the local part <code>john</code> on domain <code>example.com</code>.</p>
 </details>
+<div class="table-wrap">
 <table>
 <thead><tr><th>Email Address</th><th>Full Name</th><th>Status</th><th>Quota</th><th>Mailbox Directory</th><th>Actions</th></tr></thead>
 <tbody>
@@ -25,6 +26,7 @@
 {% endfor %}
 </tbody>
 </table>
+</div>
 
 <div class="pagination-wrap">
     {% if total_pages > 1 %}

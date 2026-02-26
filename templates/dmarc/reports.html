@@ -60,6 +60,7 @@
     {% if report.records.is_empty() %}
     <p>No records.</p>
     {% else %}
+    <div class="table-wrap">
     <table>
       <thead>
         <tr>
@@ -130,6 +131,7 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
     {% endif %}
   </div>
 </details>

@@ -60,6 +60,7 @@
     {% if emails.is_empty() %}
     <p>No emails found.</p>
     {% else %}
+    <div class="table-wrap">
     <table>
       <thead>
         <tr><th>Date</th><th>From</th><th>Subject</th><th>Status</th><th>Actions</th></tr>
@@ -88,6 +89,7 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
 
     {% if total_pages > 1 %}
     <nav class="pagination" aria-label="Pagination">

@@ -35,6 +35,7 @@
     {% if patterns.is_empty() %}
     <p><small>No patterns configured — tracking is disabled for all senders.</small></p>
     {% else %}
+    <div class="table-wrap">
     <table>
         <thead><tr><th>Pattern</th><th>Added</th><th></th></tr></thead>
         <tbody>
@@ -51,6 +52,7 @@
         {% endfor %}
         </tbody>
     </table>
+    </div>
     {% endif %}
 </aside>
 
@@ -76,6 +78,7 @@
     {% if rules.is_empty() %}
     <p><small>No rules configured.</small></p>
     {% else %}
+    <div class="table-wrap">
     <table>
         <thead><tr><th>Name</th><th>Logic</th><th>Conditions</th><th>Added</th><th></th></tr></thead>
         <tbody>
@@ -99,6 +102,7 @@
         {% endfor %}
         </tbody>
     </table>
+    </div>
     {% endif %}
 </aside>
 
@@ -161,6 +165,7 @@ document.getElementById('rule-form').addEventListener('submit', function() {
 </script>
 
 <h2>Tracked Messages</h2>
+<div class="table-wrap">
 <table>
 <thead><tr><th>Message ID</th><th>Sender</th><th>Recipient</th><th>Subject</th><th>Date</th><th>Opens</th></tr></thead>
 <tbody>
@@ -179,4 +184,5 @@ document.getElementById('rule-form').addEventListener('submit', function() {
 {% endif %}
 </tbody>
 </table>
+</div>
 {% endblock %}
