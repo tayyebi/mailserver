@@ -84,7 +84,8 @@ mod tests {
             api_token: None,
         };
         let rendered = tmpl.render().unwrap();
-        assert!(rendered.contains("REST API"));
+        assert!(rendered.contains("REST"));
+        assert!(rendered.contains("SOAP"));
         assert!(rendered.contains("/api/emails"));
     }
 

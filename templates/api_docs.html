@@ -1,10 +1,10 @@
 {% extends "layout.html" %}
-{% block title %}REST API{% endblock %}
+{% block title %}REST &amp; SOAP API{% endblock %}
 {% block content %}
 <section>
     <hgroup>
         <small>Integration reference</small>
-        <h1>REST API</h1>
+        <h1>REST &amp; SOAP API</h1>
     </hgroup>
     <p>This mailserver exposes HTTP endpoints for programmatic email access. Authenticate with HTTP Basic Auth (admin credentials) or a Bearer token.</p>
 </section>
@@ -126,6 +126,125 @@ Content-Type: application/json
         <pre><code>DELETE /api/emails/&lt;filename&gt;?account_id=1
 Authorization: Bearer &lt;token&gt;</code></pre>
         <pre><code>{"status": "deleted"}</code></pre>
+    </details>
+</section>
+
+<section>
+    <hgroup>
+        <small>Email operations (XML/SOAP)</small>
+        <h2>SOAP API</h2>
+    </hgroup>
+    <p>SOAP 1.1 endpoint for listing, reading, sending, and deleting emails. Authentication: HTTP Basic Auth (admin credentials) or Bearer token.</p>
+    <table>
+        <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+        <tbody>
+            <tr><td><code>GET</code></td><td><code>/api/soap</code></td><td>Download the WSDL service description</td></tr>
+            <tr><td><code>POST</code></td><td><code>/api/soap</code></td><td>Execute a SOAP operation</td></tr>
+        </tbody>
+    </table>
+    <dl>
+        <dt>Auth</dt><dd>HTTP Basic Auth (admin username / password) or <code>Authorization: Bearer &lt;token&gt;</code></dd>
+        <dt>Content-Type</dt><dd><code>text/xml; charset=utf-8</code></dd>
+        <dt>SOAPAction header</dt><dd><code>urn:mailserver#&lt;OperationName&gt;</code> (e.g. <code>urn:mailserver#ListEmails</code>)</dd>
+        <dt>Operations</dt><dd><code>ListEmails</code>, <code>GetEmail</code>, <code>SendEmail</code>, <code>DeleteEmail</code></dd>
+        <dt>filename</dt><dd>Base64url-encoded (no padding) email filename, same as in the REST API</dd>
+    </dl>
+    <details>
+        <summary>Example: ListEmails</summary>
+        <pre><code>POST /api/soap
+Authorization: Bearer &lt;token&gt;
+Content-Type: text/xml; charset=utf-8
+SOAPAction: "urn:mailserver#ListEmails"
+
+&lt;?xml version="1.0" encoding="utf-8"?&gt;
+&lt;soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"&gt;
+  &lt;soap:Body&gt;
+    &lt;ListEmails xmlns="urn:mailserver"&gt;
+      &lt;accountId&gt;1&lt;/accountId&gt;
+      &lt;folder&gt;&lt;/folder&gt;
+      &lt;page&gt;1&lt;/page&gt;
+    &lt;/ListEmails&gt;
+  &lt;/soap:Body&gt;
+&lt;/soap:Envelope&gt;</code></pre>
+        <pre><code>&lt;soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="urn:mailserver"&gt;
+  &lt;soap:Body&gt;
+    &lt;tns:ListEmailsResponse&gt;
+      &lt;accountId&gt;1&lt;/accountId&gt;
+      &lt;folder&gt;INBOX&lt;/folder&gt;
+      &lt;page&gt;1&lt;/page&gt;
+      &lt;totalPages&gt;3&lt;/totalPages&gt;
+      &lt;totalCount&gt;42&lt;/totalCount&gt;
+      &lt;emails&gt;
+        &lt;email&gt;
+          &lt;filename&gt;base64url-encoded-filename&lt;/filename&gt;
+          &lt;subject&gt;Hello&lt;/subject&gt;
+          &lt;from&gt;sender@example.com&lt;/from&gt;
+          &lt;to&gt;user@{{ hostname }}&lt;/to&gt;
+          &lt;date&gt;Mon, 1 Jan 2024 12:00:00 +0000&lt;/date&gt;
+          &lt;isNew&gt;true&lt;/isNew&gt;
+          &lt;isSpam&gt;false&lt;/isSpam&gt;
+        &lt;/email&gt;
+      &lt;/emails&gt;
+    &lt;/tns:ListEmailsResponse&gt;
+  &lt;/soap:Body&gt;
+&lt;/soap:Envelope&gt;</code></pre>
+    </details>
+    <details>
+        <summary>Example: GetEmail</summary>
+        <pre><code>POST /api/soap
+Authorization: Bearer &lt;token&gt;
+Content-Type: text/xml; charset=utf-8
+SOAPAction: "urn:mailserver#GetEmail"
+
+&lt;?xml version="1.0" encoding="utf-8"?&gt;
+&lt;soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"&gt;
+  &lt;soap:Body&gt;
+    &lt;GetEmail xmlns="urn:mailserver"&gt;
+      &lt;accountId&gt;1&lt;/accountId&gt;
+      &lt;filename&gt;base64url-encoded-filename&lt;/filename&gt;
+    &lt;/GetEmail&gt;
+  &lt;/soap:Body&gt;
+&lt;/soap:Envelope&gt;</code></pre>
+    </details>
+    <details>
+        <summary>Example: SendEmail</summary>
+        <pre><code>POST /api/soap
+Authorization: Bearer &lt;token&gt;
+Content-Type: text/xml; charset=utf-8
+SOAPAction: "urn:mailserver#SendEmail"
+
+&lt;?xml version="1.0" encoding="utf-8"?&gt;
+&lt;soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"&gt;
+  &lt;soap:Body&gt;
+    &lt;SendEmail xmlns="urn:mailserver"&gt;
+      &lt;accountId&gt;1&lt;/accountId&gt;
+      &lt;to&gt;recipient@example.com&lt;/to&gt;
+      &lt;subject&gt;Hello&lt;/subject&gt;
+      &lt;body&gt;Hello from SOAP API&lt;/body&gt;
+      &lt;senderName&gt;My Mailserver&lt;/senderName&gt;
+      &lt;bodyFormat&gt;plain&lt;/bodyFormat&gt;
+    &lt;/SendEmail&gt;
+  &lt;/soap:Body&gt;
+&lt;/soap:Envelope&gt;</code></pre>
+        <pre><code>&lt;tns:SendEmailResponse&gt;&lt;status&gt;sent&lt;/status&gt;&lt;/tns:SendEmailResponse&gt;</code></pre>
+    </details>
+    <details>
+        <summary>Example: DeleteEmail</summary>
+        <pre><code>POST /api/soap
+Authorization: Bearer &lt;token&gt;
+Content-Type: text/xml; charset=utf-8
+SOAPAction: "urn:mailserver#DeleteEmail"
+
+&lt;?xml version="1.0" encoding="utf-8"?&gt;
+&lt;soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"&gt;
+  &lt;soap:Body&gt;
+    &lt;DeleteEmail xmlns="urn:mailserver"&gt;
+      &lt;accountId&gt;1&lt;/accountId&gt;
+      &lt;filename&gt;base64url-encoded-filename&lt;/filename&gt;
+    &lt;/DeleteEmail&gt;
+  &lt;/soap:Body&gt;
+&lt;/soap:Envelope&gt;</code></pre>
+        <pre><code>&lt;tns:DeleteEmailResponse&gt;&lt;status&gt;deleted&lt;/status&gt;&lt;/tns:DeleteEmailResponse&gt;</code></pre>
     </details>
 </section>
 {% endblock %}
