@@ -206,7 +206,21 @@ SOAPAction: "urn:mailserver#GetEmail"
     &lt;GetEmail xmlns="urn:mailserver"&gt;
       &lt;accountId&gt;1&lt;/accountId&gt;
       &lt;filename&gt;base64url-encoded-filename&lt;/filename&gt;
+      &lt;folder&gt;&lt;/folder&gt;
     &lt;/GetEmail&gt;
+  &lt;/soap:Body&gt;
+&lt;/soap:Envelope&gt;</code></pre>
+        <pre><code>&lt;soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="urn:mailserver"&gt;
+  &lt;soap:Body&gt;
+    &lt;tns:GetEmailResponse&gt;
+      &lt;filename&gt;base64url-encoded-filename&lt;/filename&gt;
+      &lt;subject&gt;Hello&lt;/subject&gt;
+      &lt;from&gt;sender@example.com&lt;/from&gt;
+      &lt;to&gt;user@{{ hostname }}&lt;/to&gt;
+      &lt;date&gt;Mon, 1 Jan 2024 12:00:00 +0000&lt;/date&gt;
+      &lt;body&gt;Email body text...&lt;/body&gt;
+      &lt;isSpam&gt;false&lt;/isSpam&gt;
+    &lt;/tns:GetEmailResponse&gt;
   &lt;/soap:Body&gt;
 &lt;/soap:Envelope&gt;</code></pre>
     </details>
