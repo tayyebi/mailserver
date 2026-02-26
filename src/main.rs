@@ -52,6 +52,7 @@ fn main() {
                 db: database.clone(),
                 hostname,
                 admin_port: port,
+                mcp_guard: std::sync::Arc::new(std::sync::Mutex::new(web::McpGuard::new())),
             };
 
             // Start fail2ban log watcher in a background thread
