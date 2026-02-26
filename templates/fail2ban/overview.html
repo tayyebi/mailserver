@@ -41,6 +41,7 @@
         <summary>How thresholds work</summary>
         <p>Each service can have its own maximum attempts, find time window, and ban duration. When an IP exceeds the max attempts within the find time, it gets banned for the configured duration.</p>
     </details>
+    <div class="table-wrap">
     <table>
         <thead>
             <tr><th>Service</th><th>Max Attempts</th><th>Find Time</th><th>Ban Duration</th><th>Status</th><th>Action</th></tr>
@@ -62,6 +63,7 @@
         {% endif %}
         </tbody>
     </table>
+    </div>
 </section>
 
 <section>
@@ -69,6 +71,7 @@
         <small>Active bans</small>
         <h2>Currently Banned IPs</h2>
     </hgroup>
+    <div class="table-wrap">
     <table>
         <thead>
             <tr><th>IP Address</th><th>Service</th><th>Reason</th><th>Banned At</th><th>Expires</th><th>Action</th></tr>
@@ -94,6 +97,7 @@
         {% endif %}
         </tbody>
     </table>
+    </div>
 
     <h3>Ban an IP</h3>
     <form method="post" action="/fail2ban/ban">
@@ -129,6 +133,7 @@
         <summary>What is the whitelist?</summary>
         <p>Whitelisted IPs are never banned, even if they exceed the threshold. Use this for your own server IPs, monitoring systems, or trusted networks.</p>
     </details>
+    <div class="table-wrap">
     <table>
         <thead>
             <tr><th>IP Address</th><th>Description</th><th>Added</th><th>Action</th></tr>
@@ -152,6 +157,7 @@
         {% endif %}
         </tbody>
     </table>
+    </div>
 
     <h3>Add to Whitelist</h3>
     <form method="post" action="/fail2ban/whitelist">
@@ -174,6 +180,7 @@
         <summary>What is the blacklist?</summary>
         <p>Blacklisted IPs are permanently banned across all services. Adding an IP here automatically creates a permanent ban entry.</p>
     </details>
+    <div class="table-wrap">
     <table>
         <thead>
             <tr><th>IP Address</th><th>Description</th><th>Added</th><th>Action</th></tr>
@@ -197,6 +204,7 @@
         {% endif %}
         </tbody>
     </table>
+    </div>
 
     <h3>Add to Blacklist</h3>
     <form method="post" action="/fail2ban/blacklist">
@@ -215,6 +223,7 @@
         <small>Audit trail</small>
         <h2>Recent Activity</h2>
     </hgroup>
+    <div class="table-wrap">
     <table>
         <thead>
             <tr><th>Time</th><th>IP Address</th><th>Service</th><th>Action</th><th>Details</th></tr>
@@ -235,5 +244,6 @@
         {% endif %}
         </tbody>
     </table>
+    </div>
 </section>
 {% endblock %}

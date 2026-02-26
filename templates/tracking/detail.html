@@ -10,6 +10,7 @@
 <dt>Date</dt><dd>{{ message.created_at }}</dd>
 </dl>
 <h2>Opens ({{ opens.len() }})</h2>
+<div class="table-wrap">
 <table>
 <thead><tr><th>IP Address</th><th>User Agent</th><th>Time</th></tr></thead>
 <tbody>
@@ -18,5 +19,6 @@
 {% endfor %}
 </tbody>
 </table>
+</div>
 <p><a href="/tracking">Back to Tracking</a></p>
 {% endblock %}

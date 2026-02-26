@@ -21,6 +21,7 @@
 {% if logs.is_empty() %}
 <p>No webhook executions recorded yet.</p>
 {% else %}
+<div class="table-wrap">
 <table>
 <thead>
 <tr>
@@ -49,6 +50,7 @@
 {% endfor %}
 </tbody>
 </table>
+</div>
 {% if total_pages > 1 %}
 <nav>
   {% if page > 1 %}<a href="/webhooks?page={{ page - 1 }}">&laquo; Prev</a>{% endif %}

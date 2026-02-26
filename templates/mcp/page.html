@@ -28,6 +28,7 @@
         <small>Available tools</small>
         <h2>Tools</h2>
     </hgroup>
+    <div class="table-wrap">
     <table>
         <thead>
             <tr><th>Tool</th><th>Description</th><th>Required parameters</th></tr>
@@ -60,6 +61,7 @@
             </tr>
         </tbody>
     </table>
+    </div>
 </section>
 
 <section>
@@ -152,6 +154,7 @@
     {% if logs.is_empty() %}
     <p>No MCP calls recorded yet.</p>
     {% else %}
+    <div class="table-wrap">
     <table>
         <thead>
             <tr>
@@ -178,6 +181,7 @@
         {% endfor %}
         </tbody>
     </table>
+    </div>
     {% if total_pages > 1 %}
     <nav>
         {% if page > 1 %}<a href="/mcp?page={{ page - 1 }}">&laquo; Prev</a>{% endif %}

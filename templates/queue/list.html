@@ -18,6 +18,7 @@
   <p><em>Mail queue is empty.</em></p>
 {% else %}
   {% if !queue_summary.is_empty() %}<p><small>{{ queue_summary }}</small></p>{% endif %}
+  <div class="table-wrap">
   <table>
     <thead>
       <tr>
@@ -53,5 +54,6 @@
     {% endfor %}
     </tbody>
   </table>
+  </div>
 {% endif %}
 {% endblock %}

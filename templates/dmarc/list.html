@@ -26,6 +26,7 @@
 {% if inboxes.is_empty() %}
 <p>No DMARC report inboxes configured yet.</p>
 {% else %}
+<div class="table-wrap">
 <table>
   <thead>
     <tr><th>Account</th><th>Label</th><th>Added</th><th>Actions</th></tr>
@@ -46,5 +47,6 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 {% endif %}
 {% endblock %}

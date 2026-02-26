@@ -18,6 +18,7 @@
         <summary>How DNSBLs work</summary>
         <p>When an inbound connection arrives, Postfix queries each enabled blocklist to see if the connecting IP address is listed as a known spam source. If found, the message is rejected at the SMTP level before any content is transferred. Enabling more lists increases protection but may occasionally reject legitimate mail — start conservatively and monitor your mail logs.</p>
     </details>
+    <div class="table-wrap">
     <table>
         <thead>
             <tr><th>Name</th><th>Hostname</th><th>Status</th><th>Action</th></tr>
@@ -47,5 +48,6 @@
         {% endif %}
         </tbody>
     </table>
+    </div>
 </section>
 {% endblock %}

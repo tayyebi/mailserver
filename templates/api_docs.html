@@ -50,6 +50,7 @@
         <h2>Email REST API</h2>
     </hgroup>
     <p>RESTful JSON endpoints for listing, reading, sending, and deleting emails. Authentication: HTTP Basic Auth (admin credentials) or Bearer token.</p>
+    <div class="table-wrap">
     <table>
         <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
         <tbody>
@@ -59,6 +60,7 @@
             <tr><td><code>DELETE</code></td><td><code>/api/emails/{filename}?account_id={id}&amp;folder={folder}</code></td><td>Permanently delete an email</td></tr>
         </tbody>
     </table>
+    </div>
     <dl>
         <dt>Auth</dt><dd>HTTP Basic Auth (admin username / password) or <code>Authorization: Bearer &lt;token&gt;</code></dd>
         <dt>Content-Type</dt><dd><code>application/json</code> (for POST requests)</dd>
@@ -135,6 +137,7 @@ Authorization: Bearer &lt;token&gt;</code></pre>
         <h2>SOAP API</h2>
     </hgroup>
     <p>SOAP 1.1 endpoint for listing, reading, sending, and deleting emails. Authentication: HTTP Basic Auth (admin credentials) or Bearer token.</p>
+    <div class="table-wrap">
     <table>
         <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
         <tbody>
@@ -142,6 +145,7 @@ Authorization: Bearer &lt;token&gt;</code></pre>
             <tr><td><code>POST</code></td><td><code>/api/soap</code></td><td>Execute a SOAP operation</td></tr>
         </tbody>
     </table>
+    </div>
     <dl>
         <dt>Auth</dt><dd>HTTP Basic Auth (admin username / password) or <code>Authorization: Bearer &lt;token&gt;</code></dd>
         <dt>Content-Type</dt><dd><code>text/xml; charset=utf-8</code></dd>

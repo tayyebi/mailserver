@@ -627,60 +627,31 @@ dd {
 
 /* ── Tables ── */
 
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-block-end: var(--space-lg);
+}
+
 table {
   inline-size: 100%;
   border-collapse: collapse;
   font-size: var(--font-size-sm);
-  margin-block-end: var(--space-lg);
-  display: block;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
 }
 
-thead {
-  display: none;
-}
-
-tbody {
-  display: block;
-  inline-size: 100%;
-}
-
-tr {
-  display: block;
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius);
-  padding: var(--space-sm);
-  margin-block-end: var(--space-sm);
-  background: var(--color-surface);
+th,
+td {
+  padding-block: var(--space-xs);
+  padding-inline: var(--space-sm);
+  text-align: start;
+  border-block-end: var(--border-width) solid var(--color-border-subtle);
+  vertical-align: top;
 }
 
 th {
-  display: block;
-  padding-block: var(--space-xs);
-  padding-inline: 0;
-  border: none;
-  text-align: start;
   font-weight: 600;
-  color: var(--color-text);
-}
-
-td {
-  display: block;
-  padding-block: var(--space-xs);
-  padding-inline: 0;
-  border: none;
-  text-align: start;
-  color: var(--color-text);
-}
-
-td:last-child {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-xs);
-  padding-block-start: var(--space-sm);
-  border-block-start: var(--border-width) solid var(--color-border-subtle);
-  margin-block-start: var(--space-xs);
+  white-space: nowrap;
+  color: var(--color-text-subtle);
 }
 
 /* ── Mark (status badges) ── */

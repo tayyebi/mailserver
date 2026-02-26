@@ -37,6 +37,7 @@
     {% if calendars.is_empty() %}
     <p>No CalDAV calendars have been created yet.</p>
     {% else %}
+    <div class="table-wrap">
     <table>
         <thead>
             <tr>
@@ -85,6 +86,7 @@
         {% endfor %}
         </tbody>
     </table>
+    </div>
     {% endif %}
 </section>
 

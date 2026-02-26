@@ -192,55 +192,22 @@ section > div {
   gap: var(--space-md);
 }
 
-/* ── Tables: proper table layout ── */
-
-table {
-  display: table;
-}
-
-thead {
-  display: table-header-group;
-}
-
-tbody {
-  display: table-row-group;
-}
-
-tr {
-  display: table-row;
-  border: none;
-  border-radius: 0;
-  padding: 0;
-  margin: 0;
-}
+/* ── Tables: enhanced styling ── */
 
 th, td {
-  display: table-cell;
   padding-block: var(--space-sm);
   padding-inline: var(--space-md);
-  border-block-end: var(--border-width) solid var(--color-border-subtle);
-  text-align: start;
-  vertical-align: top;
 }
 
 th {
   font-size: var(--font-size-xs);
-  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--color-text-subtle);
   background: rgba(71, 85, 105, 0.06);
-  white-space: nowrap;
 }
 
 tbody tr:hover {
   background: rgba(71, 85, 105, 0.05);
-}
-
-td:last-child {
-  border-block-start: none;
-  margin-block-start: 0;
-  padding-block-start: var(--space-sm);
 }
 
 /* ── Forms: use available width ── */
@@ -282,11 +249,10 @@ section > hgroup + a {
   flex-shrink: 0;
 }
 
-/* ── Glassmorphic table ── */
+/* ── Glassmorphic table wrapper ── */
 
-table {
+.table-wrap {
   border-radius: var(--radius-lg);
-  overflow: hidden;
   background: var(--glass-bg);
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));

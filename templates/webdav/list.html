@@ -50,6 +50,7 @@
         <small>{{ files.len() }} file(s)</small>
         <h2>Stored Files</h2>
     </hgroup>
+    <div class="table-wrap">
     <table>
         <thead>
             <tr><th>Owner</th><th>Filename</th><th>Type</th><th>Size</th><th>Uploaded</th><th>Actions</th></tr>
@@ -73,5 +74,6 @@
         {% endif %}
         </tbody>
     </table>
+    </div>
 </section>
 {% endblock %}
