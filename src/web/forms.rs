@@ -4,8 +4,6 @@ use serde::Deserialize;
 pub struct DomainForm {
     pub domain: String,
     #[serde(default)]
-    pub footer_html: String,
-    #[serde(default)]
     pub bimi_svg: String,
     #[serde(default)]
     pub unsubscribe_enabled: Option<String>,
@@ -16,8 +14,6 @@ pub struct DomainEditForm {
     pub domain: String,
     #[serde(default)]
     pub active: Option<String>,
-    #[serde(default)]
-    pub footer_html: String,
     #[serde(default)]
     pub bimi_svg: String,
     #[serde(default)]
@@ -231,4 +227,10 @@ pub struct TrackingRuleForm {
     pub name: String,
     pub match_mode: String,
     pub conditions_json: String,
+}
+
+#[derive(Deserialize)]
+pub struct FooterContentForm {
+    #[serde(default)]
+    pub footer_html: String,
 }

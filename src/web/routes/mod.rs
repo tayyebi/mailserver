@@ -11,6 +11,7 @@ pub mod dashboard;
 pub mod dmarc;
 pub mod domains;
 pub mod fail2ban;
+pub mod footer;
 pub mod forwarding;
 pub mod mcp;
 pub mod pixel;
@@ -73,6 +74,12 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/tracking/rules", post(tracking::create_rule))
         .route("/tracking/rules/:id/delete", post(tracking::delete_rule))
         .route("/tracking/:msg_id", get(tracking::detail))
+        .route("/footer", get(footer::list))
+        .route("/footer/content", post(footer::update_content))
+        .route("/footer/patterns", post(footer::create_pattern))
+        .route("/footer/patterns/:id/delete", post(footer::delete_pattern))
+        .route("/footer/rules", post(footer::create_rule))
+        .route("/footer/rules/:id/delete", post(footer::delete_rule))
         .route("/queue", get(queue::list))
         .route("/queue/flush", post(queue::flush))
         .route("/queue/purge", post(queue::purge))

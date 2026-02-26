@@ -21,7 +21,6 @@ struct DomainRow {
     domain: String,
     active_label: String,
     dkim_label: String,
-    footer_label: String,
 }
 
 // ── DNS check structures ──
@@ -220,11 +219,6 @@ pub async fn list(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Strin
                 "No"
             }
             .to_string(),
-            footer_label: match d.footer_html.as_deref() {
-                Some(html) if !html.trim().is_empty() => "Yes",
-                _ => "No",
-            }
-            .to_string(),
         })
         .collect();
 
@@ -252,12 +246,11 @@ pub async fn create(
 ) -> Response {
     info!("[web] POST /domains — creating domain={}", form.domain);
     let domain = form.domain.clone();
-    let footer_html = form.footer_html.clone();
     let bimi_svg = form.bimi_svg.clone();
     let unsubscribe_enabled = form.unsubscribe_enabled.is_some();
     let create_result = state
         .blocking_db(move |db| {
-            db.create_domain(&domain, &footer_html, &bimi_svg, unsubscribe_enabled)
+            db.create_domain(&domain, &bimi_svg, unsubscribe_enabled)
         })
         .await;
     match create_result {
@@ -324,7 +317,6 @@ pub async fn update(
         id, form.domain, active
     );
     let domain = form.domain.clone();
-    let footer_html = form.footer_html.clone();
     let bimi_svg = form.bimi_svg.clone();
     let unsubscribe_enabled = form.unsubscribe_enabled.is_some();
     state
@@ -333,7 +325,6 @@ pub async fn update(
                 id,
                 &domain,
                 active,
-                &footer_html,
                 &bimi_svg,
                 unsubscribe_enabled,
             )
