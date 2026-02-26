@@ -10,7 +10,7 @@
 
 <aside>
     <h2>Footer Content</h2>
-    <p>This HTML snippet is appended to every outbound email whose sender matches a pattern or rule below. Plain-text emails receive a stripped version.</p>
+    <p>This HTML snippet is appended to every outbound email whose sender matches at least one pattern or rule below (patterns and rules are checked independently — any match triggers injection). Plain-text emails receive a stripped version.</p>
     <form method="post" action="/footer/content">
         <label>Footer HTML<br><textarea name="footer_html" rows="6" placeholder="&lt;p&gt;Confidential notice&lt;/p&gt;">{{ footer_html }}</textarea></label>
         <small>Supports inline styles. Avoid external scripts.</small>
