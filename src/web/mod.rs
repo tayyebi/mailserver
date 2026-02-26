@@ -8,9 +8,104 @@ use axum::response::Response;
 use axum::routing::get_service;
 use axum::Router;
 use log::{debug, info, warn};
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tower_http::services::ServeDir;
 
 use crate::web::errors::status_response;
+
+// ── MCP rate-limit and anomaly-detection constants ────────────────────────────
+
+/// Maximum number of MCP calls allowed per 60-second sliding window.
+pub const MCP_RATE_LIMIT_PER_MIN: usize = 60;
+/// Maximum destructive tool calls (`send_email`, `delete_email`) per 60-second window.
+pub const MCP_DESTRUCTIVE_RATE_LIMIT_PER_MIN: usize = 10;
+/// Number of consecutive failures that triggers an anomaly webhook.
+pub const MCP_ANOMALY_CONSECUTIVE_FAILURES: u32 = 5;
+
+// ── MCP in-process guard (rate limiter + anomaly detector) ───────────────────
+
+/// Shared, in-memory guard for the MCP endpoint.
+/// Enforces sliding-window rate limits and detects anomalous patterns.
+pub struct McpGuard {
+    /// Timestamps of all MCP calls in the last 60 seconds.
+    call_times: VecDeque<Instant>,
+    /// Timestamps of destructive tool calls in the last 60 seconds.
+    destructive_times: VecDeque<Instant>,
+    /// Consecutive call failures; reset to 0 on any success.
+    consecutive_failures: u32,
+}
+
+impl McpGuard {
+    pub fn new() -> Self {
+        Self {
+            call_times: VecDeque::new(),
+            destructive_times: VecDeque::new(),
+            consecutive_failures: 0,
+        }
+    }
+
+    /// Return the current consecutive-failure count (for testing / diagnostics).
+    pub fn consecutive_failures(&self) -> u32 {
+        self.consecutive_failures
+    }
+
+    /// Evict entries outside the 60-second sliding window.
+    fn evict_old(&mut self) {
+        let cutoff = Instant::now() - Duration::from_secs(60);
+        while self.call_times.front().map(|&t| t < cutoff).unwrap_or(false) {
+            self.call_times.pop_front();
+        }
+        while self.destructive_times.front().map(|&t| t < cutoff).unwrap_or(false) {
+            self.destructive_times.pop_front();
+        }
+    }
+
+    /// Check rate limits and, if allowed, record the call.
+    /// Returns `Some(reason)` if a limit is exceeded (call is NOT recorded).
+    /// Returns `None` and records the timestamp if the call is allowed.
+    pub fn check_and_record(&mut self, is_destructive: bool) -> Option<String> {
+        self.evict_old();
+        if self.call_times.len() >= MCP_RATE_LIMIT_PER_MIN {
+            return Some(format!(
+                "Rate limit exceeded: more than {} MCP calls per minute",
+                MCP_RATE_LIMIT_PER_MIN
+            ));
+        }
+        if is_destructive && self.destructive_times.len() >= MCP_DESTRUCTIVE_RATE_LIMIT_PER_MIN {
+            return Some(format!(
+                "Destructive rate limit exceeded: more than {} send/delete operations per minute",
+                MCP_DESTRUCTIVE_RATE_LIMIT_PER_MIN
+            ));
+        }
+        let now = Instant::now();
+        self.call_times.push_back(now);
+        if is_destructive {
+            self.destructive_times.push_back(now);
+        }
+        None
+    }
+
+    /// Record the outcome of a processed call.
+    /// Returns `Some(reason)` if the consecutive-failure threshold is reached.
+    pub fn record_outcome(&mut self, success: bool) -> Option<String> {
+        if success {
+            self.consecutive_failures = 0;
+            None
+        } else {
+            self.consecutive_failures += 1;
+            if self.consecutive_failures >= MCP_ANOMALY_CONSECUTIVE_FAILURES {
+                Some(format!(
+                    "Anomaly detected: {} consecutive MCP call failures",
+                    self.consecutive_failures
+                ))
+            } else {
+                None
+            }
+        }
+    }
+}
 
 // ── Shared State ──
 
@@ -19,6 +114,8 @@ pub struct AppState {
     pub db: crate::db::Database,
     pub hostname: String,
     pub admin_port: u16,
+    /// Shared rate-limiter and anomaly detector for the MCP endpoint.
+    pub mcp_guard: Arc<Mutex<McpGuard>>,
 }
 
 impl AppState {

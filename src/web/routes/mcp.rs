@@ -33,6 +33,24 @@ use super::webmail::{
 const PROTOCOL_VERSION: &str = "2024-11-05";
 const PAGE_SIZE: usize = 20;
 
+// ── Harness rules ─────────────────────────────────────────────────────────────
+
+/// Rules surfaced to AI clients on every `initialize` response and shown on
+/// the admin page.  They act as a behavioural harness — guardrails that keep
+/// the AI focused and prevent runaway or destructive behaviour.
+pub fn harness_rules() -> Vec<&'static str> {
+    vec![
+        "Only act on accounts and emails that the user has explicitly named. Do not autonomously iterate over all accounts or all emails.",
+        "Always call read_email before replying to, forwarding, or deleting a message.",
+        "Ask for explicit user approval before sending or permanently deleting any email.",
+        "Never send an email to more than one new recipient unless the user has listed each address individually.",
+        "If completing a task would require more than five sequential tool calls, pause and ask the user for confirmation before continuing.",
+        "Never send email from an account other than the one the user has explicitly specified.",
+        "Do not disclose the content of emails to anyone outside the current conversation.",
+        "When in doubt about the user's intent, ask for clarification instead of guessing.",
+    ]
+}
+
 // ── JSON-RPC 2.0 types ───────────────────────────────────────────────────────
 
 #[derive(Deserialize, Serialize)]
@@ -237,6 +255,10 @@ struct McpPageTemplate<'a> {
     logs: Vec<crate::db::McpLog>,
     page: i64,
     total_pages: i64,
+    harness_rules: Vec<&'static str>,
+    rate_limit_per_min: usize,
+    rate_limit_destructive_per_min: usize,
+    anomaly_consecutive_failures: u32,
 }
 
 pub async fn page(
@@ -262,6 +284,10 @@ pub async fn page(
         logs,
         page,
         total_pages,
+        harness_rules: harness_rules(),
+        rate_limit_per_min: super::super::MCP_RATE_LIMIT_PER_MIN,
+        rate_limit_destructive_per_min: super::super::MCP_DESTRUCTIVE_RATE_LIMIT_PER_MIN,
+        anomaly_consecutive_failures: super::super::MCP_ANOMALY_CONSECUTIVE_FAILURES,
     };
     Html(tmpl.render().unwrap())
 }
@@ -283,37 +309,8 @@ pub async fn handle(
         "(serialization failed)".to_string()
     });
 
-    let result = match req.method.as_str() {
-        "initialize" => Ok(json!({
-            "protocolVersion": PROTOCOL_VERSION,
-            "serverInfo": {
-                "name": "mailserver",
-                "version": env!("CARGO_PKG_VERSION")
-            },
-            "capabilities": {
-                "tools": {}
-            }
-        })),
-        "tools/list" => Ok(tools_list_value()),
-        "tools/call" => dispatch_tool_call(&state, &req).await,
-        other => {
-            warn!("[mcp] unknown method: {}", other);
-            let duration_ms = started.elapsed().as_millis() as i64;
-            let err_msg = format!("Method not found: {}", other);
-            let state2 = state.clone();
-            let method2 = method.clone();
-            let err2 = err_msg.clone();
-            let body2 = request_body.clone();
-            tokio::spawn(async move {
-                state2.blocking_db(move |db| {
-                    db.log_mcp_call(&method2, None, false, &err2, duration_ms, Some(&body2))
-                }).await;
-            });
-            return Json(McpResponse::err(id, -32601, err_msg));
-        }
-    };
-
-    let duration_ms = started.elapsed().as_millis() as i64;
+    // Determine the tool name early so we can classify destructive operations
+    // before the guard check.
     let tool = if method == "tools/call" {
         req.params
             .as_ref()
@@ -322,7 +319,92 @@ pub async fn handle(
     } else {
         None
     };
+    let is_destructive = matches!(tool.as_deref(), Some("send_email") | Some("delete_email"));
 
+    // ── Rate-limit check ──────────────────────────────────────────────────────
+    if let Some(reason) = {
+        let mut guard = state
+            .mcp_guard
+            .lock()
+            .unwrap_or_else(|p| { warn!("[mcp] mcp_guard was poisoned; recovering"); p.into_inner() });
+        guard.check_and_record(is_destructive)
+    } {
+        warn!("[mcp] {}", reason);
+        let duration_ms = started.elapsed().as_millis() as i64;
+        let reason2 = reason.clone();
+        let state2 = state.clone();
+        let method2 = method.clone();
+        let tool2 = tool.clone();
+        let body2 = request_body.clone();
+        tokio::spawn(async move {
+            state2
+                .blocking_db(move |db| {
+                    db.log_mcp_call(
+                        &method2,
+                        tool2.as_deref(),
+                        false,
+                        &reason2,
+                        duration_ms,
+                        Some(&body2),
+                    )
+                })
+                .await;
+        });
+        super::super::fire_webhook(
+            &state,
+            "mcp.rate_limit_exceeded",
+            json!({ "reason": reason, "method": method, "tool": tool }),
+        );
+        return Json(McpResponse::err(id, -32000, reason));
+    }
+
+    // ── Process request ───────────────────────────────────────────────────────
+    let result: Result<Value, String> = match req.method.as_str() {
+        "initialize" => Ok(json!({
+            "protocolVersion": PROTOCOL_VERSION,
+            "serverInfo": {
+                "name": "mailserver",
+                "version": env!("CARGO_PKG_VERSION")
+            },
+            "capabilities": {
+                "tools": {}
+            },
+            "instructions": harness_rules().join("\n")
+        })),
+        "tools/list" => Ok(tools_list_value()),
+        "tools/call" => dispatch_tool_call(&state, &req).await,
+        other => {
+            warn!("[mcp] unknown method: {}", other);
+            Err(format!("Method not found: {}", other))
+        }
+    };
+
+    let duration_ms = started.elapsed().as_millis() as i64;
+
+    // ── Record outcome; fire anomaly webhook if threshold reached ─────────────
+    if let Some(reason) = {
+        let mut guard = state
+            .mcp_guard
+            .lock()
+            .unwrap_or_else(|p| { warn!("[mcp] mcp_guard was poisoned; recovering"); p.into_inner() });
+        guard.record_outcome(result.is_ok())
+    } {
+        warn!("[mcp] {}", reason);
+        super::super::fire_webhook(
+            &state,
+            "mcp.anomaly",
+            json!({
+                "reason": reason,
+                "method": method,
+                "tool": tool,
+                // result is Err here; unwrap_or_default() is defensive in case the Err variant
+                // somehow contains no string (which cannot happen with our current Result<Value,String>)
+                "error": result.as_ref().err().cloned().unwrap_or_default()
+            }),
+        );
+    }
+
+    // ── Log to DB and return ──────────────────────────────────────────────────
     match result {
         Ok(v) => {
             let state2 = state.clone();
@@ -330,24 +412,47 @@ pub async fn handle(
             let tool2 = tool.clone();
             let body2 = request_body.clone();
             tokio::spawn(async move {
-                state2.blocking_db(move |db| {
-                    db.log_mcp_call(&method2, tool2.as_deref(), true, "", duration_ms, Some(&body2))
-                }).await;
+                state2
+                    .blocking_db(move |db| {
+                        db.log_mcp_call(
+                            &method2,
+                            tool2.as_deref(),
+                            true,
+                            "",
+                            duration_ms,
+                            Some(&body2),
+                        )
+                    })
+                    .await;
             });
             Json(McpResponse::ok(id, v))
         }
         Err(e) => {
+            let code = if e.starts_with("Method not found:") {
+                -32601
+            } else {
+                -32603
+            };
             let state2 = state.clone();
             let method2 = method.clone();
             let tool2 = tool.clone();
             let e2 = e.clone();
             let body2 = request_body.clone();
             tokio::spawn(async move {
-                state2.blocking_db(move |db| {
-                    db.log_mcp_call(&method2, tool2.as_deref(), false, &e2, duration_ms, Some(&body2))
-                }).await;
+                state2
+                    .blocking_db(move |db| {
+                        db.log_mcp_call(
+                            &method2,
+                            tool2.as_deref(),
+                            false,
+                            &e2,
+                            duration_ms,
+                            Some(&body2),
+                        )
+                    })
+                    .await;
             });
-            Json(McpResponse::err(id, -32603, e))
+            Json(McpResponse::err(id, code, e))
         }
     }
 }
@@ -803,5 +908,98 @@ mod tests {
         let required = list_emails["inputSchema"]["required"].as_array().unwrap();
         let req_names: Vec<&str> = required.iter().map(|v| v.as_str().unwrap()).collect();
         assert!(req_names.contains(&"account_id"));
+    }
+
+    #[test]
+    fn harness_rules_is_non_empty() {
+        let rules = harness_rules();
+        assert!(!rules.is_empty(), "harness_rules() must return at least one rule");
+    }
+
+    #[test]
+    fn harness_rules_are_non_empty_strings() {
+        for rule in harness_rules() {
+            assert!(!rule.trim().is_empty(), "every harness rule must be non-empty");
+        }
+    }
+
+    #[test]
+    fn initialize_instructions_contains_harness_rules() {
+        // Simulate building the instructions string the way handle() does.
+        let instructions = harness_rules().join("\n");
+        for rule in harness_rules() {
+            assert!(
+                instructions.contains(rule),
+                "instructions string must contain rule: {}",
+                rule
+            );
+        }
+    }
+
+    // ── McpGuard tests ────────────────────────────────────────────────────────
+
+    #[test]
+    fn guard_allows_calls_below_global_limit() {
+        let mut g = super::super::super::McpGuard::new();
+        for _ in 0..super::super::super::MCP_RATE_LIMIT_PER_MIN {
+            assert!(g.check_and_record(false).is_none());
+        }
+    }
+
+    #[test]
+    fn guard_blocks_at_global_limit() {
+        let mut g = super::super::super::McpGuard::new();
+        for _ in 0..super::super::super::MCP_RATE_LIMIT_PER_MIN {
+            g.check_and_record(false);
+        }
+        let result = g.check_and_record(false);
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("Rate limit exceeded"));
+    }
+
+    #[test]
+    fn guard_blocks_destructive_at_destructive_limit() {
+        let mut g = super::super::super::McpGuard::new();
+        for _ in 0..super::super::super::MCP_DESTRUCTIVE_RATE_LIMIT_PER_MIN {
+            assert!(g.check_and_record(true).is_none());
+        }
+        let result = g.check_and_record(true);
+        assert!(result.is_some());
+        assert!(result.unwrap().to_lowercase().contains("destructive"));
+    }
+
+    #[test]
+    fn guard_non_destructive_not_blocked_by_destructive_limit() {
+        let mut g = super::super::super::McpGuard::new();
+        // Fill destructive window
+        for _ in 0..super::super::super::MCP_DESTRUCTIVE_RATE_LIMIT_PER_MIN {
+            g.check_and_record(true);
+        }
+        // A non-destructive call should still be allowed (global limit not hit)
+        assert!(g.check_and_record(false).is_none());
+    }
+
+    #[test]
+    fn guard_record_outcome_resets_on_success() {
+        let mut g = super::super::super::McpGuard::new();
+        for _ in 0..3 {
+            g.record_outcome(false);
+        }
+        assert_eq!(g.consecutive_failures(), 3);
+        g.record_outcome(true);
+        assert_eq!(g.consecutive_failures(), 0);
+    }
+
+    #[test]
+    fn guard_record_outcome_fires_anomaly_at_threshold() {
+        let mut g = super::super::super::McpGuard::new();
+        let threshold = super::super::super::MCP_ANOMALY_CONSECUTIVE_FAILURES;
+        for i in 0..threshold - 1 {
+            let r = g.record_outcome(false);
+            assert!(r.is_none(), "should not fire anomaly on failure #{}", i + 1);
+        }
+        let r = g.record_outcome(false);
+        assert!(r.is_some(), "should fire anomaly on failure #{}", threshold);
+        assert!(r.unwrap().contains("Anomaly"));
     }
 }

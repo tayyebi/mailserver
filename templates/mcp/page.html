@@ -66,6 +66,28 @@
 
 <section>
     <hgroup>
+        <small>AI guardrails</small>
+        <h2>Harness</h2>
+    </hgroup>
+    <p>These rules are returned in the <code>instructions</code> field of every <code>initialize</code> response and govern how AI agents connected to this server must behave. They are designed to prevent unintended or destructive actions.</p>
+    <ol>
+        {% for rule in harness_rules %}
+        <li>{{ rule }}</li>
+        {% endfor %}
+    </ol>
+    <h3>Active guards</h3>
+    <dl>
+        <dt>Global rate limit</dt>
+        <dd>Maximum <strong>{{ rate_limit_per_min }}</strong> MCP calls per 60-second window. Excess calls receive a JSON-RPC <code>-32000</code> error and trigger an anomaly webhook.</dd>
+        <dt>Destructive operation rate limit</dt>
+        <dd>Maximum <strong>{{ rate_limit_destructive_per_min }}</strong> <code>send_email</code> / <code>delete_email</code> calls per 60-second window. Excess calls are blocked and trigger a webhook.</dd>
+        <dt>Consecutive failure alert</dt>
+        <dd>A <code>mcp.anomaly</code> webhook fires when <strong>{{ anomaly_consecutive_failures }}</strong> consecutive MCP calls fail. The counter resets on any success.</dd>
+    </dl>
+</section>
+
+<section>
+    <hgroup>
         <small>AI agent setup</small>
         <h2>Claude Project File</h2>
     </hgroup>
