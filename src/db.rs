@@ -346,6 +346,7 @@ pub struct McpLog {
     pub error: String,
     pub duration_ms: Option<i64>,
     pub created_at: String,
+    pub request_body: Option<String>,
 }
 
 fn load_available_migrations() -> Vec<(String, String)> {
@@ -3341,13 +3342,14 @@ impl Database {
         success: bool,
         error: &str,
         duration_ms: i64,
+        request_body: Option<&str>,
     ) {
         debug!("[db] logging mcp call method={}", method);
         let mut conn = self.conn();
         if let Err(e) = conn.execute(
-            "INSERT INTO mcp_logs (method, tool, success, error, duration_ms, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6)",
-            &[&method, &tool, &success, &error, &duration_ms, &now()],
+            "INSERT INTO mcp_logs (method, tool, success, error, duration_ms, created_at, request_body)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            &[&method, &tool, &success, &error, &duration_ms, &now(), &request_body],
         ) {
             error!("[db] failed to log mcp call: {}", e);
         }
@@ -3365,7 +3367,7 @@ impl Database {
         let mut conn = self.conn();
         let rows = conn
             .query(
-                "SELECT id, method, tool, success, error, duration_ms, created_at
+                "SELECT id, method, tool, success, error, duration_ms, created_at, request_body
                  FROM mcp_logs ORDER BY created_at DESC LIMIT $1 OFFSET $2",
                 &[&limit, &offset],
             )
@@ -3382,6 +3384,7 @@ impl Database {
                 error: row.get::<_, Option<String>>(4).unwrap_or_default(),
                 duration_ms: row.get(5),
                 created_at: row.get(6),
+                request_body: row.get(7),
             })
             .collect()
     }
