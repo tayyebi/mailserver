@@ -96,9 +96,7 @@ pub struct PixelQuery {
 
 #[derive(Deserialize)]
 pub struct PixelSettingsForm {
-    pub pixel_host: String,
-    #[serde(default)]
-    pub pixel_port: Option<i64>,
+    pub pixel_base_url: String,
 }
 
 #[derive(Deserialize)]

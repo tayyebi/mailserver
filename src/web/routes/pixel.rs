@@ -14,6 +14,24 @@ pub fn routes() -> Router<AppState> {
     Router::new().route("/pixel", get(pixel_handler))
 }
 
+/// Mask the last segment of an IP address for privacy.
+/// IPv4: `192.168.1.100` → `192.168.1.x`
+/// IPv6: `2001:db8::1`   → `2001:db8::x`
+fn mask_ip(ip: &str) -> String {
+    if ip.contains(':') {
+        // IPv6: replace everything after the last ':' with 'x'
+        if let Some(pos) = ip.rfind(':') {
+            return format!("{}:x", &ip[..pos]);
+        }
+    } else if ip.contains('.') {
+        // IPv4: replace last octet with 'x'
+        if let Some(pos) = ip.rfind('.') {
+            return format!("{}.x", &ip[..pos]);
+        }
+    }
+    ip.to_string()
+}
+
 async fn pixel_handler(
     State(state): State<AppState>,
     Query(params): Query<PixelQuery>,
@@ -40,6 +58,9 @@ async fn pixel_handler(
                     .map(|s| s.to_string())
             })
             .unwrap_or_default();
+
+        // Mask last segment of IP for geo-location while preserving privacy
+        let client_ip = mask_ip(&client_ip);
 
         let user_agent = req
             .headers()
@@ -77,4 +98,27 @@ async fn pixel_handler(
         gif.to_vec(),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mask_ip;
+
+    #[test]
+    fn mask_ip_ipv4_last_octet() {
+        assert_eq!(mask_ip("192.168.1.100"), "192.168.1.x");
+        assert_eq!(mask_ip("10.0.0.1"), "10.0.0.x");
+    }
+
+    #[test]
+    fn mask_ip_ipv6_last_group() {
+        assert_eq!(mask_ip("2001:db8::1"), "2001:db8::x");
+        assert_eq!(mask_ip("fe80::1"), "fe80::x");
+        assert_eq!(mask_ip("::1"), "::x");
+    }
+
+    #[test]
+    fn mask_ip_empty_unchanged() {
+        assert_eq!(mask_ip(""), "");
+    }
 }

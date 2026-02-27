@@ -79,10 +79,20 @@ fn main() {
                 .get_setting("pixel_base_url")
                 .or_else(|| env::var("PIXEL_BASE_URL").ok())
                 .unwrap_or_else(|| {
-                    warn!(
-                        "[filter] PIXEL_BASE_URL not set, defaulting to http://localhost/pixel?id="
-                    );
-                    "http://localhost/pixel?id=".to_string()
+                    let h = env::var("HOSTNAME").unwrap_or_else(|_| "localhost".to_string());
+                    let p = env::var("ADMIN_PORT")
+                        .ok()
+                        .and_then(|v| v.parse::<u16>().ok())
+                        .unwrap_or(8080);
+                    let url = if p == 443 {
+                        format!("https://{}/pixel?id=", h)
+                    } else if p == 80 {
+                        format!("http://{}/pixel?id=", h)
+                    } else {
+                        format!("https://{}:{}/pixel?id=", h, p)
+                    };
+                    warn!("[filter] PIXEL_BASE_URL not set, defaulting to {}", url);
+                    url
                 });
 
             let mut sender = String::new();
