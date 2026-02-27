@@ -38,6 +38,7 @@ struct ListTemplate<'a> {
     rules: Vec<crate::db::TrackingRule>,
     pixel_host: String,
     pixel_port: String,
+    pixel_scheme: String,
 }
 
 #[derive(Template)]
@@ -93,7 +94,7 @@ pub async fn list(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Strin
 
     let patterns = state.blocking_db(|db| db.list_tracking_patterns()).await;
     let rules = state.blocking_db(|db| db.list_tracking_rules()).await;
-    let (pixel_host, pixel_port) = load_pixel_settings(&state).await;
+    let (pixel_host, pixel_port, pixel_scheme) = load_pixel_settings(&state).await;
 
     let tmpl = ListTemplate {
         nav_active: "Tracking",
@@ -103,16 +104,21 @@ pub async fn list(_auth: AuthAdmin, State(state): State<AppState>) -> Html<Strin
         rules,
         pixel_host,
         pixel_port,
+        pixel_scheme,
     };
     Html(tmpl.render().unwrap())
 }
 
-async fn load_pixel_settings(state: &AppState) -> (String, String) {
+async fn load_pixel_settings(state: &AppState) -> (String, String, String) {
     let default_host = state.hostname.clone();
     let mut pixel_host = default_host;
     let mut pixel_port = String::new();
+    let mut pixel_scheme = "http".to_string();
 
     if let Some(base) = state.blocking_db(|db| db.get_setting("pixel_base_url")).await {
+        if base.starts_with("https://") {
+            pixel_scheme = "https".to_string();
+        }
         let trimmed = base
             .trim_end_matches("/pixel?id=")
             .trim_end_matches("/pixel");
@@ -128,6 +134,9 @@ async fn load_pixel_settings(state: &AppState) -> (String, String) {
             pixel_host = host_port.to_string();
         }
     } else if let Ok(env_val) = std::env::var("PIXEL_BASE_URL") {
+        if env_val.starts_with("https://") {
+            pixel_scheme = "https".to_string();
+        }
         let trimmed = env_val
             .trim_end_matches("/pixel?id=")
             .trim_end_matches("/pixel");
@@ -143,7 +152,7 @@ async fn load_pixel_settings(state: &AppState) -> (String, String) {
             pixel_host = host_port.to_string();
         }
     }
-    (pixel_host, pixel_port)
+    (pixel_host, pixel_port, pixel_scheme)
 }
 
 pub async fn update_pixel_settings(
@@ -159,9 +168,15 @@ pub async fn update_pixel_settings(
     if host.is_empty() {
         return Redirect::to("/tracking").into_response();
     }
+    let scheme = match form.pixel_scheme.as_deref() {
+        Some("https") => "https",
+        _ => "http",
+    };
     let base = match form.pixel_port {
-        Some(p) if p > 0 && p != 80 => format!("http://{}:{}/pixel?id=", host, p),
-        _ => format!("http://{}/pixel?id=", host),
+        Some(p) if p > 0 && !((scheme == "http" && p == 80) || (scheme == "https" && p == 443)) => {
+            format!("{}://{}:{}/pixel?id=", scheme, host, p)
+        }
+        _ => format!("{}://{}/pixel?id=", scheme, host),
     };
     let base_for_db = base.clone();
     state

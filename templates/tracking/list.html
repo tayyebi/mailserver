@@ -11,6 +11,12 @@
 <aside>
     <h2>Pixel Tracker Settings</h2>
     <form method="post" action="/tracking/pixel">
+      <label>Scheme<br>
+        <select name="pixel_scheme">
+          <option value="http"{% if pixel_scheme == "http" %} selected{% endif %}>http</option>
+          <option value="https"{% if pixel_scheme == "https" %} selected{% endif %}>https</option>
+        </select>
+      </label>
       <label>Pixel Host<br>
         <input type="text" name="pixel_host" value="{{ pixel_host }}" required>
       </label>
@@ -21,7 +27,7 @@
           <input type="number" name="pixel_port" value="">
         {% endif %}
       </label>
-      <p>Computed pixel URL: <code>https://{{ pixel_host }}{% if pixel_port != "" %}:{{ pixel_port }}{% endif %}/pixel?id=</code></p>
+      <p>Computed pixel URL: <code>{{ pixel_scheme }}://{{ pixel_host }}{% if pixel_port != "" %}:{{ pixel_port }}{% endif %}/pixel?id=</code></p>
       <button type="submit">Save Pixel Settings</button>
     </form>
 </aside>
