@@ -273,7 +273,7 @@ pub async fn handle_form(
                 "[register] failed to create account {}@{}: {}",
                 username, domain_name, e
             );
-            let reason = if e.contains("duplicate") || e.contains("unique") || e.contains("UNIQUE") {
+            let reason = if e.contains("23505") || e.to_lowercase().contains("unique") || e.to_lowercase().contains("duplicate") {
                 "That username is already taken on this domain.".to_string()
             } else {
                 "Registration failed. Please try again.".to_string()

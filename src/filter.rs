@@ -5,6 +5,9 @@ use std::sync::mpsc;
 
 use crate::db::Database;
 
+/// Postfix EX_TEMPFAIL exit code — tells Postfix to queue the message for retry.
+const EX_TEMPFAIL: i32 = 75;
+
 pub fn run_filter(
     db_url: &str,
     sender: &str,
@@ -77,7 +80,7 @@ pub fn run_filter(
                         "[filter] rate limit exceeded for sender={} (rule='{}'): returning EX_TEMPFAIL",
                         sender, rule_name
                     );
-                    std::process::exit(75); // EX_TEMPFAIL — Postfix will retry
+                    std::process::exit(EX_TEMPFAIL);
                 }
 
                 let tracking = db.is_tracking_enabled(sender, primary_recipient, &subject, size_bytes);
@@ -329,7 +332,7 @@ pub fn run_filter(
             let _ = modified_tx.send(None);
             let _ = webhook_handle.join();
             // Tell Postfix to retry delivery rather than silently dropping the message.
-            std::process::exit(75); // EX_TEMPFAIL
+            std::process::exit(EX_TEMPFAIL);
         }
         info!("[filter] unmodified fallback email reinjected successfully");
         // Fallback succeeded: the email sent is the original (unmodified).

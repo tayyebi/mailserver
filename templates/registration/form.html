@@ -7,11 +7,11 @@
 {% endif %}
 <form method="post" action="/register/{{ domain }}">
   <label>Username (the part before @)<br>
-    <input type="text" name="username" value="{{ username }}" required autocomplete="username"
+    <input type="text" name="username" id="reg_username" value="{{ username }}" required autocomplete="username"
            placeholder="yourname"
            pattern="[a-zA-Z0-9._-]+" title="Letters, digits, dots, hyphens, and underscores only">
   </label>
-  <small>Your email address will be <strong>{{ username_preview }}</strong></small>
+  <small>Your email address will be <strong id="reg_preview">{{ username_preview }}</strong></small>
   <label>Display Name (optional)<br>
     <input type="text" name="name" value="{{ name }}" autocomplete="name">
   </label>
@@ -23,4 +23,17 @@
   </label>
   <button type="submit">Create Account</button>
 </form>
+<script>
+(function() {
+  var input = document.getElementById('reg_username');
+  var preview = document.getElementById('reg_preview');
+  var domain = '{{ domain }}';
+  if (input && preview) {
+    input.addEventListener('input', function() {
+      var u = input.value.trim() || '';
+      preview.textContent = u ? u + '@' + domain : '@' + domain;
+    });
+  }
+})();
+</script>
 {% endblock %}
