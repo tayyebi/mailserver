@@ -9,6 +9,12 @@
 <small>Paste your SVG Tiny 1.2 logo markup here. It will be served at <code>/bimi/{{ domain.domain }}/logo.svg</code>.</small>
 <label><input type="checkbox" name="unsubscribe_enabled" value="on"{% if domain.unsubscribe_enabled %} checked{% endif %}> Enable List-Unsubscribe header injection for outbound emails</label>
 <small>When enabled, outbound emails from this domain will include RFC 8058 <code>List-Unsubscribe</code> and <code>List-Unsubscribe-Post</code> headers, allowing one-click unsubscription.</small>
+<hr>
+<h2>Self-Registration</h2>
+<label><input type="checkbox" name="registration_enabled" value="on"{% if domain.registration_enabled %} checked{% endif %}> Allow public registration of new mailboxes on this domain</label>
+<small>When enabled, anyone can create a new mailbox at <code>/register/{{ domain.domain }}</code> without admin approval.</small>
+<label>Username Regex (optional)<br><input type="text" name="registration_username_regex" value="{{ domain.registration_username_regex }}" placeholder="e.g. ^[a-z][a-z0-9._-]{2,29}$"></label>
+<small>If set, only usernames matching this regular expression are accepted. Leave blank to allow any username (3–64 alphanumeric characters + dots, hyphens, underscores).</small>
 <button type="submit">Save</button>
 </form>
 {% endblock %}

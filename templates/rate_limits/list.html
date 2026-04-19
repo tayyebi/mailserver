@@ -1,0 +1,68 @@
+{% extends "layout.html" %}
+{% block title %}Rate Limit Rules{% endblock %}
+{% block content %}
+<h1>Rate Limit Rules</h1>
+{% if let Some(msg) = flash %}
+<p><strong>{{ msg }}</strong></p>
+{% endif %}
+
+<p>Rate limit rules use the same condition syntax as tracking and footer rules. When a message matches a rule's conditions, the sender's message count is incremented. If the count exceeds <em>max messages</em> within the configured time window, the message is temporarily rejected (Postfix will retry later).</p>
+
+<h2>Add Rule</h2>
+<form method="post" action="/rate-limits/rules">
+  <label>Name<br><input type="text" name="name" required placeholder="e.g. Outbound hourly limit"></label>
+  <label>Match Mode<br>
+    <select name="match_mode">
+      <option value="AND">AND (all conditions must match)</option>
+      <option value="OR">OR (any condition must match)</option>
+    </select>
+  </label>
+  <label>Conditions (JSON array)<br>
+    <textarea name="conditions_json" rows="4" placeholder='[{"field":"sender","operator":"contains","value":"@example.com"}]'>[]</textarea>
+  </label>
+  <small>Fields: <code>sender</code>, <code>recipient</code>, <code>subject</code>, <code>size</code>. Operators: <code>contains</code>, <code>not_contains</code>, <code>equals</code>, <code>not_equals</code>, <code>starts_with</code>, <code>ends_with</code>, <code>larger_than</code>, <code>smaller_than</code>.</small>
+  <label>Max Messages<br><input type="number" name="max_messages" value="100" min="1" required></label>
+  <label>Window (seconds)<br><input type="number" name="window_seconds" value="3600" min="1" required></label>
+  <button type="submit">Add Rule</button>
+</form>
+
+<h2>Rules</h2>
+{% if rules.is_empty() %}
+<p>No rate limit rules configured.</p>
+{% else %}
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+  <th>#</th>
+  <th>Name</th>
+  <th>Mode</th>
+  <th>Conditions</th>
+  <th>Max</th>
+  <th>Window</th>
+  <th>Enabled</th>
+  <th>Actions</th>
+</tr>
+</thead>
+<tbody>
+{% for r in rules %}
+<tr>
+  <td>{{ r.id }}</td>
+  <td>{{ r.name }}</td>
+  <td>{{ r.match_mode }}</td>
+  <td><small>{{ r.conditions.len() }} condition(s)</small></td>
+  <td>{{ r.max_messages }}</td>
+  <td>{{ r.window_seconds }}s</td>
+  <td>{% if r.enabled %}<mark data-variant="success">Yes</mark>{% else %}<mark data-variant="muted">No</mark>{% endif %}</td>
+  <td>
+    <form method="post" action="/rate-limits/rules/{{ r.id }}/delete" class="form-inline" onsubmit="return confirm('Delete this rule?')">
+      <button type="submit">Delete</button>
+    </form>
+  </td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

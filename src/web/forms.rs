@@ -18,6 +18,10 @@ pub struct DomainEditForm {
     pub bimi_svg: String,
     #[serde(default)]
     pub unsubscribe_enabled: Option<String>,
+    #[serde(default)]
+    pub registration_enabled: Option<String>,
+    #[serde(default)]
+    pub registration_username_regex: String,
 }
 
 #[derive(Deserialize)]
@@ -160,6 +164,11 @@ pub struct FeatureToggleForm {
 }
 
 #[derive(Deserialize)]
+pub struct MailSettingsForm {
+    pub message_size_limit: u64,
+}
+
+#[derive(Deserialize)]
 pub struct RelayForm {
     pub name: String,
     pub host: String,
@@ -225,6 +234,15 @@ pub struct TrackingRuleForm {
     pub name: String,
     pub match_mode: String,
     pub conditions_json: String,
+}
+
+#[derive(Deserialize)]
+pub struct RateLimitRuleForm {
+    pub name: String,
+    pub match_mode: String,
+    pub conditions_json: String,
+    pub max_messages: i32,
+    pub window_seconds: i32,
 }
 
 #[derive(Deserialize)]

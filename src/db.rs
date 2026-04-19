@@ -32,6 +32,8 @@ pub struct Domain {
     pub footer_html: Option<String>,
     pub bimi_svg: Option<String>,
     pub unsubscribe_enabled: bool,
+    pub registration_enabled: bool,
+    pub registration_username_regex: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -85,6 +87,23 @@ pub struct TrackingRule {
     pub name: String,
     pub match_mode: String, // "AND" or "OR"
     pub conditions: Vec<TrackingCondition>,
+    pub created_at: String,
+}
+
+/// A rate-limit rule that shares the same condition evaluation as tracking and footer rules.
+///
+/// When a message matches the rule's conditions, the sender's count is incremented.
+/// If the count exceeds `max_messages` within `window_seconds`, the content filter
+/// rejects the message with a temporary failure (EX_TEMPFAIL / 75) so Postfix will retry later.
+#[derive(Clone, Serialize)]
+pub struct RateLimitRule {
+    pub id: i64,
+    pub name: String,
+    pub match_mode: String,
+    pub conditions: Vec<TrackingCondition>,
+    pub max_messages: i32,
+    pub window_seconds: i32,
+    pub enabled: bool,
     pub created_at: String,
 }
 
@@ -686,7 +705,7 @@ impl Database {
         let mut conn = self.conn();
         let rows = conn
             .query(
-                "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html, bimi_svg, unsubscribe_enabled
+                "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html, bimi_svg, unsubscribe_enabled, registration_enabled, registration_username_regex
                  FROM domains ORDER BY domain",
                 &[],
             )
@@ -706,6 +725,8 @@ impl Database {
                 footer_html: row.get(6),
                 bimi_svg: row.get(7),
                 unsubscribe_enabled: row.get(8),
+                registration_enabled: row.get::<_, Option<bool>>(9).unwrap_or(false),
+                registration_username_regex: row.get::<_, Option<String>>(10).unwrap_or_default(),
             })
             .collect()
     }
@@ -714,7 +735,7 @@ impl Database {
         debug!("[db] getting domain id={}", id);
         let mut conn = self.conn();
         conn.query_opt(
-            "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html, bimi_svg, unsubscribe_enabled
+            "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html, bimi_svg, unsubscribe_enabled, registration_enabled, registration_username_regex
              FROM domains WHERE id = $1",
             &[&id],
         )
@@ -730,6 +751,8 @@ impl Database {
             footer_html: row.get(6),
             bimi_svg: row.get(7),
             unsubscribe_enabled: row.get(8),
+            registration_enabled: row.get::<_, Option<bool>>(9).unwrap_or(false),
+            registration_username_regex: row.get::<_, Option<String>>(10).unwrap_or_default(),
         })
     }
 
@@ -737,7 +760,7 @@ impl Database {
         debug!("[db] getting domain by name={}", domain_name);
         let mut conn = self.conn();
         conn.query_opt(
-            "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html, bimi_svg, unsubscribe_enabled
+            "SELECT id, domain, active, dkim_selector, dkim_private_key, dkim_public_key, footer_html, bimi_svg, unsubscribe_enabled, registration_enabled, registration_username_regex
              FROM domains WHERE LOWER(domain) = LOWER($1)",
             &[&domain_name],
         )
@@ -753,6 +776,8 @@ impl Database {
             footer_html: row.get(6),
             bimi_svg: row.get(7),
             unsubscribe_enabled: row.get(8),
+            registration_enabled: row.get::<_, Option<bool>>(9).unwrap_or(false),
+            registration_username_regex: row.get::<_, Option<String>>(10).unwrap_or_default(),
         })
     }
 
@@ -788,21 +813,26 @@ impl Database {
         active: bool,
         bimi_svg: &str,
         unsubscribe_enabled: bool,
+        registration_enabled: bool,
+        registration_username_regex: &str,
     ) {
         info!(
-            "[db] updating domain id={}, domain={}, active={}, bimi_present={}, unsubscribe_enabled={}",
+            "[db] updating domain id={}, domain={}, active={}, bimi_present={}, unsubscribe_enabled={}, registration_enabled={}",
             id,
             domain,
             active,
             !bimi_svg.trim().is_empty(),
-            unsubscribe_enabled
+            unsubscribe_enabled,
+            registration_enabled
         );
         let mut conn = self.conn();
         if let Err(e) = conn.execute(
             "UPDATE domains
-             SET domain = $1, active = $2, bimi_svg = $3, unsubscribe_enabled = $4, updated_at = $5
-             WHERE id = $6",
-            &[&domain, &active, &bimi_svg, &unsubscribe_enabled, &now(), &id],
+             SET domain = $1, active = $2, bimi_svg = $3, unsubscribe_enabled = $4,
+                 registration_enabled = $5, registration_username_regex = $6, updated_at = $7
+             WHERE id = $8",
+            &[&domain, &active, &bimi_svg, &unsubscribe_enabled,
+              &registration_enabled, &registration_username_regex, &now(), &id],
         ) {
             error!("[db] failed to execute query: {}", e);
         }
@@ -1483,6 +1513,137 @@ impl Database {
         if let Err(e) = conn.execute("DELETE FROM footer_rules WHERE id = $1", &[&id]) {
             error!("[db] failed to execute query: {}", e);
         }
+    }
+
+    // ── Rate-limit rule methods ──
+
+    pub fn list_rate_limit_rules(&self) -> Vec<RateLimitRule> {
+        debug!("[db] listing rate limit rules");
+        let mut conn = self.conn();
+        let rows = conn
+            .query(
+                "SELECT id, name, match_mode, conditions_json, max_messages, window_seconds, enabled, created_at
+                 FROM rate_limit_rules ORDER BY id ASC",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list rate limit rules: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| {
+                let conditions_json: String =
+                    row.get::<_, Option<String>>(3).unwrap_or_default();
+                let conditions: Vec<TrackingCondition> =
+                    serde_json::from_str(&conditions_json).unwrap_or_default();
+                RateLimitRule {
+                    id: row.get(0),
+                    name: row.get::<_, Option<String>>(1).unwrap_or_default(),
+                    match_mode: row.get::<_, Option<String>>(2).unwrap_or_else(|| "AND".into()),
+                    conditions,
+                    max_messages: row.get::<_, Option<i32>>(4).unwrap_or(100),
+                    window_seconds: row.get::<_, Option<i32>>(5).unwrap_or(3600),
+                    enabled: row.get::<_, Option<bool>>(6).unwrap_or(true),
+                    created_at: row.get::<_, Option<String>>(7).unwrap_or_default(),
+                }
+            })
+            .collect()
+    }
+
+    pub fn create_rate_limit_rule(
+        &self,
+        name: &str,
+        match_mode: &str,
+        conditions: &[TrackingCondition],
+        max_messages: i32,
+        window_seconds: i32,
+    ) -> Result<i64, String> {
+        info!("[db] creating rate limit rule: {}", name);
+        let conditions_json = serde_json::to_string(conditions)
+            .map_err(|e| format!("Failed to serialise conditions: {}", e))?;
+        let mut conn = self.conn();
+        let row = conn
+            .query_one(
+                "INSERT INTO rate_limit_rules (name, match_mode, conditions_json, max_messages, window_seconds, enabled, created_at)
+                 VALUES ($1, $2, $3, $4, $5, TRUE, $6) RETURNING id",
+                &[&name, &match_mode, &conditions_json, &max_messages, &window_seconds, &now()],
+            )
+            .map_err(|e| {
+                error!("[db] failed to create rate limit rule: {}", e);
+                e.to_string()
+            })?;
+        let id: i64 = row.get(0);
+        info!("[db] rate limit rule created: {} (id={})", name, id);
+        Ok(id)
+    }
+
+    pub fn delete_rate_limit_rule(&self, id: i64) {
+        warn!("[db] deleting rate limit rule id={}", id);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute("DELETE FROM rate_limit_rules WHERE id = $1", &[&id]) {
+            error!("[db] failed to execute query: {}", e);
+        }
+    }
+
+    /// Check whether the given sender has exceeded a rate-limit rule.
+    ///
+    /// Returns the name of the first matching rule that is over its limit,
+    /// or `None` if no rule is exceeded.
+    pub fn check_rate_limit(
+        &self,
+        sender: &str,
+        recipient: &str,
+        subject: &str,
+        size_bytes: usize,
+    ) -> Option<String> {
+        let rules = self.list_rate_limit_rules();
+        let sender_lower = sender.to_ascii_lowercase();
+
+        for rule in &rules {
+            if !rule.enabled {
+                continue;
+            }
+            if !evaluate_rule(
+                &rule.match_mode,
+                &rule.conditions,
+                &sender_lower,
+                recipient,
+                subject,
+                size_bytes,
+            ) {
+                continue;
+            }
+
+            // The rule matched — check the sliding window counter.
+            // Use integer division on Unix timestamp to bucket into fixed windows.
+            let now_secs = chrono::Utc::now().timestamp();
+            let window_start = ((now_secs / rule.window_seconds as i64) * rule.window_seconds as i64).to_string();
+
+            let rule_id = rule.id;
+            let mut conn = self.conn();
+
+            // Upsert: increment counter or start at 1.
+            let count: i64 = conn
+                .query_one(
+                    "INSERT INTO rate_limit_counts (rule_id, sender, window_start, count)
+                     VALUES ($1, $2, $3, 1)
+                     ON CONFLICT (rule_id, sender, window_start)
+                     DO UPDATE SET count = rate_limit_counts.count + 1
+                     RETURNING count",
+                    &[&rule_id, &sender_lower, &window_start],
+                )
+                .map(|row| row.get::<_, i32>(0) as i64)
+                .unwrap_or(0);
+
+            if count > rule.max_messages as i64 {
+                info!(
+                    "[db] rate limit exceeded for sender={} rule='{}' count={} max={}",
+                    sender_lower, rule.name, count, rule.max_messages
+                );
+                return Some(rule.name.clone());
+            }
+        }
+        None
     }
 
     pub fn get_api_token(&self) -> Option<String> {
@@ -2486,6 +2647,30 @@ impl Database {
                 created_at: row.get(9),
             })
             .collect()
+    }
+
+    pub fn get_webhook_log(&self, id: i64) -> Option<WebhookLog> {
+        debug!("[db] getting webhook log id={}", id);
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT id, url, request_body, response_status, response_body, error, duration_ms, sender, subject, created_at
+             FROM webhook_logs WHERE id = $1",
+            &[&id],
+        )
+        .ok()
+        .flatten()
+        .map(|row| WebhookLog {
+            id: row.get(0),
+            url: row.get(1),
+            request_body: row.get::<_, Option<String>>(2).unwrap_or_default(),
+            response_status: row.get(3),
+            response_body: row.get::<_, Option<String>>(4).unwrap_or_default(),
+            error: row.get::<_, Option<String>>(5).unwrap_or_default(),
+            duration_ms: row.get(6),
+            sender: row.get::<_, Option<String>>(7).unwrap_or_default(),
+            subject: row.get::<_, Option<String>>(8).unwrap_or_default(),
+            created_at: row.get(9),
+        })
     }
 
     // ── DMARC inbox methods ──

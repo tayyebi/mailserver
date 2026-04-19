@@ -16,6 +16,8 @@ pub mod forwarding;
 pub mod mcp;
 pub mod pixel;
 pub mod queue;
+pub mod rate_limits;
+pub mod registration;
 pub mod relays;
 pub mod settings;
 pub mod spambl;
@@ -98,6 +100,7 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/settings/2fa/enable", post(settings::enable_2fa))
         .route("/settings/2fa/disable", post(settings::disable_2fa))
         .route("/settings/features", post(settings::update_features))
+        .route("/settings/mail", post(settings::update_mail_settings))
         .route("/settings/tls/regenerate", post(settings::regenerate_tls))
         .route("/settings/tls/cert.pem", get(settings::download_cert))
         .route("/settings/tls/key.pem", get(settings::download_key))
@@ -149,6 +152,7 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/webhooks", get(webhook::list))
         .route("/webhooks/settings", post(webhook::update_webhook))
         .route("/webhooks/test", post(webhook::test_webhook))
+        .route("/webhooks/:id/retry", post(webhook::retry_webhook))
         .route("/dmarc", get(dmarc::list).post(dmarc::create))
         .route("/dmarc/:id/delete", post(dmarc::delete))
         .route("/dmarc/:id/reports", get(dmarc::reports))
@@ -181,4 +185,18 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/webdav", get(webdav::list))
         .route("/webdav/settings", post(webdav::update_settings))
         .route("/webdav/:id/delete", post(webdav::admin_delete_file))
+        .route("/rate-limits", get(rate_limits::list))
+        .route("/rate-limits/rules", post(rate_limits::create_rule))
+        .route(
+            "/rate-limits/rules/:id/delete",
+            post(rate_limits::delete_rule),
+        )
+}
+
+pub fn registration_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/register/:domain",
+            get(registration::show_form).post(registration::handle_form),
+        )
 }

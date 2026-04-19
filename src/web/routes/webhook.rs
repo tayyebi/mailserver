@@ -1,6 +1,6 @@
 use askama::Template;
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     response::{Html, IntoResponse, Response},
     Form,
 };
@@ -305,6 +305,158 @@ pub async fn test_webhook(auth: AuthAdmin, State(state): State<AppState>) -> Res
             status_code: 502,
             status_text: "Bad Gateway",
             title: "Webhook Test Failed",
+            message: &msg,
+            back_url: "/webhooks",
+            back_label: "Back to Webhooks",
+        };
+        Html(tmpl.render().unwrap()).into_response()
+    }
+}
+
+/// Retry a previously logged webhook call using the same URL and request body.
+pub async fn retry_webhook(
+    auth: AuthAdmin,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Response {
+    info!(
+        "[web] POST /webhooks/{}/retry — webhook retry by username={}",
+        id, auth.admin.username
+    );
+
+    let log_entry: Option<WebhookLog> = state.blocking_db(move |db| db.get_webhook_log(id)).await;
+
+    let entry = match log_entry {
+        Some(e) => e,
+        None => {
+            let tmpl = ErrorTemplate {
+                nav_active: "Webhooks",
+                flash: None,
+                status_code: 404,
+                status_text: "Not Found",
+                title: "Not Found",
+                message: "Webhook log entry not found.",
+                back_url: "/webhooks",
+                back_label: "Back to Webhooks",
+            };
+            return Html(tmpl.render().unwrap()).into_response();
+        }
+    };
+
+    if entry.url.is_empty() {
+        let tmpl = ErrorTemplate {
+            nav_active: "Webhooks",
+            flash: None,
+            status_code: 400,
+            status_text: "Bad Request",
+            title: "No URL",
+            message: "This webhook log entry has no URL to retry.",
+            back_url: "/webhooks",
+            back_label: "Back to Webhooks",
+        };
+        return Html(tmpl.render().unwrap()).into_response();
+    }
+
+    // Re-send the original request body, or fall back to an empty JSON object.
+    let request_body = if entry.request_body.is_empty() {
+        "{}".to_string()
+    } else {
+        entry.request_body.clone()
+    };
+
+    let url = entry.url.clone();
+    let start = std::time::Instant::now();
+    let payload: serde_json::Value =
+        serde_json::from_str(&request_body).unwrap_or(serde_json::json!({}));
+
+    let result = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| e.to_string())
+        .and_then(|client| {
+            client
+                .post(&url)
+                .json(&payload)
+                .send()
+                .map_err(|e| e.to_string())
+        });
+    let duration_ms = start.elapsed().as_millis() as i64;
+
+    let (response_status, response_body, error_msg) = match result {
+        Ok(resp) => {
+            let status = resp.status().as_u16() as i32;
+            let body = resp.text().unwrap_or_default();
+            let body_truncated = if body.len() > 2048 {
+                let mut end = 2048;
+                while !body.is_char_boundary(end) {
+                    end -= 1;
+                }
+                body[..end].to_string()
+            } else {
+                body
+            };
+            info!(
+                "[web] retry webhook delivered to {} status={}",
+                url, status
+            );
+            (Some(status), body_truncated, String::new())
+        }
+        Err(e) => {
+            warn!("[web] retry webhook failed to {}: {}", url, e);
+            (None, String::new(), e.clone())
+        }
+    };
+
+    let url_clone = url.clone();
+    let rb_clone = request_body.clone();
+    let rb2_clone = response_body.clone();
+    let err_clone = error_msg.clone();
+    let sender_clone = entry.sender.clone();
+    let subject_clone = entry.subject.clone();
+    state
+        .blocking_db(move |db| {
+            db.log_webhook(
+                &url_clone,
+                &rb_clone,
+                response_status,
+                &rb2_clone,
+                &err_clone,
+                duration_ms,
+                &sender_clone,
+                &subject_clone,
+            )
+        })
+        .await;
+
+    if error_msg.is_empty() {
+        let msg = format!(
+            "Retry webhook delivered to {} — HTTP {} in {} ms.",
+            url,
+            response_status.unwrap_or(0),
+            duration_ms
+        );
+        let tmpl = ErrorTemplate {
+            nav_active: "Webhooks",
+            flash: None,
+            status_code: 200,
+            status_text: "OK",
+            title: "Retry Successful",
+            message: &msg,
+            back_url: "/webhooks",
+            back_label: "Back to Webhooks",
+        };
+        Html(tmpl.render().unwrap()).into_response()
+    } else {
+        let msg = format!(
+            "Retry to {} failed after {} ms: {}",
+            url, duration_ms, error_msg
+        );
+        let tmpl = ErrorTemplate {
+            nav_active: "Webhooks",
+            flash: None,
+            status_code: 502,
+            status_text: "Bad Gateway",
+            title: "Retry Failed",
             message: &msg,
             back_url: "/webhooks",
             back_label: "Back to Webhooks",

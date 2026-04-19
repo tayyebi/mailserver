@@ -13,7 +13,6 @@ Send, receive, and manage email — with a sleek web admin panel, built-in webma
 
 Alpine · Postfix · Dovecot · OpenDKIM · Rust · PostgreSQL — all in one container.
 
-![Admin Overview](docs/screenshots/overview.jpg)
 
 </div>
 
@@ -100,13 +99,11 @@ Enable TOTP-based 2FA from the Settings page. Once enabled, append your 6-digit 
 
 Add your mail domains, generate DKIM signing keys with one click, and get a ready-to-use DNS runbook showing every record you need (MX, SPF, DKIM, DMARC, PTR).
 
-![Domains](docs/screenshots/domains.jpg)
 
 ### Accounts
 
 Create email accounts for your users. Set display names, passwords, and per-account storage quotas.
 
-![Accounts](docs/screenshots/accounts.jpg)
 
 ### Aliases & Catch-all
 
@@ -120,13 +117,11 @@ Set up rules to forward mail from a local address to any external email address.
 
 When tracking is enabled on an alias, outgoing emails get a tiny invisible tracking pixel injected into the HTML body. Every time the recipient opens the email, a record is created. View detailed per-message open reports from the **Tracking** section.
 
-![Tracking](docs/screenshots/tracking.jpg)
 
 ### Webmail
 
 A lightweight webmail client is built right into the admin panel. Browse folders, read messages, compose new emails (with CC, BCC, Reply-To, priority, and custom headers), and delete messages — all without leaving the browser.
 
-![Webmail](docs/screenshots/webmail.jpg)
 
 ### Fail2ban
 
@@ -137,7 +132,6 @@ Mailserver includes a built-in fail2ban system that monitors Postfix and Dovecot
 - Maintain a permanent whitelist and blacklist
 - Review a full audit log of all ban/unban events
 
-![Fail2ban](docs/screenshots/fail2ban.jpg)
 
 ### Queue
 

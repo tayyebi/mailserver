@@ -160,6 +160,13 @@ pub fn generate_postfix_main_cf(db: &Database, hostname: &str) {
         .map(|v| v != "false")
         .unwrap_or(true);
 
+    // Default: 30 MiB (31457280 bytes)
+    let message_size_limit = db
+        .get_setting("message_size_limit")
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(31_457_280)
+        .to_string();
+
     let milter_config = if milter_enabled {
         r#"smtpd_milters = inet:127.0.0.1:8891
 non_smtpd_milters = inet:127.0.0.1:8891
@@ -206,7 +213,8 @@ smtp_sasl_tls_security_options = noanonymous"#
         .replace("{{ mydomain }}", mydomain)
         .replace("{{ milter_config }}", &milter_config)
         .replace("{{ rbl_checks }}", &rbl_checks)
-        .replace("{{ relay_config }}", &relay_config);
+        .replace("{{ relay_config }}", &relay_config)
+        .replace("{{ message_size_limit }}", &message_size_limit);
 
     match fs::write("/etc/postfix/main.cf", config) {
         Ok(_) => debug!("[config] wrote /etc/postfix/main.cf"),

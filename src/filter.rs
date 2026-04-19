@@ -5,6 +5,9 @@ use std::sync::mpsc;
 
 use crate::db::Database;
 
+/// Postfix EX_TEMPFAIL exit code — tells Postfix to queue the message for retry.
+const EX_TEMPFAIL: i32 = 75;
+
 pub fn run_filter(
     db_url: &str,
     sender: &str,
@@ -69,8 +72,19 @@ pub fn run_filter(
             if !filter_enabled {
                 info!("[filter] content filter feature is disabled, bypassing");
             } else {
-                let tracking = db.is_tracking_enabled(sender, recipients.first().map(|s| s.as_str()).unwrap_or(""), &subject, size_bytes);
-                let footer_enabled = db.is_footer_enabled(sender, recipients.first().map(|s| s.as_str()).unwrap_or(""), &subject, size_bytes);
+                // Check rate-limit rules before doing anything else.
+                // Uses the same condition evaluation as tracking and footer rules.
+                let primary_recipient = recipients.first().map(|s| s.as_str()).unwrap_or("");
+                if let Some(rule_name) = db.check_rate_limit(sender, primary_recipient, &subject, size_bytes) {
+                    warn!(
+                        "[filter] rate limit exceeded for sender={} (rule='{}'): returning EX_TEMPFAIL",
+                        sender, rule_name
+                    );
+                    std::process::exit(EX_TEMPFAIL);
+                }
+
+                let tracking = db.is_tracking_enabled(sender, primary_recipient, &subject, size_bytes);
+                let footer_enabled = db.is_footer_enabled(sender, primary_recipient, &subject, size_bytes);
                 let footer_html = if footer_enabled {
                     db.get_setting("footer_html").unwrap_or_default()
                 } else {
@@ -318,7 +332,7 @@ pub fn run_filter(
             let _ = modified_tx.send(None);
             let _ = webhook_handle.join();
             // Tell Postfix to retry delivery rather than silently dropping the message.
-            std::process::exit(75); // EX_TEMPFAIL
+            std::process::exit(EX_TEMPFAIL);
         }
         info!("[filter] unmodified fallback email reinjected successfully");
         // Fallback succeeded: the email sent is the original (unmodified).
