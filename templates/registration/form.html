@@ -1,0 +1,26 @@
+{% extends "layout.html" %}
+{% block title %}Register — {{ domain }}{% endblock %}
+{% block content %}
+<h1>Create a mailbox on {{ domain }}</h1>
+{% if let Some(error) = error %}
+<p><strong style="color:var(--color-danger,red)">{{ error }}</strong></p>
+{% endif %}
+<form method="post" action="/register/{{ domain }}">
+  <label>Username (the part before @)<br>
+    <input type="text" name="username" value="{{ username }}" required autocomplete="username"
+           placeholder="yourname"
+           pattern="[a-zA-Z0-9._-]+" title="Letters, digits, dots, hyphens, and underscores only">
+  </label>
+  <small>Your email address will be <strong>{{ username_preview }}</strong></small>
+  <label>Display Name (optional)<br>
+    <input type="text" name="name" value="{{ name }}" autocomplete="name">
+  </label>
+  <label>Password<br>
+    <input type="password" name="password" required autocomplete="new-password" minlength="8">
+  </label>
+  <label>Confirm Password<br>
+    <input type="password" name="confirm_password" required autocomplete="new-password" minlength="8">
+  </label>
+  <button type="submit">Create Account</button>
+</form>
+{% endblock %}

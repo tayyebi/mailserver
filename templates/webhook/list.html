@@ -33,6 +33,7 @@
   <th>Status</th>
   <th>Duration</th>
   <th>Error</th>
+  <th>Actions</th>
 </tr>
 </thead>
 <tbody>
@@ -46,6 +47,7 @@
   <td>{% if l.success %}<mark>{{ l.response_status }}</mark>{% else %}<strong>{{ l.response_status }}</strong>{% endif %}</td>
   <td>{{ l.duration_ms }}</td>
   <td>{% if !l.error.is_empty() %}<small>{{ l.error }}</small>{% endif %}</td>
+  <td><form method="post" action="/webhooks/{{ l.id }}/retry" class="form-inline"><button type="submit">Retry</button></form></td>
 </tr>
 {% endfor %}
 </tbody>

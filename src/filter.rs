@@ -69,8 +69,19 @@ pub fn run_filter(
             if !filter_enabled {
                 info!("[filter] content filter feature is disabled, bypassing");
             } else {
-                let tracking = db.is_tracking_enabled(sender, recipients.first().map(|s| s.as_str()).unwrap_or(""), &subject, size_bytes);
-                let footer_enabled = db.is_footer_enabled(sender, recipients.first().map(|s| s.as_str()).unwrap_or(""), &subject, size_bytes);
+                // Check rate-limit rules before doing anything else.
+                // Uses the same condition evaluation as tracking and footer rules.
+                let primary_recipient = recipients.first().map(|s| s.as_str()).unwrap_or("");
+                if let Some(rule_name) = db.check_rate_limit(sender, primary_recipient, &subject, size_bytes) {
+                    warn!(
+                        "[filter] rate limit exceeded for sender={} (rule='{}'): returning EX_TEMPFAIL",
+                        sender, rule_name
+                    );
+                    std::process::exit(75); // EX_TEMPFAIL — Postfix will retry
+                }
+
+                let tracking = db.is_tracking_enabled(sender, primary_recipient, &subject, size_bytes);
+                let footer_enabled = db.is_footer_enabled(sender, primary_recipient, &subject, size_bytes);
                 let footer_html = if footer_enabled {
                     db.get_setting("footer_html").unwrap_or_default()
                 } else {

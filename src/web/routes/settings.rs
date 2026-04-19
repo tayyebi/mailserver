@@ -10,7 +10,7 @@ use log::{debug, error, info, warn};
 use crate::db::Admin;
 use crate::web::auth::AuthAdmin;
 use crate::web::fire_webhook;
-use crate::web::forms::{FeatureToggleForm, PasswordForm, TotpEnableForm};
+use crate::web::forms::{FeatureToggleForm, MailSettingsForm, PasswordForm, TotpEnableForm};
 use crate::web::AppState;
 
 // ── Templates ──
@@ -30,6 +30,7 @@ struct SettingsTemplate<'a> {
     milter_enabled: bool,
     filter_healthy: bool,
     milter_healthy: bool,
+    message_size_limit: u64,
 }
 
 #[derive(Template)]
@@ -150,6 +151,12 @@ pub async fn page(auth: AuthAdmin, State(state): State<AppState>) -> Html<String
     let filter_healthy = check_filter_health();
     let milter_healthy = check_milter_health();
 
+    let message_size_limit = state
+        .blocking_db(|db| db.get_setting("message_size_limit"))
+        .await
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(31_457_280);
+
     let tmpl = SettingsTemplate {
         nav_active: "Settings",
         flash: None,
@@ -163,6 +170,7 @@ pub async fn page(auth: AuthAdmin, State(state): State<AppState>) -> Html<String
         milter_enabled,
         filter_healthy,
         milter_healthy,
+        message_size_limit,
     };
     Html(tmpl.render().unwrap())
 }
@@ -207,6 +215,51 @@ pub async fn update_features(
         status_text: "OK",
         title: "Success",
         message: "Feature settings updated successfully.",
+        back_url: "/settings",
+        back_label: "Back to Settings",
+    };
+    Html(tmpl.render().unwrap()).into_response()
+}
+
+pub async fn update_mail_settings(
+    auth: AuthAdmin,
+    State(state): State<AppState>,
+    Form(form): Form<MailSettingsForm>,
+) -> Response {
+    info!(
+        "[web] POST /settings/mail — update mail settings by username={}",
+        auth.admin.username
+    );
+
+    // Enforce a minimum of 1 MiB to avoid breaking Postfix
+    let size = form.message_size_limit.max(1_048_576);
+    let size_str = size.to_string();
+
+    state
+        .blocking_db(move |db| {
+            db.set_setting("message_size_limit", &size_str);
+        })
+        .await;
+
+    info!(
+        "[web] message_size_limit set to {} by user={}",
+        size, auth.admin.username
+    );
+
+    crate::web::regen_configs(&state).await;
+
+    fire_webhook(
+        &state,
+        "settings.mail_updated",
+        serde_json::json!({"message_size_limit": size}),
+    );
+    let tmpl = ErrorTemplate {
+        nav_active: "Settings",
+        flash: None,
+        status_code: 200,
+        status_text: "OK",
+        title: "Success",
+        message: "Mail settings updated successfully.",
         back_url: "/settings",
         back_label: "Back to Settings",
     };

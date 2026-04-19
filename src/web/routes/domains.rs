@@ -319,6 +319,8 @@ pub async fn update(
     let domain = form.domain.clone();
     let bimi_svg = form.bimi_svg.clone();
     let unsubscribe_enabled = form.unsubscribe_enabled.is_some();
+    let registration_enabled = form.registration_enabled.is_some();
+    let registration_username_regex = form.registration_username_regex.clone();
     state
         .blocking_db(move |db| {
             db.update_domain(
@@ -327,6 +329,8 @@ pub async fn update(
                 active,
                 &bimi_svg,
                 unsubscribe_enabled,
+                registration_enabled,
+                &registration_username_regex,
             )
         })
         .await;
