@@ -3,6 +3,7 @@ mod config;
 mod db;
 mod fail2ban;
 mod filter;
+mod replication;
 mod web;
 
 use log::{debug, error, info, warn};
@@ -60,7 +61,11 @@ fn main() {
 
             // Start fail2ban log watcher in a background thread
             info!("[main] starting fail2ban log watcher");
-            fail2ban::start_watcher(database);
+            fail2ban::start_watcher(database.clone());
+
+            // Start outbound replication service
+            info!("[main] starting replication service");
+            replication::start(database);
 
             // Start Tokio runtime only for the HTTP server
             let rt = tokio::runtime::Builder::new_multi_thread()

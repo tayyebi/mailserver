@@ -419,6 +419,44 @@ pub struct McpLog {
     pub request_body: Option<String>,
 }
 
+// ── Replication structs ──
+
+/// A peer node this instance replicates data to/from.
+#[derive(Clone, Serialize)]
+pub struct ReplicaNode {
+    pub id: i64,
+    pub node_id: String,
+    pub peer_url: String,
+    pub shared_secret: String,
+    pub active: bool,
+    pub last_seen_at: Option<String>,
+    pub created_at: String,
+}
+
+/// One entry in the local replication changelog.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ChangeLogEntry {
+    pub id: i64,
+    pub entity_type: String,
+    pub entity_id: String,
+    pub version_id: String,
+    pub node_id: String,
+    pub logical_clock: i64,
+    pub operation: String,
+    pub payload: String,
+    pub created_at: String,
+}
+
+/// Replication lag statistics for one peer.
+#[derive(Clone, Serialize)]
+pub struct ReplicationStat {
+    pub peer_node_id: String,
+    pub last_sent_change_id: i64,
+    pub current_max_change_id: i64,
+    pub lag: i64,
+    pub last_seen_at: Option<String>,
+}
+
 fn load_available_migrations() -> Vec<(String, String)> {
     let mut migrations = Vec::new();
     let paths = vec!["migrations", "/app/migrations"];
@@ -823,21 +861,36 @@ impl Database {
         unsubscribe_enabled: bool,
     ) -> Result<i64, String> {
         info!("[db] creating domain: {}", domain);
-        let mut conn = self.conn();
-        let ts = now();
-        let row = conn
-            .query_one(
-                "INSERT INTO domains (domain, footer_html, bimi_svg, unsubscribe_enabled, created_at, updated_at)
-                 VALUES ($1, '', $2, $3, $4, $5)
-                 RETURNING id",
-                &[&domain, &bimi_svg, &unsubscribe_enabled, &ts, &ts],
-            )
-            .map_err(|e| {
-                error!("[db] failed to create domain {}: {}", domain, e);
-                e.to_string()
-            })?;
-        let id: i64 = row.get(0);
+        let id = {
+            let mut conn = self.conn();
+            let ts = now();
+            let row = conn
+                .query_one(
+                    "INSERT INTO domains (domain, footer_html, bimi_svg, unsubscribe_enabled, created_at, updated_at)
+                     VALUES ($1, '', $2, $3, $4, $5)
+                     RETURNING id",
+                    &[&domain, &bimi_svg, &unsubscribe_enabled, &ts, &ts],
+                )
+                .map_err(|e| {
+                    error!("[db] failed to create domain {}: {}", domain, e);
+                    e.to_string()
+                })?;
+            row.get::<_, i64>(0)
+        };
         info!("[db] domain created: {} (id={})", domain, id);
+        let node_id = self.get_local_node_id();
+        let payload = serde_json::json!({
+            "domain": domain,
+            "active": true,
+            "bimi_svg": bimi_svg,
+            "footer_html": "",
+            "unsubscribe_enabled": unsubscribe_enabled,
+            "registration_enabled": false,
+            "registration_username_regex": "",
+            "dkim_selector": "mail",
+        })
+        .to_string();
+        self.append_changelog("domain", domain, &node_id, "UPSERT", &payload);
         Ok(id)
     }
 
@@ -860,24 +913,53 @@ impl Database {
             unsubscribe_enabled,
             registration_enabled
         );
-        let mut conn = self.conn();
-        if let Err(e) = conn.execute(
-            "UPDATE domains
-             SET domain = $1, active = $2, bimi_svg = $3, unsubscribe_enabled = $4,
-                 registration_enabled = $5, registration_username_regex = $6, updated_at = $7
-             WHERE id = $8",
-            &[&domain, &active, &bimi_svg, &unsubscribe_enabled,
-              &registration_enabled, &registration_username_regex, &now(), &id],
-        ) {
-            error!("[db] failed to execute query: {}", e);
+        {
+            let mut conn = self.conn();
+            if let Err(e) = conn.execute(
+                "UPDATE domains
+                 SET domain = $1, active = $2, bimi_svg = $3, unsubscribe_enabled = $4,
+                     registration_enabled = $5, registration_username_regex = $6, updated_at = $7
+                 WHERE id = $8",
+                &[&domain, &active, &bimi_svg, &unsubscribe_enabled,
+                  &registration_enabled, &registration_username_regex, &now(), &id],
+            ) {
+                error!("[db] failed to execute query: {}", e);
+                return;
+            }
         }
+        let dkim_selector = self
+            .get_domain(id)
+            .map(|d| d.dkim_selector)
+            .unwrap_or_else(|| "mail".to_string());
+        let node_id = self.get_local_node_id();
+        let payload = serde_json::json!({
+            "domain": domain,
+            "active": active,
+            "bimi_svg": bimi_svg,
+            "footer_html": "",
+            "unsubscribe_enabled": unsubscribe_enabled,
+            "registration_enabled": registration_enabled,
+            "registration_username_regex": registration_username_regex,
+            "dkim_selector": dkim_selector,
+        })
+        .to_string();
+        self.append_changelog("domain", domain, &node_id, "UPSERT", &payload);
     }
 
     pub fn delete_domain(&self, id: i64) {
         warn!("[db] deleting domain id={}", id);
-        let mut conn = self.conn();
-        if let Err(e) = conn.execute("DELETE FROM domains WHERE id = $1", &[&id]) {
-            error!("[db] failed to execute query: {}", e);
+        let domain_name = self.get_domain(id).map(|d| d.domain);
+        {
+            let mut conn = self.conn();
+            if let Err(e) = conn.execute("DELETE FROM domains WHERE id = $1", &[&id]) {
+                error!("[db] failed to execute query: {}", e);
+                return;
+            }
+        }
+        if let Some(domain) = domain_name {
+            let node_id = self.get_local_node_id();
+            let payload = serde_json::json!({ "domain": domain }).to_string();
+            self.append_changelog("domain", &domain, &node_id, "DELETE", &payload);
         }
     }
 
@@ -972,21 +1054,37 @@ impl Database {
             "[db] creating account username={}, domain_id={}, quota={}",
             username, domain_id, quota
         );
-        let mut conn = self.conn();
-        let ts = now();
-        let row = conn
-            .query_one(
-                "INSERT INTO accounts (domain_id, username, password_hash, name, quota, created_at, updated_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7)
-                 RETURNING id",
-                &[&domain_id, &username, &password_hash, &name, &quota, &ts, &ts],
-            )
-            .map_err(|e| {
-                error!("[db] failed to create account {}: {}", username, e);
-                e.to_string()
-            })?;
-        let id: i64 = row.get(0);
+        let id = {
+            let mut conn = self.conn();
+            let ts = now();
+            let row = conn
+                .query_one(
+                    "INSERT INTO accounts (domain_id, username, password_hash, name, quota, created_at, updated_at)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7)
+                     RETURNING id",
+                    &[&domain_id, &username, &password_hash, &name, &quota, &ts, &ts],
+                )
+                .map_err(|e| {
+                    error!("[db] failed to create account {}: {}", username, e);
+                    e.to_string()
+                })?;
+            row.get::<_, i64>(0)
+        };
         info!("[db] account created: {} (id={})", username, id);
+        if let Some(domain) = self.get_domain(domain_id) {
+            let entity_id = format!("{}@{}", username, domain.domain);
+            let node_id = self.get_local_node_id();
+            let payload = serde_json::json!({
+                "username": username,
+                "domain_name": domain.domain,
+                "password_hash": password_hash,
+                "name": name,
+                "active": true,
+                "quota": quota,
+            })
+            .to_string();
+            self.append_changelog("account", &entity_id, &node_id, "UPSERT", &payload);
+        }
         Ok(id)
     }
 
@@ -995,33 +1093,87 @@ impl Database {
             "[db] updating account id={}, active={}, quota={}",
             id, active, quota
         );
-        let mut conn = self.conn();
-        if let Err(e) = conn.execute(
-            "UPDATE accounts
-             SET name = $1, active = $2, quota = $3, updated_at = $4
-             WHERE id = $5",
-            &[&name, &active, &quota, &now(), &id],
-        ) {
-            error!("[db] failed to execute query: {}", e);
+        {
+            let mut conn = self.conn();
+            if let Err(e) = conn.execute(
+                "UPDATE accounts
+                 SET name = $1, active = $2, quota = $3, updated_at = $4
+                 WHERE id = $5",
+                &[&name, &active, &quota, &now(), &id],
+            ) {
+                error!("[db] failed to execute query: {}", e);
+                return;
+            }
+        }
+        if let Some(account) = self.get_account_with_domain(id) {
+            if let Some(domain_name) = &account.domain_name {
+                let entity_id = format!("{}@{}", account.username, domain_name);
+                let node_id = self.get_local_node_id();
+                let payload = serde_json::json!({
+                    "username": account.username,
+                    "domain_name": domain_name,
+                    "password_hash": account.password_hash,
+                    "name": name,
+                    "active": active,
+                    "quota": quota,
+                })
+                .to_string();
+                self.append_changelog("account", &entity_id, &node_id, "UPSERT", &payload);
+            }
         }
     }
 
     pub fn update_account_password(&self, id: i64, hash: &str) {
         info!("[db] updating account password id={}", id);
-        let mut conn = self.conn();
-        if let Err(e) = conn.execute(
-            "UPDATE accounts SET password_hash = $1, updated_at = $2 WHERE id = $3",
-            &[&hash, &now(), &id],
-        ) {
-            error!("[db] failed to execute query: {}", e);
+        {
+            let mut conn = self.conn();
+            if let Err(e) = conn.execute(
+                "UPDATE accounts SET password_hash = $1, updated_at = $2 WHERE id = $3",
+                &[&hash, &now(), &id],
+            ) {
+                error!("[db] failed to execute query: {}", e);
+                return;
+            }
+        }
+        if let Some(account) = self.get_account_with_domain(id) {
+            if let Some(domain_name) = &account.domain_name {
+                let entity_id = format!("{}@{}", account.username, domain_name);
+                let node_id = self.get_local_node_id();
+                let payload = serde_json::json!({
+                    "username": account.username,
+                    "domain_name": domain_name,
+                    "password_hash": hash,
+                    "name": account.name,
+                    "active": account.active,
+                    "quota": account.quota,
+                })
+                .to_string();
+                self.append_changelog("account", &entity_id, &node_id, "UPSERT", &payload);
+            }
         }
     }
 
     pub fn delete_account(&self, id: i64) {
         warn!("[db] deleting account id={}", id);
-        let mut conn = self.conn();
-        if let Err(e) = conn.execute("DELETE FROM accounts WHERE id = $1", &[&id]) {
-            error!("[db] failed to execute query: {}", e);
+        let account_info = self.get_account_with_domain(id);
+        {
+            let mut conn = self.conn();
+            if let Err(e) = conn.execute("DELETE FROM accounts WHERE id = $1", &[&id]) {
+                error!("[db] failed to execute query: {}", e);
+                return;
+            }
+        }
+        if let Some(account) = account_info {
+            if let Some(domain_name) = &account.domain_name {
+                let entity_id = format!("{}@{}", account.username, domain_name);
+                let node_id = self.get_local_node_id();
+                let payload = serde_json::json!({
+                    "username": account.username,
+                    "domain_name": domain_name,
+                })
+                .to_string();
+                self.append_changelog("account", &entity_id, &node_id, "DELETE", &payload);
+            }
         }
     }
 
@@ -3952,6 +4104,521 @@ impl Database {
                 request_body: row.get(7),
             })
             .collect()
+    }
+
+    // ── Replication: node identity ──
+
+    /// Return the stable node-id for this instance.
+    /// Preference order: `node_state` table → `NODE_ID` env var → hostname env var → "node-1".
+    pub fn get_local_node_id(&self) -> String {
+        self.get_node_state("node_id")
+            .or_else(|| std::env::var("NODE_ID").ok())
+            .or_else(|| std::env::var("HOSTNAME").ok())
+            .unwrap_or_else(|| "node-1".to_string())
+    }
+
+    pub fn get_node_state(&self, key: &str) -> Option<String> {
+        let mut conn = self.conn();
+        conn.query_opt("SELECT value FROM node_state WHERE key = $1", &[&key])
+            .ok()
+            .flatten()
+            .map(|row| row.get(0))
+    }
+
+    pub fn set_node_state(&self, key: &str, value: &str) {
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
+            "INSERT INTO node_state (key, value) VALUES ($1, $2)
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+            &[&key, &value],
+        ) {
+            error!("[db] set_node_state key={} failed: {}", key, e);
+        }
+    }
+
+    // ── Replication: changelog ──
+
+    /// Atomically increment the per-node logical clock and append a changelog entry.
+    /// Returns the new logical clock value.
+    pub fn append_changelog(
+        &self,
+        entity_type: &str,
+        entity_id: &str,
+        node_id: &str,
+        operation: &str,
+        payload: &str,
+    ) -> i64 {
+        let version_id = uuid::Uuid::new_v4().to_string();
+        let mut conn = self.conn();
+        let lc: i64 = conn
+            .query_one(
+                "INSERT INTO node_state (key, value) VALUES ('logical_clock', '1')
+                 ON CONFLICT (key) DO UPDATE
+                   SET value = (node_state.value::bigint + 1)::text
+                 RETURNING value::bigint",
+                &[],
+            )
+            .map(|row| row.get(0))
+            .unwrap_or_else(|e| {
+                error!("[db] failed to increment logical clock — changelog entry skipped: {}", e);
+                0
+            });
+
+        if lc == 0 {
+            return 0;
+        }
+
+        if let Err(e) = conn.execute(
+            "INSERT INTO replication_changelog
+               (entity_type, entity_id, version_id, node_id, logical_clock, operation, payload, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+            &[
+                &entity_type,
+                &entity_id,
+                &version_id,
+                &node_id,
+                &lc,
+                &operation,
+                &payload,
+                &now(),
+            ],
+        ) {
+            error!("[db] failed to append changelog entry: {}", e);
+        }
+        lc
+    }
+
+    /// Fetch changelog entries with id > `since_id`, up to `limit` rows.
+    pub fn get_changelog_since(&self, since_id: i64, limit: i64) -> Vec<ChangeLogEntry> {
+        let mut conn = self.conn();
+        conn.query(
+            "SELECT id, entity_type, entity_id, version_id, node_id, logical_clock, operation, payload, created_at
+             FROM replication_changelog
+             WHERE id > $1
+             ORDER BY id ASC
+             LIMIT $2",
+            &[&since_id, &limit],
+        )
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| ChangeLogEntry {
+            id: row.get(0),
+            entity_type: row.get(1),
+            entity_id: row.get(2),
+            version_id: row.get(3),
+            node_id: row.get(4),
+            logical_clock: row.get(5),
+            operation: row.get(6),
+            payload: row.get(7),
+            created_at: row.get(8),
+        })
+        .collect()
+    }
+
+    pub fn get_max_changelog_id(&self) -> i64 {
+        let mut conn = self.conn();
+        conn.query_one("SELECT COALESCE(MAX(id), 0) FROM replication_changelog", &[])
+            .map(|row| row.get(0))
+            .unwrap_or(0)
+    }
+
+    // ── Replication: checkpoints ──
+
+    pub fn get_replication_checkpoint(&self, peer_node_id: &str) -> i64 {
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT last_sent_change_id FROM replication_checkpoint WHERE peer_node_id = $1",
+            &[&peer_node_id],
+        )
+        .ok()
+        .flatten()
+        .map(|row| row.get(0))
+        .unwrap_or(0)
+    }
+
+    pub fn set_replication_checkpoint(&self, peer_node_id: &str, last_id: i64) {
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
+            "INSERT INTO replication_checkpoint (peer_node_id, last_sent_change_id)
+             VALUES ($1, $2)
+             ON CONFLICT (peer_node_id) DO UPDATE SET last_sent_change_id = EXCLUDED.last_sent_change_id",
+            &[&peer_node_id, &last_id],
+        ) {
+            error!("[db] failed to set replication checkpoint: {}", e);
+        }
+    }
+
+    // ── Replication: replica node registry ──
+
+    pub fn list_replica_nodes(&self) -> Vec<ReplicaNode> {
+        let mut conn = self.conn();
+        conn.query(
+            "SELECT id, node_id, peer_url, shared_secret, active, last_seen_at, created_at
+             FROM replica_nodes ORDER BY node_id",
+            &[],
+        )
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| ReplicaNode {
+            id: row.get(0),
+            node_id: row.get(1),
+            peer_url: row.get(2),
+            shared_secret: row.get(3),
+            active: row.get(4),
+            last_seen_at: row.get(5),
+            created_at: row.get(6),
+        })
+        .collect()
+    }
+
+    pub fn get_replica_node(&self, id: i64) -> Option<ReplicaNode> {
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT id, node_id, peer_url, shared_secret, active, last_seen_at, created_at
+             FROM replica_nodes WHERE id = $1",
+            &[&id],
+        )
+        .ok()
+        .flatten()
+        .map(|row| ReplicaNode {
+            id: row.get(0),
+            node_id: row.get(1),
+            peer_url: row.get(2),
+            shared_secret: row.get(3),
+            active: row.get(4),
+            last_seen_at: row.get(5),
+            created_at: row.get(6),
+        })
+    }
+
+    pub fn get_replica_node_by_node_id(&self, node_id: &str) -> Option<ReplicaNode> {
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT id, node_id, peer_url, shared_secret, active, last_seen_at, created_at
+             FROM replica_nodes WHERE node_id = $1",
+            &[&node_id],
+        )
+        .ok()
+        .flatten()
+        .map(|row| ReplicaNode {
+            id: row.get(0),
+            node_id: row.get(1),
+            peer_url: row.get(2),
+            shared_secret: row.get(3),
+            active: row.get(4),
+            last_seen_at: row.get(5),
+            created_at: row.get(6),
+        })
+    }
+
+    pub fn add_replica_node(
+        &self,
+        node_id: &str,
+        peer_url: &str,
+        shared_secret: &str,
+    ) -> Result<i64, String> {
+        info!("[db] adding replica node node_id={} url={}", node_id, peer_url);
+        let mut conn = self.conn();
+        let row = conn
+            .query_one(
+                "INSERT INTO replica_nodes (node_id, peer_url, shared_secret, active, created_at)
+                 VALUES ($1, $2, $3, TRUE, $4)
+                 RETURNING id",
+                &[&node_id, &peer_url, &shared_secret, &now()],
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(row.get(0))
+    }
+
+    pub fn delete_replica_node(&self, id: i64) {
+        warn!("[db] deleting replica node id={}", id);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute("DELETE FROM replica_nodes WHERE id = $1", &[&id]) {
+            error!("[db] failed to delete replica node: {}", e);
+        }
+    }
+
+    pub fn set_replica_node_active(&self, id: i64, active: bool) {
+        info!("[db] set replica node id={} active={}", id, active);
+        let mut conn = self.conn();
+        if let Err(e) =
+            conn.execute("UPDATE replica_nodes SET active = $1 WHERE id = $2", &[&active, &id])
+        {
+            error!("[db] failed to update replica node: {}", e);
+        }
+    }
+
+    pub fn touch_replica_node(&self, id: i64) {
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
+            "UPDATE replica_nodes SET last_seen_at = $1 WHERE id = $2",
+            &[&now(), &id],
+        ) {
+            error!("[db] failed to touch replica node: {}", e);
+        }
+    }
+
+    // ── Replication: stats ──
+
+    pub fn get_replication_stats(&self) -> Vec<ReplicationStat> {
+        let nodes = self.list_replica_nodes();
+        let max_id = self.get_max_changelog_id();
+        nodes
+            .into_iter()
+            .map(|node| {
+                let last_sent = self.get_replication_checkpoint(&node.node_id);
+                ReplicationStat {
+                    peer_node_id: node.node_id.clone(),
+                    last_sent_change_id: last_sent,
+                    current_max_change_id: max_id,
+                    lag: max_id - last_sent,
+                    last_seen_at: node.last_seen_at,
+                }
+            })
+            .collect()
+    }
+
+    // ── Replication: apply incoming changes (LWW conflict resolution) ──
+
+    /// Apply a batch of incoming changelog entries from a peer node.
+    /// Uses Last-Write-Wins (LWW) based on (logical_clock, node_id) ordering.
+    pub fn apply_changelog_entries(&self, entries: &[ChangeLogEntry]) {
+        for entry in entries {
+            self.apply_one_changelog_entry(entry);
+        }
+    }
+
+    fn apply_one_changelog_entry(&self, entry: &ChangeLogEntry) {
+        // Idempotency: skip if version_id was already applied
+        {
+            let mut conn = self.conn();
+            let exists = conn
+                .query_opt(
+                    "SELECT id FROM replication_changelog WHERE version_id = $1",
+                    &[&entry.version_id],
+                )
+                .ok()
+                .flatten()
+                .is_some();
+            if exists {
+                debug!(
+                    "[repl] skipping already-applied version_id={}",
+                    entry.version_id
+                );
+                return;
+            }
+        }
+
+        // LWW conflict check: does a newer or equal version already exist locally for this entity?
+        let should_apply = {
+            let mut conn = self.conn();
+            let winning = conn
+                .query_opt(
+                    "SELECT id FROM replication_changelog
+                     WHERE entity_type = $1 AND entity_id = $2
+                       AND (logical_clock > $3
+                            OR (logical_clock = $3 AND node_id > $4))
+                     LIMIT 1",
+                    &[
+                        &entry.entity_type,
+                        &entry.entity_id,
+                        &entry.logical_clock,
+                        &entry.node_id,
+                    ],
+                )
+                .ok()
+                .flatten();
+            winning.is_none()
+        };
+
+        // Always record the entry in our changelog regardless of whether we apply it
+        {
+            let mut conn = self.conn();
+            if let Err(e) = conn.execute(
+                "INSERT INTO replication_changelog
+                   (entity_type, entity_id, version_id, node_id, logical_clock, operation, payload, created_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                 ON CONFLICT (version_id) DO NOTHING",
+                &[
+                    &entry.entity_type,
+                    &entry.entity_id,
+                    &entry.version_id,
+                    &entry.node_id,
+                    &entry.logical_clock,
+                    &entry.operation,
+                    &entry.payload,
+                    &entry.created_at,
+                ],
+            ) {
+                error!("[repl] failed to record incoming changelog entry: {}", e);
+            }
+        }
+
+        if !should_apply {
+            debug!(
+                "[repl] incoming entry ({}, {}, lc={}) lost LWW — not applied",
+                entry.entity_type, entry.entity_id, entry.logical_clock
+            );
+            return;
+        }
+
+        match entry.entity_type.as_str() {
+            "domain" => self.apply_domain_change(entry),
+            "account" => self.apply_account_change(entry),
+            other => {
+                debug!(
+                    "[repl] entity_type='{}' has no apply handler — skipping",
+                    other
+                );
+            }
+        }
+    }
+
+    fn apply_domain_change(&self, entry: &ChangeLogEntry) {
+        let payload: serde_json::Value = match serde_json::from_str(&entry.payload) {
+            Ok(v) => v,
+            Err(e) => {
+                error!("[repl] failed to parse domain payload: {}", e);
+                return;
+            }
+        };
+
+        let domain = match payload["domain"].as_str() {
+            Some(d) => d.to_string(),
+            None => {
+                error!("[repl] domain payload missing 'domain' field");
+                return;
+            }
+        };
+
+        if entry.operation == "DELETE" {
+            info!("[repl] applying DELETE for domain={}", domain);
+            let mut conn = self.conn();
+            if let Err(e) = conn.execute("DELETE FROM domains WHERE domain = $1", &[&domain]) {
+                error!("[repl] failed to delete domain {}: {}", domain, e);
+            }
+            return;
+        }
+
+        let active = payload["active"].as_bool().unwrap_or(true);
+        let bimi_svg = payload["bimi_svg"].as_str().unwrap_or("").to_string();
+        let footer_html = payload["footer_html"].as_str().unwrap_or("").to_string();
+        let unsubscribe_enabled = payload["unsubscribe_enabled"].as_bool().unwrap_or(false);
+        let registration_enabled = payload["registration_enabled"].as_bool().unwrap_or(false);
+        let registration_username_regex = payload["registration_username_regex"].as_str().unwrap_or("").to_string();
+        let dkim_selector = payload["dkim_selector"].as_str().unwrap_or("mail").to_string();
+        let ts = now();
+
+        info!("[repl] applying UPSERT for domain={}", domain);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
+            "INSERT INTO domains
+               (domain, active, bimi_svg, footer_html, unsubscribe_enabled,
+                registration_enabled, registration_username_regex, dkim_selector, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
+             ON CONFLICT (domain) DO UPDATE SET
+               active = EXCLUDED.active,
+               bimi_svg = EXCLUDED.bimi_svg,
+               footer_html = EXCLUDED.footer_html,
+               unsubscribe_enabled = EXCLUDED.unsubscribe_enabled,
+               registration_enabled = EXCLUDED.registration_enabled,
+               registration_username_regex = EXCLUDED.registration_username_regex,
+               dkim_selector = EXCLUDED.dkim_selector,
+               updated_at = EXCLUDED.updated_at",
+            &[
+                &domain,
+                &active,
+                &bimi_svg,
+                &footer_html,
+                &unsubscribe_enabled,
+                &registration_enabled,
+                &registration_username_regex,
+                &dkim_selector,
+                &ts,
+            ],
+        ) {
+            error!("[repl] failed to upsert domain {}: {}", domain, e);
+        }
+    }
+
+    fn apply_account_change(&self, entry: &ChangeLogEntry) {
+        let payload: serde_json::Value = match serde_json::from_str(&entry.payload) {
+            Ok(v) => v,
+            Err(e) => {
+                error!("[repl] failed to parse account payload: {}", e);
+                return;
+            }
+        };
+
+        let username = match payload["username"].as_str() {
+            Some(u) => u.to_string(),
+            None => {
+                error!("[repl] account payload missing 'username'");
+                return;
+            }
+        };
+        let domain_name = match payload["domain_name"].as_str() {
+            Some(d) => d.to_string(),
+            None => {
+                error!("[repl] account payload missing 'domain_name'");
+                return;
+            }
+        };
+
+        // Resolve local domain_id
+        let domain = match self.get_domain_by_name(&domain_name) {
+            Some(d) => d,
+            None => {
+                warn!(
+                    "[repl] domain '{}' not found locally — skipping account {}@{}",
+                    domain_name, username, domain_name
+                );
+                return;
+            }
+        };
+
+        if entry.operation == "DELETE" {
+            info!("[repl] applying DELETE for account {}@{}", username, domain_name);
+            let mut conn = self.conn();
+            if let Err(e) = conn.execute(
+                "DELETE FROM accounts WHERE username = $1 AND domain_id = $2",
+                &[&username, &domain.id],
+            ) {
+                error!("[repl] failed to delete account: {}", e);
+            }
+            return;
+        }
+
+        let name = payload["name"].as_str().unwrap_or("").to_string();
+        let active = payload["active"].as_bool().unwrap_or(true);
+        let quota = payload["quota"].as_i64().unwrap_or(0);
+        let password_hash = payload["password_hash"].as_str().unwrap_or("").to_string();
+        let ts = now();
+
+        info!("[repl] applying UPSERT for account {}@{}", username, domain_name);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
+            "INSERT INTO accounts
+               (domain_id, username, password_hash, name, active, quota, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+             ON CONFLICT (username, domain_id) DO UPDATE SET
+               name = EXCLUDED.name,
+               active = EXCLUDED.active,
+               quota = EXCLUDED.quota,
+               password_hash = EXCLUDED.password_hash,
+               updated_at = EXCLUDED.updated_at",
+            &[
+                &domain.id,
+                &username,
+                &password_hash,
+                &name,
+                &active,
+                &quota,
+                &ts,
+            ],
+        ) {
+            error!("[repl] failed to upsert account: {}", e);
+        }
     }
 }
 

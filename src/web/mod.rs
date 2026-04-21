@@ -181,6 +181,12 @@ pub async fn start_server(state: AppState) {
     let registration_routes = routes::registration_routes();
     let auth_routes = routes::auth_routes();
 
+    // Public replication endpoint (authentication is HMAC-based, not session-based)
+    let replication_routes = Router::new().route(
+        "/replication/apply",
+        axum::routing::post(routes::replication::apply),
+    );
+
     let static_service = get_service(ServeDir::new(static_dir));
 
     let app = Router::new()
@@ -189,6 +195,7 @@ pub async fn start_server(state: AppState) {
         .merge(unsubscribe_routes)
         .merge(webdav_routes)
         .merge(registration_routes)
+        .merge(replication_routes)
         .merge(auth_routes)
         // CalDAV protocol handler — handles all HTTP methods on /caldav/{email}/...
         .route("/caldav/*path", axum::routing::any(routes::caldav::protocol_handler))

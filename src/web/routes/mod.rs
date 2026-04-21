@@ -20,6 +20,7 @@ pub mod pixel;
 pub mod queue;
 pub mod rate_limits;
 pub mod registration;
+pub mod replication;
 pub mod relays;
 pub mod settings;
 pub mod spambl;
@@ -208,6 +209,10 @@ pub fn auth_routes() -> Router<AppState> {
             "/rate-limits/rules/:id/delete",
             post(rate_limits::delete_rule),
         )
+        .route("/replicas", get(replication::list).post(replication::create))
+        .route("/replicas/new", get(replication::new_form))
+        .route("/replicas/:id/delete", post(replication::delete))
+        .route("/replicas/:id/toggle", post(replication::toggle))
 }
 
 pub fn registration_routes() -> Router<AppState> {

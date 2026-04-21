@@ -238,6 +238,13 @@ pub struct CardDavAddressBookForm {
 }
 
 #[derive(Deserialize)]
+pub struct ReplicaNodeForm {
+    pub node_id: String,
+    pub peer_url: String,
+    pub shared_secret: String,
+}
+
+#[derive(Deserialize)]
 pub struct TrackingRuleForm {
     pub name: String,
     pub match_mode: String,
