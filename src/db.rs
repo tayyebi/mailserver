@@ -4160,9 +4160,13 @@ impl Database {
             )
             .map(|row| row.get(0))
             .unwrap_or_else(|e| {
-                error!("[db] failed to increment logical clock: {}", e);
-                1
+                error!("[db] failed to increment logical clock — changelog entry skipped: {}", e);
+                0
             });
+
+        if lc == 0 {
+            return 0;
+        }
 
         if let Err(e) = conn.execute(
             "INSERT INTO replication_changelog
@@ -4434,7 +4438,7 @@ impl Database {
                 "INSERT INTO replication_changelog
                    (entity_type, entity_id, version_id, node_id, logical_clock, operation, payload, created_at)
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                 ON CONFLICT DO NOTHING",
+                 ON CONFLICT (version_id) DO NOTHING",
                 &[
                     &entry.entity_type,
                     &entry.entity_id,

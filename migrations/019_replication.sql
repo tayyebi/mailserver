@@ -1,7 +1,7 @@
 -- Replica node registry: peers this node syncs with
 CREATE TABLE IF NOT EXISTS replica_nodes (
     id BIGSERIAL PRIMARY KEY,
-    node_id TEXT NOT NULL,
+    node_id TEXT NOT NULL UNIQUE,
     peer_url TEXT NOT NULL,
     shared_secret TEXT NOT NULL,
     active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS replication_changelog (
     id BIGSERIAL PRIMARY KEY,
     entity_type TEXT NOT NULL,
     entity_id TEXT NOT NULL,
-    version_id TEXT NOT NULL,
+    version_id TEXT NOT NULL UNIQUE,
     node_id TEXT NOT NULL,
     logical_clock BIGINT NOT NULL,
     operation TEXT NOT NULL,
