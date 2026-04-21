@@ -71,7 +71,6 @@ pub async fn admin_create_addressbook(
             let account = db.get_account_by_email(&email).ok_or("Account not found")?;
             let slug = make_slug(&display_name);
             db.create_carddav_addressbook(account.id, &slug, &display_name, &description)
-                .map_err(|e| e)
         })
         .await;
 
