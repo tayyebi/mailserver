@@ -262,8 +262,8 @@ pub fn anti_entropy_with(db: &Database, hlc: &Hlc, peer_instance_id: &str, peer_
     // Truncate to the start of the current hour, then subtract one hour
     let current_hour_start = now
         .with_minute(0)
-        .and_then(|t: chrono::DateTime<chrono::Utc>| t.with_second(0))
-        .and_then(|t: chrono::DateTime<chrono::Utc>| t.with_nanosecond(0))
+        .and_then(|t| t.with_second(0))
+        .and_then(|t| t.with_nanosecond(0))
         .unwrap_or(now);
     let bucket_start = current_hour_start - chrono::Duration::hours(1);
     let bucket_end = current_hour_start;
@@ -625,14 +625,10 @@ fn urlencoding_simple(s: &str) -> String {
         .replace('#', "%23")
 }
 
-/// Pick a uniformly random index in [0, len).
+/// Pick a uniformly random index in [0, len) using a proper RNG.
 fn rand_index(len: usize) -> usize {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.subsec_nanos() as usize)
-        .unwrap_or(0);
-    nanos % len
+    use rand::Rng;
+    rand::thread_rng().gen_range(0..len)
 }
 
 #[cfg(test)]

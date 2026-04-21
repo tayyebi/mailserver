@@ -4892,8 +4892,7 @@ impl Database {
                registration_username_regex = EXCLUDED.registration_username_regex,
                dkim_selector = EXCLUDED.dkim_selector,
                updated_at = EXCLUDED.updated_at
-             WHERE (SELECT version_hlc FROM domains WHERE domain = $1) IS NULL
-                OR (SELECT version_hlc FROM domains WHERE domain = $1) < $10",
+             WHERE domains.version_hlc IS NULL OR domains.version_hlc < $10",
             &[
                 &domain, &active, &bimi_svg, &footer_html, &unsubscribe_enabled,
                 &registration_enabled, &registration_username_regex, &dkim_selector,

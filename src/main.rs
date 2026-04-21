@@ -274,9 +274,10 @@ fn bootstrap_cluster(
 ) {
     use std::time::Duration;
 
-    let boot_hlc = db
-        .get_node_state("hlc_high_water")
-        .unwrap_or_else(|| hlc::Hlc::new(instance_id).now());
+    let boot_hlc = db.get_node_state("hlc_high_water").unwrap_or_else(|| {
+        let h = hlc::Hlc::new(instance_id);
+        h.now()
+    });
 
     let self_url = {
         let hostname = env::var("HOSTNAME").unwrap_or_else(|_| "localhost".to_string());

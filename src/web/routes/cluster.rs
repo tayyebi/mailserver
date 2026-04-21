@@ -242,7 +242,7 @@ pub fn verify_peer_jwt(
     let pub_key_bytes = peer
         .peer_public_key
         .as_deref()
-        .ok_or("peer has no public key")?;
+        .ok_or_else(|| format!("peer {} has no public key", claims.iss))?;
     let pub_key_raw = base64::Engine::decode(
         &base64::engine::general_purpose::STANDARD,
         pub_key_bytes,
@@ -406,9 +406,15 @@ pub async fn join(
                 first_seen_hlc.as_deref(),
             );
             // Also append to replication_log so the peer info gossips to others
+            let self_id = db.get_local_node_id();
+            let hlc_state = crate::hlc::Hlc::new(&self_id);
             let hlc = db
                 .get_node_state("hlc_high_water")
-                .unwrap_or_else(|| db.get_local_node_id());
+                .map(|hw| {
+                    let restored = crate::hlc::Hlc::restore(&hw, &self_id);
+                    restored.now()
+                })
+                .unwrap_or_else(|| hlc_state.now());
             let payload = serde_json::json!({
                 "instance_id": instance_id,
                 "url": url,
@@ -418,7 +424,7 @@ pub async fn join(
             });
             let _ = db.append_log_entry(
                 &hlc,
-                &db.get_local_node_id(),
+                &self_id,
                 "peer",
                 &instance_id,
                 "upsert",
@@ -426,7 +432,6 @@ pub async fn join(
             );
             let peers = db.list_live_peers();
             let high_water = db.get_hlc_high_water();
-            let self_id = db.get_local_node_id();
             (peers, high_water, self_id)
         })
         .await;
