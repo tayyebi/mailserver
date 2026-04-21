@@ -1151,6 +1151,26 @@ mod tests {
         );
     }
 
+    #[test]
+    fn master_cf_template_smtp_alt_port_has_outgoing_filter() {
+        // Port 2525 (smtp-alt) is an alternative submission port for outbound mail.
+        // It must have the outgoing content filter so webhook notifications fire for
+        // emails sent through it, just like port 587 (submission) and port 465 (smtps).
+        let template = load_template("postfix-master.cf.txt").unwrap();
+        let smtp_alt_pos = template
+            .find("2525      inet")
+            .expect("port 2525 smtp-alt service must exist in master.cf template");
+        let next_service_pos = template[smtp_alt_pos..]
+            .find("\n127.0.0.1")
+            .map(|p| smtp_alt_pos + p)
+            .unwrap_or(template.len());
+        let smtp_alt_block = &template[smtp_alt_pos..next_service_pos];
+        assert!(
+            smtp_alt_block.contains("content_filter=pixelfilter:local"),
+            "port 2525 (smtp-alt) must have content_filter=pixelfilter:local so outbound webhooks are dispatched"
+        );
+    }
+
     // ── build_virtual_alias_entries tests ──
 
     use super::build_recipient_bcc_entries;
