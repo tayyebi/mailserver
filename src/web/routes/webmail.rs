@@ -1607,18 +1607,21 @@ pub async fn idle_stream(
     tokio::spawn(async move {
         let mut last_count: Option<usize> = None;
         let mut interval = tokio::time::interval(Duration::from_secs(5));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
         loop {
             interval.tick().await;
 
             let count = count_new_messages(&maildir_base, &folder);
 
+            // Format timestamp before acquiring lock to minimise contention
+            let ping_ts = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
+
             // Update last_ping_at
             {
                 let mut reg = registry.lock().unwrap();
                 if let Some(session) = reg.get_mut(&sid) {
-                    session.last_ping_at =
-                        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
+                    session.last_ping_at = ping_ts;
                 }
             }
 

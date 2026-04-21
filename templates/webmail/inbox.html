@@ -21,7 +21,9 @@
   <button type="button" onclick="document.getElementById('idle-notify').style.display='none'">×</button>
 </div>
 
-<div class="webmail-layout">
+<div class="webmail-layout"
+     data-idle-account-id="{{ sel.id }}"
+     data-idle-folder="{{ current_folder }}">
 
   <nav class="webmail-folders" aria-label="Folders">
     <strong>Folders</strong>
@@ -116,12 +118,16 @@
 
 <script>
 (function () {
-  var accountId = {{ sel.id }};
-  var folder    = "{{ current_folder }}";
+  var layout    = document.querySelector(".webmail-layout");
+  var accountId = layout ? layout.dataset.idleAccountId : null;
+  var folder    = layout ? (layout.dataset.idleFolder || "") : null;
+  if (!accountId) { return; }
+
   var knownNewCount = null;
 
   function openIdleConnection() {
-    var url = "/webmail/idle?account_id=" + accountId + "&folder=" + encodeURIComponent(folder);
+    var url = "/webmail/idle?account_id=" + encodeURIComponent(accountId)
+              + "&folder=" + encodeURIComponent(folder);
     var es  = new EventSource(url);
 
     es.addEventListener("mailbox", function (e) {
