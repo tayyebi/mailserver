@@ -7,6 +7,7 @@ pub mod api_soap;
 pub mod bimi;
 pub mod caldav;
 pub mod carddav;
+pub mod cluster;
 pub mod configs;
 pub mod dashboard;
 pub mod dmarc;
@@ -213,6 +214,31 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/replicas/new", get(replication::new_form))
         .route("/replicas/:id/delete", post(replication::delete))
         .route("/replicas/:id/toggle", post(replication::toggle))
+        // Admin cluster replication dashboard
+        .route(
+            "/cluster/replication/metrics",
+            get(cluster::metrics),
+        )
+        .route("/cluster/replication/log", get(cluster::admin_log))
+        .route(
+            "/cluster/replication/gossip-now",
+            post(cluster::gossip_now),
+        )
+        .route(
+            "/cluster/replication/anti-entropy-now",
+            post(cluster::anti_entropy_now),
+        )
+        .route("/cluster/replication/sweep", post(cluster::sweep_now))
+}
+
+pub fn cluster_routes() -> Router<AppState> {
+    Router::new()
+        .route("/cluster/health", get(cluster::health))
+        .route("/cluster/join", post(cluster::join))
+        .route("/cluster/leave", post(cluster::leave))
+        .route("/cluster/log", get(cluster::log_entries))
+        .route("/cluster/digest", get(cluster::digest))
+        .route("/cluster/apply-sync", post(cluster::apply_sync))
 }
 
 pub fn registration_routes() -> Router<AppState> {
