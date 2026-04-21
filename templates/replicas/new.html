@@ -1,0 +1,28 @@
+{% extends "layout.html" %}
+{% block title %}Add Peer Node{% endblock %}
+{% block content %}
+<section>
+    <hgroup>
+        <small>Replication</small>
+        <h1>Add Peer Node</h1>
+    </hgroup>
+    <p>Both nodes must add each other as peers using the <strong>same shared secret</strong>. The secret never leaves your infrastructure.</p>
+    <p><strong>This node ID:</strong> <code>{{ this_node_id }}</code></p>
+</section>
+<form method="post" action="/replicas">
+    <label for="node_id">Peer Node ID</label>
+    <input type="text" id="node_id" name="node_id" required placeholder="e.g. node-2">
+    <small>The stable identifier of the remote node (its NODE_ID env var or hostname).</small>
+
+    <label for="peer_url">Peer Base URL</label>
+    <input type="url" id="peer_url" name="peer_url" required placeholder="https://mail2.example.com:8080">
+    <small>The admin HTTP base URL of the peer node. The path <code>/replication/apply</code> will be appended automatically.</small>
+
+    <label for="shared_secret">Shared Secret (passphrase)</label>
+    <input type="password" id="shared_secret" name="shared_secret" required placeholder="Use a long random string">
+    <small>Must be identical on both nodes. Used to sign and verify replication batches with HMAC-SHA256.</small>
+
+    <button type="submit">Add peer node</button>
+    <a href="/replicas">Cancel</a>
+</form>
+{% endblock %}

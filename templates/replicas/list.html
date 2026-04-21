@@ -1,0 +1,82 @@
+{% extends "layout.html" %}
+{% block title %}Replication{% endblock %}
+{% block content %}
+<section>
+    <hgroup>
+        <small>Multi-master logical replication</small>
+        <h1>Replication</h1>
+    </hgroup>
+    <p>Peer nodes exchange changes via HMAC-signed HTTP batches. Both nodes must add each other using the same shared secret (passphrase).</p>
+    <p><strong>This node ID:</strong> <code>{{ this_node_id }}</code></p>
+    <a href="/replicas/new"><strong>Add peer node</strong></a>
+</section>
+
+{% if !stats.is_empty() %}
+<section>
+    <h2>Replication Status</h2>
+    <div class="table-wrap">
+    <table>
+        <thead>
+            <tr><th>Peer Node ID</th><th>Last Sent</th><th>Current Max</th><th>Lag</th><th>Last Seen</th></tr>
+        </thead>
+        <tbody>
+        {% for s in stats %}
+        <tr>
+            <td><code>{{ s.peer_node_id }}</code></td>
+            <td>{{ s.last_sent_change_id }}</td>
+            <td>{{ s.current_max_change_id }}</td>
+            <td>
+                {% if s.lag == 0 %}
+                    <mark aria-label="In sync">In sync</mark>
+                {% else %}
+                    <mark data-variant="muted" aria-label="Behind">{{ s.lag }} entries behind</mark>
+                {% endif %}
+            </td>
+            <td>{% if let Some(v) = s.last_seen_at %}{{ v }}{% else %}never{% endif %}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+{% endif %}
+
+<section>
+    <h2>Configured Peers</h2>
+    <div class="table-wrap">
+    <table>
+        <thead>
+            <tr><th>Node ID</th><th>Peer URL</th><th>Status</th><th>Last Seen</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+        {% if nodes.is_empty() %}
+            <tr><td colspan="5">No peer nodes configured yet.</td></tr>
+        {% else %}
+            {% for n in nodes %}
+            <tr>
+                <td><code>{{ n.node_id }}</code></td>
+                <td><code>{{ n.peer_url }}</code></td>
+                <td>
+                    {% if n.active %}
+                        <mark aria-label="Active">Active</mark>
+                    {% else %}
+                        <mark data-variant="muted" aria-label="Paused">Paused</mark>
+                    {% endif %}
+                </td>
+                <td>{% if let Some(v) = n.last_seen_at %}{{ v }}{% else %}never{% endif %}</td>
+                <td>
+                    <form method="post" action="/replicas/{{ n.id }}/toggle" class="form-inline">
+                        <button type="submit">{% if n.active %}Pause{% else %}Resume{% endif %}</button>
+                    </form>
+                    <form method="post" action="/replicas/{{ n.id }}/delete" class="form-inline" onsubmit="return confirm('Remove this peer node?')">
+                        <button type="submit">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        {% endif %}
+        </tbody>
+    </table>
+    </div>
+</section>
+{% endblock %}
