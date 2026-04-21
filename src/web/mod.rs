@@ -8,12 +8,30 @@ use axum::response::Response;
 use axum::routing::get_service;
 use axum::Router;
 use log::{debug, info, warn};
-use std::collections::VecDeque;
+use serde::Serialize;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tower_http::services::ServeDir;
 
 use crate::web::errors::status_response;
+
+// ── IMAP IDLE session tracking ────────────────────────────────────────────────
+
+/// Represents one active IMAP-IDLE (SSE) connection from the webmail client.
+#[derive(Clone, Serialize)]
+pub struct ImapIdleSession {
+    pub id: String,
+    pub account_id: i64,
+    pub username: String,
+    pub domain: String,
+    pub folder: String,
+    pub connected_at: String,
+    pub last_ping_at: String,
+}
+
+/// Shared in-memory registry of active IMAP IDLE sessions.
+pub type ImapIdleRegistry = Arc<Mutex<HashMap<String, ImapIdleSession>>>;
 
 // ── MCP rate-limit and anomaly-detection constants ────────────────────────────
 
@@ -116,6 +134,8 @@ pub struct AppState {
     pub admin_port: u16,
     /// Shared rate-limiter and anomaly detector for the MCP endpoint.
     pub mcp_guard: Arc<Mutex<McpGuard>>,
+    /// Registry of active webmail IMAP-IDLE (SSE) sessions.
+    pub idle_registry: ImapIdleRegistry,
 }
 
 impl AppState {

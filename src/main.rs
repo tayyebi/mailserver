@@ -53,6 +53,9 @@ fn main() {
                 hostname,
                 admin_port: port,
                 mcp_guard: std::sync::Arc::new(std::sync::Mutex::new(web::McpGuard::new())),
+                idle_registry: std::sync::Arc::new(std::sync::Mutex::new(
+                    std::collections::HashMap::new(),
+                )),
             };
 
             // Start fail2ban log watcher in a background thread

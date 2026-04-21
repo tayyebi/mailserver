@@ -1,0 +1,43 @@
+{% extends "layout.html" %}
+{% block title %}IMAP IDLE Sessions{% endblock %}
+{% block content %}
+<section>
+    <hgroup>
+        <small>Real-time inbox watchers</small>
+        <h1>IMAP IDLE Sessions</h1>
+    </hgroup>
+    <p>Each row represents a webmail browser tab currently subscribed to live new-mail notifications via Server-Sent Events — the web equivalent of IMAP IDLE (RFC 2177).</p>
+</section>
+
+<section>
+    {% if sessions.is_empty() %}
+    <p>No active IMAP IDLE sessions.</p>
+    {% else %}
+    <div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Account</th>
+                <th>Folder</th>
+                <th>Connected At</th>
+                <th>Last Ping</th>
+                <th>Session ID</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in sessions %}
+            <tr>
+                <td>{{ s.username }}@{{ s.domain }}</td>
+                <td>{{ s.folder }}</td>
+                <td>{{ s.connected_at }}</td>
+                <td>{{ s.last_ping_at }}</td>
+                <td><small><code>{{ s.id }}</code></small></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    <p><small>{{ sessions.len() }} active session(s). The list refreshes on every page load.</small></p>
+    {% endif %}
+</section>
+{% endblock %}
