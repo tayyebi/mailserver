@@ -24,6 +24,7 @@ smtps     inet  n       -       n       -       -       smtpd
   -o smtpd_recipient_restrictions=permit_sasl_authenticated,reject
 2525      inet  n       -       n       -       -       smtpd
   -o syslog_name=postfix/smtp-alt
+  -o content_filter=pixelfilter:local
 127.0.0.1:10025 inet n - n - - smtpd
   -o syslog_name=postfix/reinject
   -o content_filter=
