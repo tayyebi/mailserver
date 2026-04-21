@@ -230,6 +230,14 @@ pub struct CalDavCalendarForm {
 }
 
 #[derive(Deserialize)]
+pub struct CardDavAddressBookForm {
+    pub email: String,
+    pub display_name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+#[derive(Deserialize)]
 pub struct TrackingRuleForm {
     pub name: String,
     pub match_mode: String,

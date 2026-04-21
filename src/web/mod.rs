@@ -179,6 +179,15 @@ pub async fn start_server(state: AppState) {
                 axum::response::Redirect::permanent("/caldav/")
             }),
         )
+        // CardDAV protocol handler — handles all HTTP methods on /carddav/{email}/...
+        .route("/carddav/*path", axum::routing::any(routes::carddav::protocol_handler))
+        // RFC 6764 well-known redirect for CardDAV auto-discovery
+        .route(
+            "/.well-known/carddav",
+            axum::routing::any(|| async {
+                axum::response::Redirect::permanent("/carddav/")
+            }),
+        )
         .nest_service("/static", static_service)
         .fallback(handle_not_found)
         .with_state(state);
