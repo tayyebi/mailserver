@@ -457,6 +457,46 @@ pub struct ReplicationStat {
     pub last_seen_at: Option<String>,
 }
 
+// ── HLC replication structs ──
+
+/// One entry in the HLC-based replication log.
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct LogEntry {
+    pub seq: i64,
+    pub hlc: String,
+    pub origin_replica: String,
+    pub entity_type: String,
+    pub entity_id: String,
+    pub op: String,
+    pub payload: serde_json::Value,
+    pub created_at: String,
+}
+
+/// A cluster peer (active-active replication node).
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct Peer {
+    pub id: String,
+    pub instance_id: String,
+    pub url: String,
+    pub region: Option<String>,
+    pub peer_public_key: Option<String>,
+    pub status: String,
+    pub suspicion_level: i32,
+    pub last_seen_at: Option<String>,
+    pub first_seen_hlc: Option<String>,
+    pub decommissioned_at: Option<String>,
+    pub created_at: String,
+}
+
+/// Per-entity-type digest for anti-entropy comparison.
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct DigestEntry {
+    pub entity_type: String,
+    pub count: i64,
+    pub xor_hash: i64,
+}
+
+
 fn load_available_migrations() -> Vec<(String, String)> {
     let mut migrations = Vec::new();
     let paths = vec!["migrations", "/app/migrations"];
@@ -4619,6 +4659,586 @@ impl Database {
         ) {
             error!("[repl] failed to upsert account: {}", e);
         }
+    }
+
+    // ── HLC replication: replication_log ──
+
+    /// Append one entry to the HLC-based `replication_log`.
+    /// This is the sole write path for replicable entities.
+    pub fn append_log_entry(
+        &self,
+        hlc: &str,
+        origin_replica: &str,
+        entity_type: &str,
+        entity_id: &str,
+        op: &str,
+        payload: &serde_json::Value,
+    ) -> Result<i64, String> {
+        let payload_str = payload.to_string();
+        let mut conn = self.conn();
+        conn.query_one(
+            "INSERT INTO replication_log
+               (hlc, origin_replica, entity_type, entity_id, op, payload)
+             VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+             RETURNING seq",
+            &[&hlc, &origin_replica, &entity_type, &entity_id, &op, &payload_str.as_str()],
+        )
+        .map(|row| row.get::<_, i64>(0))
+        .map_err(|e| {
+            error!("[db] append_log_entry failed: {}", e);
+            e.to_string()
+        })
+    }
+
+    /// Fetch replication log entries with HLC strictly greater than `since_hlc`,
+    /// ordered by HLC ascending, up to `limit` rows (clamped 1..2000).
+    pub fn get_log_since_hlc(&self, since_hlc: &str, limit: i64) -> Vec<LogEntry> {
+        let limit = limit.max(1).min(2000);
+        let mut conn = self.conn();
+        conn.query(
+            "SELECT seq, hlc, origin_replica, entity_type, entity_id, op, payload::text, created_at::text
+             FROM replication_log
+             WHERE hlc > $1
+             ORDER BY hlc ASC
+             LIMIT $2",
+            &[&since_hlc, &limit],
+        )
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| {
+            let payload_str: String = row.get(6);
+            let payload: serde_json::Value =
+                serde_json::from_str(&payload_str).unwrap_or(serde_json::Value::Null);
+            LogEntry {
+                seq: row.get(0),
+                hlc: row.get(1),
+                origin_replica: row.get(2),
+                entity_type: row.get(3),
+                entity_id: row.get(4),
+                op: row.get(5),
+                payload,
+                created_at: row.get(7),
+            }
+        })
+        .collect()
+    }
+
+    /// Return the highest HLC value in the local replication_log, or empty string.
+    pub fn get_hlc_high_water(&self) -> String {
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT hlc FROM replication_log ORDER BY hlc DESC LIMIT 1",
+            &[],
+        )
+        .ok()
+        .flatten()
+        .map(|row| row.get::<_, String>(0))
+        .unwrap_or_default()
+    }
+
+    /// Compute per-entity-type digest for a one-hour bucket.
+    /// `bucket_start` / `bucket_end` are RFC-3339 / ISO-8601 strings.
+    pub fn compute_digest(&self, bucket_start: &str, bucket_end: &str) -> Vec<DigestEntry> {
+        let mut conn = self.conn();
+        conn.query(
+            "SELECT entity_type,
+                    COUNT(*)::bigint AS count,
+                    BIT_XOR(('x' || LEFT(MD5(hlc), 16))::bit(64)::bigint)::bigint AS xor_hash
+             FROM replication_log
+             WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz
+             GROUP BY entity_type",
+            &[&bucket_start, &bucket_end],
+        )
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| DigestEntry {
+            entity_type: row.get(0),
+            count: row.get(1),
+            xor_hash: row.get(2),
+        })
+        .collect()
+    }
+
+    /// Delete replication_log rows older than `retention_days`, but only if all
+    /// non-decommissioned peers have already consumed them (cursor guard).
+    /// Returns the number of rows deleted.
+    pub fn sweep_replication_log(&self, retention_days: i64) -> i64 {
+        let mut conn = self.conn();
+        // Find the minimum last_applied_hlc across all non-decommissioned peers
+        let min_cursor: String = conn
+            .query_opt(
+                "SELECT MIN(c.last_applied_hlc)
+                 FROM hlc_cursors c
+                 JOIN peers p ON p.instance_id = c.peer_instance_id
+                 WHERE p.decommissioned_at IS NULL",
+                &[],
+            )
+            .ok()
+            .flatten()
+            .and_then(|row| row.get::<_, Option<String>>(0))
+            .unwrap_or_default();
+
+        if min_cursor.is_empty() {
+            // No peers with cursors — only delete by age
+            conn.execute(
+                "DELETE FROM replication_log
+                 WHERE created_at < now() - ($1 || ' days')::interval",
+                &[&retention_days],
+            )
+            .unwrap_or(0) as i64
+        } else {
+            conn.execute(
+                "DELETE FROM replication_log
+                 WHERE created_at < now() - ($1 || ' days')::interval
+                   AND hlc < $2",
+                &[&retention_days, &min_cursor],
+            )
+            .unwrap_or(0) as i64
+        }
+    }
+
+    // ── HLC replication: apply_log_entry (LWW) ──
+
+    /// Apply one remote log entry using last-writer-wins semantics.
+    ///
+    /// The entry is first written to `replication_log` (idempotent via ON CONFLICT DO NOTHING).
+    /// Then the target entity table is updated only if the incoming HLC is strictly greater
+    /// than any already-applied HLC for that entity.
+    pub fn apply_log_entry_hlc(&self, entry: &LogEntry) {
+        // 1. Record in local replication_log (idempotent)
+        {
+            let payload_str = entry.payload.to_string();
+            let mut conn = self.conn();
+            if let Err(e) = conn.execute(
+                "INSERT INTO replication_log
+                   (hlc, origin_replica, entity_type, entity_id, op, payload, created_at)
+                 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::timestamptz)
+                 ON CONFLICT DO NOTHING",
+                &[
+                    &entry.hlc,
+                    &entry.origin_replica,
+                    &entry.entity_type,
+                    &entry.entity_id,
+                    &entry.op,
+                    &payload_str.as_str(),
+                    &entry.created_at,
+                ],
+            ) {
+                error!("[db] apply_log_entry_hlc: failed to record entry: {}", e);
+            }
+        }
+
+        // 2. Apply to entity table
+        match entry.entity_type.as_str() {
+            "domain" => self.apply_hlc_domain(entry),
+            "account" => self.apply_hlc_account(entry),
+            "peer" => self.apply_hlc_peer(entry),
+            other => {
+                debug!(
+                    "[repl] entity_type='{}' has no HLC apply handler — skipping",
+                    other
+                );
+            }
+        }
+    }
+
+    fn apply_hlc_domain(&self, entry: &LogEntry) {
+        let p = &entry.payload;
+        let domain = match p["domain"].as_str() {
+            Some(d) => d.to_string(),
+            None => {
+                warn!("[repl] hlc domain entry missing 'domain' field");
+                return;
+            }
+        };
+
+        if entry.op == "tombstone" {
+            let mut conn = self.conn();
+            if let Err(e) = conn.execute(
+                "UPDATE domains SET active = false, updated_at = $1 WHERE domain = $2",
+                &[&now(), &domain],
+            ) {
+                error!("[repl] hlc tombstone domain failed: {}", e);
+            }
+            return;
+        }
+
+        let active = p["active"].as_bool().unwrap_or(true);
+        let bimi_svg = p["bimi_svg"].as_str().unwrap_or("").to_string();
+        let footer_html = p["footer_html"].as_str().unwrap_or("").to_string();
+        let unsubscribe_enabled = p["unsubscribe_enabled"].as_bool().unwrap_or(false);
+        let registration_enabled = p["registration_enabled"].as_bool().unwrap_or(false);
+        let registration_username_regex = p["registration_username_regex"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        let dkim_selector = p["dkim_selector"].as_str().unwrap_or("mail").to_string();
+        let version_hlc = entry.hlc.clone();
+        let ts = now();
+
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
+            "INSERT INTO domains
+               (domain, active, bimi_svg, footer_html, unsubscribe_enabled,
+                registration_enabled, registration_username_regex, dkim_selector,
+                created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
+             ON CONFLICT (domain) DO UPDATE SET
+               active = EXCLUDED.active,
+               bimi_svg = EXCLUDED.bimi_svg,
+               footer_html = EXCLUDED.footer_html,
+               unsubscribe_enabled = EXCLUDED.unsubscribe_enabled,
+               registration_enabled = EXCLUDED.registration_enabled,
+               registration_username_regex = EXCLUDED.registration_username_regex,
+               dkim_selector = EXCLUDED.dkim_selector,
+               updated_at = EXCLUDED.updated_at
+             WHERE (SELECT version_hlc FROM domains WHERE domain = $1) IS NULL
+                OR (SELECT version_hlc FROM domains WHERE domain = $1) < $10",
+            &[
+                &domain, &active, &bimi_svg, &footer_html, &unsubscribe_enabled,
+                &registration_enabled, &registration_username_regex, &dkim_selector,
+                &ts, &version_hlc,
+            ],
+        ) {
+            error!("[repl] apply_hlc_domain upsert failed: {}", e);
+        }
+    }
+
+    fn apply_hlc_account(&self, entry: &LogEntry) {
+        let p = &entry.payload;
+        let username = match p["username"].as_str() {
+            Some(u) => u.to_string(),
+            None => {
+                warn!("[repl] hlc account entry missing 'username'");
+                return;
+            }
+        };
+        let domain_name = match p["domain_name"].as_str() {
+            Some(d) => d.to_string(),
+            None => {
+                warn!("[repl] hlc account entry missing 'domain_name'");
+                return;
+            }
+        };
+        let domain = match self.get_domain_by_name(&domain_name) {
+            Some(d) => d,
+            None => {
+                warn!("[repl] domain '{}' not found — skipping hlc account apply", domain_name);
+                return;
+            }
+        };
+
+        if entry.op == "tombstone" {
+            let mut conn = self.conn();
+            if let Err(e) = conn.execute(
+                "UPDATE accounts SET active = false, updated_at = $1
+                 WHERE username = $2 AND domain_id = $3",
+                &[&now(), &username, &domain.id],
+            ) {
+                error!("[repl] hlc tombstone account failed: {}", e);
+            }
+            return;
+        }
+
+        let name = p["name"].as_str().unwrap_or("").to_string();
+        let active = p["active"].as_bool().unwrap_or(true);
+        let quota = p["quota"].as_i64().unwrap_or(0);
+        let password_hash = p["password_hash"].as_str().unwrap_or("").to_string();
+        let ts = now();
+
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
+            "INSERT INTO accounts
+               (domain_id, username, password_hash, name, active, quota, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+             ON CONFLICT (username, domain_id) DO UPDATE SET
+               name = EXCLUDED.name,
+               active = EXCLUDED.active,
+               quota = EXCLUDED.quota,
+               password_hash = EXCLUDED.password_hash,
+               updated_at = EXCLUDED.updated_at",
+            &[&domain.id, &username, &password_hash, &name, &active, &quota, &ts],
+        ) {
+            error!("[repl] apply_hlc_account upsert failed: {}", e);
+        }
+    }
+
+    fn apply_hlc_peer(&self, entry: &LogEntry) {
+        let p = &entry.payload;
+        let instance_id = match p["instance_id"].as_str() {
+            Some(id) => id.to_string(),
+            None => {
+                warn!("[repl] hlc peer entry missing 'instance_id'");
+                return;
+            }
+        };
+        let url = p["url"].as_str().unwrap_or("").to_string();
+        let region = p["region"].as_str().map(|s| s.to_string());
+        let peer_public_key = p["peer_public_key"].as_str().map(|s| s.to_string());
+        let first_seen_hlc = p["first_seen_hlc"].as_str().map(|s| s.to_string());
+        let decommissioned_at = p["decommissioned_at"].as_str().map(|s| s.to_string());
+        let ts = now();
+
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
+            "INSERT INTO peers
+               (instance_id, url, region, peer_public_key, status, first_seen_hlc,
+                decommissioned_at, created_at)
+             VALUES ($1, $2, $3, $4, 'online', $5, $6::timestamptz, $7)
+             ON CONFLICT (instance_id) DO UPDATE SET
+               url = EXCLUDED.url,
+               region = EXCLUDED.region,
+               peer_public_key = COALESCE(EXCLUDED.peer_public_key, peers.peer_public_key),
+               decommissioned_at = EXCLUDED.decommissioned_at",
+            &[
+                &instance_id, &url, &region, &peer_public_key,
+                &first_seen_hlc, &decommissioned_at, &ts,
+            ],
+        ) {
+            error!("[repl] apply_hlc_peer upsert failed: {}", e);
+        }
+    }
+
+    // ── HLC replication: peers table ──
+
+    /// Insert or update a peer record.
+    pub fn upsert_peer(
+        &self,
+        instance_id: &str,
+        url: &str,
+        region: Option<&str>,
+        peer_public_key: Option<&str>,
+        first_seen_hlc: Option<&str>,
+    ) -> Result<(), String> {
+        let mut conn = self.conn();
+        conn.execute(
+            "INSERT INTO peers (instance_id, url, region, peer_public_key, status, first_seen_hlc)
+             VALUES ($1, $2, $3, $4, 'online', $5)
+             ON CONFLICT (instance_id) DO UPDATE SET
+               url = EXCLUDED.url,
+               region = COALESCE(EXCLUDED.region, peers.region),
+               peer_public_key = COALESCE(EXCLUDED.peer_public_key, peers.peer_public_key),
+               first_seen_hlc = COALESCE(EXCLUDED.first_seen_hlc, peers.first_seen_hlc)",
+            &[&instance_id, &url, &region, &peer_public_key, &first_seen_hlc],
+        )
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+    }
+
+    /// Mark a peer as decommissioned.
+    pub fn decommission_peer(&self, instance_id: &str) {
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
+            "UPDATE peers SET decommissioned_at = now(), status = 'offline'
+             WHERE instance_id = $1",
+            &[&instance_id],
+        ) {
+            error!("[db] decommission_peer failed: {}", e);
+        }
+    }
+
+    /// List all non-decommissioned peers.
+    pub fn list_live_peers(&self) -> Vec<Peer> {
+        let mut conn = self.conn();
+        conn.query(
+            "SELECT id::text, instance_id, url, region, peer_public_key, status,
+                    suspicion_level, last_seen_at::text, first_seen_hlc,
+                    decommissioned_at::text, created_at::text
+             FROM peers
+             WHERE decommissioned_at IS NULL
+             ORDER BY created_at ASC",
+            &[],
+        )
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| Peer {
+            id: row.get(0),
+            instance_id: row.get(1),
+            url: row.get(2),
+            region: row.get(3),
+            peer_public_key: row.get(4),
+            status: row.get(5),
+            suspicion_level: row.get(6),
+            last_seen_at: row.get(7),
+            first_seen_hlc: row.get(8),
+            decommissioned_at: row.get(9),
+            created_at: row.get(10),
+        })
+        .collect()
+    }
+
+    /// List live peers that are considered reachable (status = 'online', suspicion_level < 5,
+    /// last_seen within 3 minutes).
+    pub fn list_online_peers(&self) -> Vec<Peer> {
+        let mut conn = self.conn();
+        conn.query(
+            "SELECT id::text, instance_id, url, region, peer_public_key, status,
+                    suspicion_level, last_seen_at::text, first_seen_hlc,
+                    decommissioned_at::text, created_at::text
+             FROM peers
+             WHERE decommissioned_at IS NULL
+               AND suspicion_level < 5
+               AND last_seen_at > now() - interval '3 minutes'",
+            &[],
+        )
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| Peer {
+            id: row.get(0),
+            instance_id: row.get(1),
+            url: row.get(2),
+            region: row.get(3),
+            peer_public_key: row.get(4),
+            status: row.get(5),
+            suspicion_level: row.get(6),
+            last_seen_at: row.get(7),
+            first_seen_hlc: row.get(8),
+            decommissioned_at: row.get(9),
+            created_at: row.get(10),
+        })
+        .collect()
+    }
+
+    /// Get a single peer by instance_id.
+    pub fn get_peer_by_instance_id(&self, instance_id: &str) -> Option<Peer> {
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT id::text, instance_id, url, region, peer_public_key, status,
+                    suspicion_level, last_seen_at::text, first_seen_hlc,
+                    decommissioned_at::text, created_at::text
+             FROM peers WHERE instance_id = $1",
+            &[&instance_id],
+        )
+        .ok()
+        .flatten()
+        .map(|row| Peer {
+            id: row.get(0),
+            instance_id: row.get(1),
+            url: row.get(2),
+            region: row.get(3),
+            peer_public_key: row.get(4),
+            status: row.get(5),
+            suspicion_level: row.get(6),
+            last_seen_at: row.get(7),
+            first_seen_hlc: row.get(8),
+            decommissioned_at: row.get(9),
+            created_at: row.get(10),
+        })
+    }
+
+    /// Update peer status and suspicion level.
+    pub fn update_peer_health(
+        &self,
+        instance_id: &str,
+        suspicion_level: i32,
+        status: &str,
+        update_last_seen: bool,
+    ) {
+        let mut conn = self.conn();
+        let sql = if update_last_seen {
+            "UPDATE peers SET suspicion_level = $1, status = $2, last_seen_at = now()
+             WHERE instance_id = $3"
+        } else {
+            "UPDATE peers SET suspicion_level = $1, status = $2
+             WHERE instance_id = $3"
+        };
+        if let Err(e) = conn.execute(sql, &[&suspicion_level, &status, &instance_id]) {
+            error!("[db] update_peer_health failed: {}", e);
+        }
+    }
+
+    // ── HLC replication: hlc_cursors ──
+
+    /// Get the last applied HLC for a remote peer (empty string = never applied anything).
+    pub fn get_hlc_cursor(&self, peer_instance_id: &str) -> String {
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT last_applied_hlc FROM hlc_cursors WHERE peer_instance_id = $1",
+            &[&peer_instance_id],
+        )
+        .ok()
+        .flatten()
+        .map(|row| row.get::<_, String>(0))
+        .unwrap_or_default()
+    }
+
+    /// Advance the cursor for a remote peer.
+    pub fn set_hlc_cursor(&self, peer_instance_id: &str, last_applied_hlc: &str) {
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
+            "INSERT INTO hlc_cursors (peer_instance_id, last_applied_hlc, last_gossip_at)
+             VALUES ($1, $2, now())
+             ON CONFLICT (peer_instance_id) DO UPDATE SET
+               last_applied_hlc = EXCLUDED.last_applied_hlc,
+               last_gossip_at = EXCLUDED.last_gossip_at",
+            &[&peer_instance_id, &last_applied_hlc],
+        ) {
+            error!("[db] set_hlc_cursor failed: {}", e);
+        }
+    }
+
+    /// Get HLC cursor rows for all peers (for metrics/display).
+    pub fn list_hlc_cursors(&self) -> Vec<(String, String, String)> {
+        let mut conn = self.conn();
+        conn.query(
+            "SELECT peer_instance_id, last_applied_hlc, last_gossip_at::text
+             FROM hlc_cursors ORDER BY peer_instance_id",
+            &[],
+        )
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| (row.get(0), row.get(1), row.get(2)))
+        .collect()
+    }
+
+    /// Query the replication_log with optional filters, for admin UI.
+    pub fn query_log_entries(
+        &self,
+        entity_type: &str,
+        origin: &str,
+        op: &str,
+        limit: i64,
+    ) -> Vec<LogEntry> {
+        let mut conn = self.conn();
+        conn.query(
+            "SELECT seq, hlc, origin_replica, entity_type, entity_id, op,
+                    payload::text, created_at::text
+             FROM replication_log
+             WHERE ($1 = '' OR entity_type = $1)
+               AND ($2 = '' OR origin_replica = $2)
+               AND ($3 = '' OR op = $3)
+             ORDER BY hlc DESC
+             LIMIT $4",
+            &[&entity_type, &origin, &op, &limit],
+        )
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| {
+            let payload_str: String = row.get(6);
+            let payload: serde_json::Value =
+                serde_json::from_str(&payload_str).unwrap_or(serde_json::Value::Null);
+            LogEntry {
+                seq: row.get(0),
+                hlc: row.get(1),
+                origin_replica: row.get(2),
+                entity_type: row.get(3),
+                entity_id: row.get(4),
+                op: row.get(5),
+                payload,
+                created_at: row.get(7),
+            }
+        })
+        .collect()
+    }
+
+    /// Count total log entries (for metrics).
+    pub fn count_log_entries(&self) -> i64 {
+        let mut conn = self.conn();
+        conn.query_opt("SELECT COUNT(*)::bigint FROM replication_log", &[])
+            .ok()
+            .flatten()
+            .map(|r| r.get(0))
+            .unwrap_or(0)
     }
 }
 
