@@ -15,6 +15,12 @@
 </form>
 
 {% if let Some(sel) = selected_account %}
+<div id="idle-notify" style="display:none" role="alert" aria-live="polite">
+  <output id="idle-msg"></output>
+  <button type="button" onclick="location.reload()">Refresh</button>
+  <button type="button" onclick="document.getElementById('idle-notify').style.display='none'">×</button>
+</div>
+
 <div class="webmail-layout">
 
   <nav class="webmail-folders" aria-label="Folders">
@@ -107,6 +113,45 @@
   </div>
 
 </div>
+
+<script>
+(function () {
+  var accountId = {{ sel.id }};
+  var folder    = "{{ current_folder }}";
+  var knownNewCount = null;
+
+  function openIdleConnection() {
+    var url = "/webmail/idle?account_id=" + accountId + "&folder=" + encodeURIComponent(folder);
+    var es  = new EventSource(url);
+
+    es.addEventListener("mailbox", function (e) {
+      try {
+        var data = JSON.parse(e.data);
+        var count = data.new_count;
+        if (knownNewCount === null) {
+          knownNewCount = count;
+          return;
+        }
+        if (count > knownNewCount) {
+          var diff = count - knownNewCount;
+          document.getElementById("idle-msg").textContent =
+            diff + " new message" + (diff === 1 ? "" : "s") + " arrived.";
+          document.getElementById("idle-notify").style.display = "flex";
+        }
+        knownNewCount = count;
+      } catch (_) {}
+    });
+
+    es.onerror = function () {
+      es.close();
+      // Reconnect after 15 seconds
+      setTimeout(openIdleConnection, 15000);
+    };
+  }
+
+  openIdleConnection();
+})();
+</script>
 {% endif %}
 
 {% if !logs.is_empty() %}

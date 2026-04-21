@@ -79,6 +79,10 @@ service imap-login {
   }
 }
 
+# IMAP IDLE (RFC 2177) — notify clients at most every 2 minutes that new mail
+# has arrived so they can update without polling.
+imap_idle_notify_interval = 2 mins
+
 service pop3-login {
   inet_listener pop3 {
     address = 0.0.0.0

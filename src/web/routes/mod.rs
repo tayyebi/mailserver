@@ -13,6 +13,7 @@ pub mod domains;
 pub mod fail2ban;
 pub mod footer;
 pub mod forwarding;
+pub mod imap_idle;
 pub mod mcp;
 pub mod pixel;
 pub mod queue;
@@ -94,6 +95,8 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/webmail/delete/:filename", post(webmail::delete_email))
         .route("/webmail/compose", get(webmail::compose))
         .route("/webmail/send", post(webmail::send_email))
+        .route("/webmail/idle", get(webmail::idle_stream))
+        .route("/imap-idle", get(imap_idle::list))
         .route("/settings", get(settings::page))
         .route("/settings/password", post(settings::change_password))
         .route("/settings/2fa", get(settings::setup_2fa))

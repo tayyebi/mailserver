@@ -41,6 +41,7 @@
         <article><data value="{{ stats.webhook_count }}">{{ stats.webhook_count }}</data><strong>Webhooks</strong><small>Events dispatched</small></article>
         <article><data value="{{ stats.unsubscribe_count }}">{{ stats.unsubscribe_count }}</data><strong>Unsubscribes</strong><small>Opt-out records</small></article>
         <article><data value="{{ stats.banned_count }}">{{ stats.banned_count }}</data><strong>Banned IPs</strong><small>Active fail2ban bans</small></article>
+        <article><data value="{{ idle_session_count }}">{{ idle_session_count }}</data><strong>IMAP IDLE</strong><small>Live watchers</small></article>
     </div>
 </section>
 {% endblock %}

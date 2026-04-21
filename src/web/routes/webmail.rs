@@ -2,12 +2,18 @@ use askama::Template;
 use axum::{
     extract::{Path, Query, State},
     http::header,
-    response::{Html, IntoResponse, Redirect, Response},
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        Html, IntoResponse, Redirect, Response,
+    },
     Form,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use log::{debug, error, info, warn};
 use serde::Deserialize;
+use std::convert::Infallible;
+use std::time::Duration;
+use tokio_stream::wrappers::ReceiverStream;
 
 use crate::db::Account;
 use crate::web::auth::AuthAdmin;
@@ -1494,6 +1500,150 @@ pub async fn send_email(
             Html(tmpl.render().unwrap())
         }
     }
+}
+
+// ── IMAP IDLE (SSE) ──────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct ImapIdleQuery {
+    pub account_id: i64,
+    #[serde(default)]
+    pub folder: String,
+}
+
+/// Count the number of messages in the `new/` subdirectory of a Maildir folder.
+fn count_new_messages(maildir_base: &str, folder: &str) -> usize {
+    let root = folder_root(maildir_base, folder);
+    let new_dir = format!("{}/new", root);
+    std::fs::read_dir(&new_dir)
+        .map(|entries| entries.flatten().filter(|e| e.path().is_file()).count())
+        .unwrap_or(0)
+}
+
+/// Server-Sent Events endpoint that emits `mailbox` events whenever the number
+/// of new messages in a Maildir folder changes.  This is the webmail equivalent
+/// of the IMAP IDLE command (RFC 2177).
+///
+/// Query parameters:
+///   - `account_id` – ID of the account to watch.
+///   - `folder`     – Maildir subfolder name (empty = INBOX).
+///
+/// The connection is registered in `AppState::idle_registry` for admin visibility
+/// and is automatically removed when the client disconnects.
+pub async fn idle_stream(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Query(query): Query<ImapIdleQuery>,
+) -> impl IntoResponse {
+    let account_id = query.account_id;
+    let folder = if is_safe_folder(&query.folder) {
+        query.folder.clone()
+    } else {
+        String::new()
+    };
+
+    // Resolve account details
+    let acct = state
+        .blocking_db(move |db| db.get_account_with_domain(account_id))
+        .await;
+
+    let (username, domain) = match acct {
+        Some(ref a) => (
+            a.username.clone(),
+            a.domain_name.clone().unwrap_or_default(),
+        ),
+        None => {
+            warn!("[idle] account id={} not found", account_id);
+            let (_, rx) = tokio::sync::mpsc::channel::<Result<Event, Infallible>>(1);
+            let stream = ReceiverStream::new(rx);
+            return Sse::new(stream).keep_alive(KeepAlive::default());
+        }
+    };
+
+    if !is_safe_path_component(&domain) || !is_safe_path_component(&username) {
+        warn!(
+            "[idle] unsafe path component: domain={}, username={}",
+            domain, username
+        );
+        let (_, rx) = tokio::sync::mpsc::channel::<Result<Event, Infallible>>(1);
+        let stream = ReceiverStream::new(rx);
+        return Sse::new(stream).keep_alive(KeepAlive::default());
+    }
+
+    let maildir_base = maildir_path(&domain, &username);
+    let session_id = uuid::Uuid::new_v4().to_string();
+    let now_ts = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
+
+    // Register the session
+    {
+        let mut reg = state.idle_registry.lock().unwrap();
+        reg.insert(
+            session_id.clone(),
+            crate::web::ImapIdleSession {
+                id: session_id.clone(),
+                account_id,
+                username: username.clone(),
+                domain: domain.clone(),
+                folder: if folder.is_empty() {
+                    "INBOX".to_string()
+                } else {
+                    folder.trim_start_matches('.').to_string()
+                },
+                connected_at: now_ts.clone(),
+                last_ping_at: now_ts,
+            },
+        );
+    }
+
+    info!(
+        "[idle] session {} opened for {}@{} folder={}",
+        session_id, username, domain, folder
+    );
+
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Event, Infallible>>(16);
+    let registry = state.idle_registry.clone();
+    let sid = session_id.clone();
+
+    tokio::spawn(async move {
+        let mut last_count: Option<usize> = None;
+        let mut interval = tokio::time::interval(Duration::from_secs(5));
+
+        loop {
+            interval.tick().await;
+
+            let count = count_new_messages(&maildir_base, &folder);
+
+            // Update last_ping_at
+            {
+                let mut reg = registry.lock().unwrap();
+                if let Some(session) = reg.get_mut(&sid) {
+                    session.last_ping_at =
+                        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
+                }
+            }
+
+            let changed = last_count.map(|c| c != count).unwrap_or(true);
+            if changed {
+                last_count = Some(count);
+                let data = serde_json::json!({ "new_count": count }).to_string();
+                let event = Event::default().event("mailbox").data(data);
+                if tx.send(Ok(event)).await.is_err() {
+                    // Receiver dropped – client disconnected
+                    break;
+                }
+            }
+        }
+
+        // Deregister session
+        {
+            let mut reg = registry.lock().unwrap();
+            reg.remove(&sid);
+        }
+        info!("[idle] session {} closed", sid);
+    });
+
+    let stream = ReceiverStream::new(rx);
+    Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(30)))
 }
 
 #[cfg(test)]
