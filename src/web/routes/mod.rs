@@ -6,6 +6,7 @@ pub mod api_email;
 pub mod api_soap;
 pub mod bimi;
 pub mod caldav;
+pub mod carddav;
 pub mod configs;
 pub mod dashboard;
 pub mod dmarc;
@@ -183,6 +184,19 @@ pub fn auth_routes() -> Router<AppState> {
         .route(
             "/caldav/admin/objects/:id/delete",
             post(caldav::admin_delete_object),
+        )
+        .route("/carddav", get(carddav::admin_list))
+        .route(
+            "/carddav/admin/addressbooks",
+            post(carddav::admin_create_addressbook),
+        )
+        .route(
+            "/carddav/admin/addressbooks/:id/delete",
+            post(carddav::admin_delete_addressbook),
+        )
+        .route(
+            "/carddav/admin/objects/:id/delete",
+            post(carddav::admin_delete_object),
         )
         .route("/mcp", get(mcp::page).post(mcp::handle))
         .route("/webdav", get(webdav::list))

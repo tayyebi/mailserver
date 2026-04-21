@@ -373,6 +373,41 @@ pub struct CalDavCalendarWithAccount {
 }
 
 #[derive(Clone, Serialize)]
+pub struct CardDavAddressBook {
+    pub id: i64,
+    pub account_id: i64,
+    pub slug: String,
+    pub display_name: String,
+    pub description: String,
+    pub ctag: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct CardDavObject {
+    pub id: i64,
+    pub addressbook_id: i64,
+    pub uid: String,
+    pub filename: String,
+    pub etag: String,
+    pub data: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct CardDavAddressBookWithAccount {
+    pub id: i64,
+    pub account_id: i64,
+    pub slug: String,
+    pub display_name: String,
+    pub description: String,
+    pub ctag: String,
+    pub object_count: i64,
+    pub account_username: Option<String>,
+    pub account_domain: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
 pub struct McpLog {
     pub id: i64,
     pub method: String,
@@ -3644,6 +3679,222 @@ impl Database {
             &[&calendar_id, &filename],
         ) {
             error!("[db] failed to delete CalDAV object by filename: {}", e);
+        }
+    }
+
+    // ── CardDAV methods ──
+
+    pub fn list_all_carddav_addressbooks(&self) -> Vec<CardDavAddressBookWithAccount> {
+        debug!("[db] listing all CardDAV address books");
+        let mut conn = self.conn();
+        let rows = conn
+            .query(
+                "SELECT ab.id, ab.account_id, ab.slug, ab.display_name, ab.description, ab.ctag,
+                        COUNT(o.id) as object_count, a.username, d.domain
+                 FROM carddav_addressbooks ab
+                 LEFT JOIN accounts a ON a.id = ab.account_id
+                 LEFT JOIN domains d ON d.id = a.domain_id
+                 LEFT JOIN carddav_objects o ON o.addressbook_id = ab.id
+                 GROUP BY ab.id, a.username, d.domain
+                 ORDER BY ab.id",
+                &[],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list CardDAV address books: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| CardDavAddressBookWithAccount {
+                id: row.get(0),
+                account_id: row.get(1),
+                slug: row.get(2),
+                display_name: row.get(3),
+                description: row.get(4),
+                ctag: row.get(5),
+                object_count: row.get(6),
+                account_username: row.get(7),
+                account_domain: row.get(8),
+            })
+            .collect()
+    }
+
+    pub fn list_carddav_addressbooks_for_account(&self, account_id: i64) -> Vec<CardDavAddressBook> {
+        debug!("[db] listing CardDAV address books for account_id={}", account_id);
+        let mut conn = self.conn();
+        let rows = conn
+            .query(
+                "SELECT id, account_id, slug, display_name, description, ctag, created_at
+                 FROM carddav_addressbooks WHERE account_id = $1 ORDER BY display_name",
+                &[&account_id],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list CardDAV address books for account: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| CardDavAddressBook {
+                id: row.get(0),
+                account_id: row.get(1),
+                slug: row.get(2),
+                display_name: row.get(3),
+                description: row.get(4),
+                ctag: row.get(5),
+                created_at: row.get::<_, Option<String>>(6).unwrap_or_default(),
+            })
+            .collect()
+    }
+
+    pub fn get_carddav_addressbook_by_slug(&self, account_id: i64, slug: &str) -> Option<CardDavAddressBook> {
+        debug!("[db] getting CardDAV address book account_id={} slug={}", account_id, slug);
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT id, account_id, slug, display_name, description, ctag, created_at
+             FROM carddav_addressbooks WHERE account_id = $1 AND slug = $2",
+            &[&account_id, &slug],
+        )
+        .ok()?
+        .map(|row| CardDavAddressBook {
+            id: row.get(0),
+            account_id: row.get(1),
+            slug: row.get(2),
+            display_name: row.get(3),
+            description: row.get(4),
+            ctag: row.get(5),
+            created_at: row.get::<_, Option<String>>(6).unwrap_or_default(),
+        })
+    }
+
+    pub fn create_carddav_addressbook(
+        &self,
+        account_id: i64,
+        slug: &str,
+        display_name: &str,
+        description: &str,
+    ) -> Result<i64, String> {
+        info!("[db] creating CardDAV address book account_id={} slug={}", account_id, slug);
+        let mut conn = self.conn();
+        let ctag = uuid::Uuid::new_v4().to_string();
+        conn.query_one(
+            "INSERT INTO carddav_addressbooks (account_id, slug, display_name, description, ctag, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $6) RETURNING id",
+            &[&account_id, &slug, &display_name, &description, &ctag, &now()],
+        )
+        .map(|row| {
+            let id: i64 = row.get(0);
+            info!("[db] CardDAV address book created id={}", id);
+            id
+        })
+        .map_err(|e| {
+            error!("[db] failed to create CardDAV address book: {}", e);
+            e.to_string()
+        })
+    }
+
+    pub fn update_carddav_addressbook_ctag(&self, id: i64) {
+        let mut conn = self.conn();
+        let ctag = uuid::Uuid::new_v4().to_string();
+        if let Err(e) = conn.execute(
+            "UPDATE carddav_addressbooks SET ctag = $1, updated_at = $2 WHERE id = $3",
+            &[&ctag, &now(), &id],
+        ) {
+            error!("[db] failed to update CardDAV address book ctag: {}", e);
+        }
+    }
+
+    pub fn delete_carddav_addressbook(&self, id: i64) {
+        warn!("[db] deleting CardDAV address book id={}", id);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute("DELETE FROM carddav_addressbooks WHERE id = $1", &[&id]) {
+            error!("[db] failed to delete CardDAV address book: {}", e);
+        }
+    }
+
+    pub fn list_carddav_objects(&self, addressbook_id: i64) -> Vec<CardDavObject> {
+        debug!("[db] listing CardDAV objects for addressbook_id={}", addressbook_id);
+        let mut conn = self.conn();
+        let rows = conn
+            .query(
+                "SELECT id, addressbook_id, uid, filename, etag, data, created_at
+                 FROM carddav_objects WHERE addressbook_id = $1 ORDER BY filename",
+                &[&addressbook_id],
+            )
+            .unwrap_or_else(|e| {
+                error!("[db] failed to list CardDAV objects: {}", e);
+                Vec::new()
+            });
+        rows.into_iter()
+            .map(|row| CardDavObject {
+                id: row.get(0),
+                addressbook_id: row.get(1),
+                uid: row.get(2),
+                filename: row.get(3),
+                etag: row.get(4),
+                data: row.get(5),
+                created_at: row.get::<_, Option<String>>(6).unwrap_or_default(),
+            })
+            .collect()
+    }
+
+    pub fn get_carddav_object_by_filename(&self, addressbook_id: i64, filename: &str) -> Option<CardDavObject> {
+        debug!("[db] getting CardDAV object addressbook_id={} filename={}", addressbook_id, filename);
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT id, addressbook_id, uid, filename, etag, data, created_at
+             FROM carddav_objects WHERE addressbook_id = $1 AND filename = $2",
+            &[&addressbook_id, &filename],
+        )
+        .ok()?
+        .map(|row| CardDavObject {
+            id: row.get(0),
+            addressbook_id: row.get(1),
+            uid: row.get(2),
+            filename: row.get(3),
+            etag: row.get(4),
+            data: row.get(5),
+            created_at: row.get::<_, Option<String>>(6).unwrap_or_default(),
+        })
+    }
+
+    pub fn create_or_update_carddav_object(
+        &self,
+        addressbook_id: i64,
+        uid: &str,
+        filename: &str,
+        etag: &str,
+        data: &str,
+    ) -> Result<(), String> {
+        info!("[db] upserting CardDAV object addressbook_id={} filename={}", addressbook_id, filename);
+        let mut conn = self.conn();
+        conn.execute(
+            "INSERT INTO carddav_objects (addressbook_id, uid, filename, etag, data, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $6)
+             ON CONFLICT (addressbook_id, filename) DO UPDATE
+             SET uid = EXCLUDED.uid, etag = EXCLUDED.etag, data = EXCLUDED.data, updated_at = EXCLUDED.updated_at",
+            &[&addressbook_id, &uid, &filename, &etag, &data, &now()],
+        )
+        .map(|_| ())
+        .map_err(|e| {
+            error!("[db] failed to upsert CardDAV object: {}", e);
+            e.to_string()
+        })
+    }
+
+    pub fn delete_carddav_object(&self, id: i64) {
+        warn!("[db] deleting CardDAV object id={}", id);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute("DELETE FROM carddav_objects WHERE id = $1", &[&id]) {
+            error!("[db] failed to delete CardDAV object: {}", e);
+        }
+    }
+
+    pub fn delete_carddav_object_by_filename(&self, addressbook_id: i64, filename: &str) {
+        warn!("[db] deleting CardDAV object addressbook_id={} filename={}", addressbook_id, filename);
+        let mut conn = self.conn();
+        if let Err(e) = conn.execute(
+            "DELETE FROM carddav_objects WHERE addressbook_id = $1 AND filename = $2",
+            &[&addressbook_id, &filename],
+        ) {
+            error!("[db] failed to delete CardDAV object by filename: {}", e);
         }
     }
 
