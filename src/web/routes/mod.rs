@@ -100,6 +100,14 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/webmail/send", post(webmail::send_email))
         .route("/webmail/idle", get(webmail::idle_stream))
         .route("/imap-idle", get(imap_idle::list))
+        .route(
+            "/imap-idle/disconnect-all",
+            post(imap_idle::disconnect_all),
+        )
+        .route(
+            "/imap-idle/:id/disconnect",
+            post(imap_idle::disconnect),
+        )
         .route("/settings", get(settings::page))
         .route("/settings/password", post(settings::change_password))
         .route("/settings/2fa", get(settings::setup_2fa))

@@ -1572,7 +1572,12 @@ pub async fn idle_stream(
 
     let maildir_base = maildir_path(&domain, &username);
     let session_id = uuid::Uuid::new_v4().to_string();
-    let now_ts = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
+    let now = chrono::Utc::now();
+    let now_ts = now.format("%Y-%m-%d %H:%M:%S UTC").to_string();
+    let now_secs = now.timestamp();
+
+    // Shutdown flag: set to true by the admin disconnect action to stop the polling task.
+    let shutdown = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     // Register the session
     {
@@ -1591,6 +1596,8 @@ pub async fn idle_stream(
                 },
                 connected_at: now_ts.clone(),
                 last_ping_at: now_ts,
+                connected_at_secs: now_secs,
+                shutdown: shutdown.clone(),
             },
         );
     }
@@ -1611,6 +1618,11 @@ pub async fn idle_stream(
 
         loop {
             interval.tick().await;
+
+            // Exit if the admin has disconnected this session
+            if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
 
             let count = count_new_messages(&maildir_base, &folder);
 

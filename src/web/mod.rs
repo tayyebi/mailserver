@@ -10,6 +10,7 @@ use axum::Router;
 use log::{debug, info, warn};
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tower_http::services::ServeDir;
@@ -28,6 +29,11 @@ pub struct ImapIdleSession {
     pub folder: String,
     pub connected_at: String,
     pub last_ping_at: String,
+    /// Unix timestamp of when the session was opened; used to compute duration.
+    pub connected_at_secs: i64,
+    /// Signals the idle polling task to exit when set to `true`.
+    #[serde(skip)]
+    pub shutdown: Arc<AtomicBool>,
 }
 
 /// Shared in-memory registry of active IMAP IDLE sessions.

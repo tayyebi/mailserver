@@ -10,9 +10,22 @@
 </section>
 
 <section>
+    <div>
+        <article><data value="{{ total_sessions }}">{{ total_sessions }}</data><strong>Active Sessions</strong><small>Live SSE connections</small></article>
+        <article><data value="{{ unique_accounts }}">{{ unique_accounts }}</data><strong>Unique Accounts</strong><small>Distinct mailboxes</small></article>
+        <article><data value="{{ unique_domains }}">{{ unique_domains }}</data><strong>Unique Domains</strong><small>Distinct mail domains</small></article>
+    </div>
+</section>
+
+<section>
     {% if sessions.is_empty() %}
     <p>No active IMAP IDLE sessions.</p>
     {% else %}
+    <div>
+        <form method="post" action="/imap-idle/disconnect-all">
+            <button type="submit" class="secondary">Disconnect All</button>
+        </form>
+    </div>
     <div class="table-wrap">
     <table>
         <thead>
@@ -20,24 +33,32 @@
                 <th>Account</th>
                 <th>Folder</th>
                 <th>Connected At</th>
+                <th>Duration</th>
                 <th>Last Ping</th>
                 <th>Session ID</th>
+                <th>Action</th>
             </tr>
         </thead>
         <tbody>
             {% for s in sessions %}
             <tr>
-                <td>{{ s.username }}@{{ s.domain }}</td>
+                <td>{{ s.account }}</td>
                 <td>{{ s.folder }}</td>
                 <td>{{ s.connected_at }}</td>
+                <td>{{ s.duration }}</td>
                 <td>{{ s.last_ping_at }}</td>
                 <td><small><code>{{ s.id }}</code></small></td>
+                <td>
+                    <form method="post" action="/imap-idle/{{ s.id }}/disconnect">
+                        <button type="submit" class="secondary outline">Disconnect</button>
+                    </form>
+                </td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
     </div>
-    <p><small>{{ sessions.len() }} active session(s). The list refreshes on every page load.</small></p>
+    <p><small>{{ total_sessions }} active session(s). The list refreshes on every page load.</small></p>
     {% endif %}
 </section>
 {% endblock %}
