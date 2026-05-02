@@ -4,6 +4,7 @@ mod db;
 mod fail2ban;
 mod filter;
 mod hlc;
+mod provision;
 mod replication;
 mod web;
 
@@ -239,6 +240,24 @@ fn main() {
                 }
             }
         }
+        "provision" => {
+            // Collect arguments that follow the "provision" token
+            let sub_args: Vec<String> = args[2..].to_vec();
+
+            info!("[provision] starting SSH auto-provisioning");
+
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("failed to build Tokio runtime");
+
+            rt.block_on(async move {
+                if let Err(e) = provision::run(&sub_args).await {
+                    error!("[provision] provisioning failed: {}", e);
+                    std::process::exit(1);
+                }
+            });
+        }
         other => {
             if other != "help" {
                 error!("[main] unknown command: {}", other);
@@ -251,6 +270,7 @@ fn main() {
             println!("  mailserver seed       Seed default admin user");
             println!("  mailserver genconfig  Generate mail service configs");
             println!("  mailserver gencerts   Generate TLS certificates and DH parameters");
+            println!("  mailserver provision  Auto-provision a remote server via SSH");
             println!();
             println!("Environment variables:");
             println!("  ADMIN_PORT       Dashboard port (default: 8080)");
@@ -260,6 +280,8 @@ fn main() {
             println!("  SEED_USER        Default admin username (default: admin)");
             println!("  SEED_PASS        Default admin password (default: admin)");
             println!("  CLUSTER_SEEDS    Comma-separated seed URLs for cluster bootstrap");
+            println!();
+            println!("Run 'mailserver provision' without arguments for provisioning help.");
         }
     }
 }
