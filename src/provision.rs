@@ -149,7 +149,8 @@ pub async fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         info!("[provision] uploading env file: {:?}", ef);
         upload_file(
             &mut session,
-            ef.to_str().unwrap(),
+            ef.to_str()
+                .ok_or("env file path contains invalid UTF-8")?,
             "/etc/mailserver/env",
             false,
             true,
@@ -477,7 +478,9 @@ fn upload_dir_recursive<'a>(
                 if !remote_exists(session, &remote_path).await? {
                     upload_file(
                         session,
-                        path.to_str().unwrap(),
+                        path.to_str().ok_or_else(|| {
+                            format!("file path contains invalid UTF-8: {:?}", path)
+                        })?,
                         &remote_path,
                         false,
                         false,
@@ -666,7 +669,9 @@ async fn upload_binary(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let exe = std::env::current_exe()
         .map_err(|e| format!("cannot determine current executable path: {}", e))?;
-    let exe_str = exe.to_str().unwrap_or("mailserver");
+    let exe_str = exe
+        .to_str()
+        .ok_or("current executable path contains invalid UTF-8")?;
 
     info!("[provision] current binary: {}", exe_str);
 
