@@ -18,10 +18,69 @@ Alpine · Postfix · Dovecot · OpenDKIM · Rust · PostgreSQL — all in one co
 
 ---
 
+## 🛠️ Auto-Provisioning
+
+Spin up a fresh mailserver on **any Linux VPS in one command** — no manual SSH steps, no config files to write by hand.
+
+```bash
+mailserver provision \
+  --host mail.example.com \
+  --user root \
+  --key ~/.ssh/id_ed25519
+```
+
+The command connects over SSH, then idempotently:
+
+1. **Detects the package manager** — `apt-get`, `apk`, `dnf`, or `yum`
+2. **Installs system dependencies** — Postfix, Dovecot (with LMTP/IMAP/POP3 plugins), OpenDKIM, OpenSSL, curl, PostgreSQL client — skipped if already present
+3. **Creates system users & directories** — `vmail`, `opendkim`, `/data/…`, `/app/…`, `/etc/mailserver` — skipped if already present
+4. **Uploads the current binary** — copies itself to `/usr/local/bin/mailserver` so the remote is always in sync
+5. **Uploads supporting files** — `templates/`, `migrations/`, `static/`, `entrypoint.sh` — each file skipped if already present
+6. **Runs initial setup** — `gencerts` (skipped if certs exist), `seed`, `genconfig`
+7. **Installs the system service** — writes a `systemd` unit (or OpenRC init script on Alpine) — skipped if already installed
+8. **Enables and starts the service**
+
+Every step produces verbose log output so you can see exactly what is and isn't being done.
+
+### Options
+
+| Flag | Default | Description |
+|---|---|---|
+| `--host <host>` | *(required)* | Remote hostname or IP address |
+| `--port <port>` | `22` | SSH port |
+| `--user <user>` | *(required)* | SSH login username |
+| `--key <path>` | — | Path to SSH private key (recommended) |
+| `--password <pwd>` | — | Password for SSH auth **or** passphrase for an encrypted key |
+| `--env-file <path>` | — | Local `.env` file to upload as `/etc/mailserver/env` |
+
+> **Credentials are held in memory only — they are never written to disk.**
+>
+> Public-key authentication is tried first; password is used as a fallback.
+
+### Examples
+
+```bash
+# Key-based auth (recommended)
+mailserver provision --host mail.example.com --user root --key ~/.ssh/id_ed25519
+
+# Encrypted key + password fallback
+mailserver provision --host 10.0.0.5 --user admin \
+  --key ~/.ssh/id_rsa --password mypassphrase
+
+# Password-only + upload environment file
+mailserver provision --host mail.example.com --user root \
+  --password s3cr3t --env-file .env.prod
+```
+
+The `--env-file` flag uploads your local environment file to `/etc/mailserver/env` on the remote server. The service reads this file on startup for settings such as `DATABASE_URL`, `HOSTNAME`, `SEED_USER`, and `SEED_PASS`.
+
+---
+
 ## ✨ Features
 
 | Feature | Description |
 |---|---|
+| 🛠️ **Auto-Provisioning** | One-command SSH deployment to any Linux VPS — idempotent, verbose, zero credential storage |
 | 📋 **Admin Dashboard** | Clean web UI to manage every aspect of your mail server |
 | 🌐 **Domain Management** | Add unlimited mail domains with one-click DKIM key generation |
 | 👤 **User Accounts** | Create mailboxes with passwords and storage quotas |
