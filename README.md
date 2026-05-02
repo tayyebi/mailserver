@@ -4,17 +4,101 @@
 
 **A fully self-hosted mail server in a single Docker container.**
 
-Send, receive, and manage email — with a sleek web admin panel, built-in webmail, open tracking, fail2ban protection, and DKIM signing. No complex setup. No third-party dependencies.
+Send, receive, and manage email with a sleek web admin panel, built-in webmail, open tracking, fail2ban protection, DKIM signing, CalDAV/CardDAV, active-active replication, and more. No complex setup. No third-party dependencies.
 
 [![Docker Image](https://img.shields.io/badge/ghcr.io-tayyebi%2Fmailserver-blue?logo=docker)](https://ghcr.io/tayyebi/mailserver)
 [![License](https://img.shields.io/github/license/tayyebi/mailserver)](LICENSE)
+[![Built with Rust](https://img.shields.io/badge/built%20with-Rust-orange?logo=rust)](https://www.rust-lang.org/)
 
 > **Less moving parts. Less failure.**
 
 Alpine · Postfix · Dovecot · OpenDKIM · Rust · PostgreSQL — all in one container.
 
-
 </div>
+
+---
+
+## Table of Contents
+
+- [Features](#-features)
+- [Quick Start](#-quick-start)
+- [Auto-Provisioning](#️-auto-provisioning)
+- [First Login](#-first-login)
+- [Admin Dashboard](#-admin-dashboard)
+- [Port Reference](#-port-reference)
+- [Configuration](#️-configuration)
+- [Persistent Data](#-persistent-data)
+- [DNS Setup](#-dns-setup)
+- [Active-Active Replication](#-active-active-replication)
+- [Architecture](#️-architecture)
+- [Email Flow](#-email-flow)
+
+---
+
+## ✨ Features
+
+| Feature | Description |
+|---|---|
+| 🛠️ **Auto-Provisioning** | One-command SSH deployment to any Linux VPS — idempotent, verbose, zero credential storage |
+| 📋 **Admin Dashboard** | Clean web UI to manage every aspect of your mail server |
+| 🌐 **Domain Management** | Add unlimited mail domains with one-click DKIM key generation and per-domain BIMI logo support |
+| 👤 **User Accounts** | Create mailboxes with display names, passwords, and per-account storage quotas |
+| 🔀 **Aliases & Catch-all** | Forward addresses, wildcards (`*@domain.com`), and flexible routing rules |
+| 📤 **Forwarding** | Forward mail from local addresses to any external destination, with optional local copy |
+| 🦶 **Email Footers** | Automatically inject branded HTML and plain-text footers into outbound mail per domain |
+| 📡 **Open Tracking** | Pixel-based email open tracking with per-message reports and conditional rules |
+| ⏱️ **Rate Limiting** | Configurable per-account/per-domain outbound sending rate limits with conditional rules |
+| 🌐 **Built-in Webmail** | Read, compose, and manage email directly from your browser with IMAP IDLE push |
+| 🔒 **Fail2ban Protection** | Auto-ban IPs on repeated auth failures; manage whitelist & blacklist with full audit log |
+| 🛡️ **2FA (TOTP)** | Two-factor authentication for the admin panel |
+| 📦 **Queue Management** | View and flush the Postfix mail queue from the dashboard |
+| 🗑️ **Unsubscribe Management** | Track and manage unsubscribe requests |
+| 🔍 **DNSBL / Spam Blocking** | DNS block-list management integrated with Postfix |
+| 📄 **DNS Runbook** | Per-domain DNS record viewer with SPF, DKIM, DMARC, BIMI guidance |
+| 📊 **DMARC Reports** | Designate inboxes to receive DMARC aggregate reports and visualize pass/fail results |
+| 🔁 **Outbound Relays** | Route outbound mail through external SMTP servers, assignable per domain, account, or alias |
+| 🔔 **Webhook Notifications** | Send HTTP webhooks on processed outbound emails |
+| ⚙️ **Config Viewer** | Inspect live Postfix/Dovecot/OpenDKIM configs from the UI |
+| 📁 **WebDAV File Storage** | Per-account WebDAV server at `/dav/{email}/` for file storage and FileLink sharing |
+| 📅 **CalDAV Calendar Server** | Per-account CalDAV server at `/caldav/{email}/` for calendar sync with any CalDAV client |
+| 📇 **CardDAV Contact Server** | Per-account CardDAV server at `/carddav/{email}/` for contact sync with any CardDAV client |
+| 🖼️ **BIMI Support** | Serve per-domain SVG brand logos at `/bimi/{domain}/logo.svg` for supporting mail clients |
+| 🔗 **Active-Active Replication** | Multi-node cluster with HLC-based gossip replication for high availability |
+| 🤖 **MCP API** | Model Context Protocol endpoint for AI assistant integration (list/read/send/delete email) |
+| 📡 **REST & SOAP APIs** | Programmatic access to mail operations via REST and SOAP endpoints |
+| 📝 **Self-Registration** | Optional user self-registration portal for invite-based account creation |
+| 🚨 **Abuse Reporting** | Built-in abuse complaint handling and reporting |
+
+---
+
+## 🚀 Quick Start
+
+### Option A — Docker Compose (recommended)
+
+Docker Compose starts Mailserver together with a PostgreSQL database automatically:
+
+```bash
+cp .env.example .env
+# Edit .env — at minimum set HOSTNAME to your mail server's FQDN
+docker compose up -d
+```
+
+Then open **http://your-server:8080** in your browser.
+
+### Option B — Docker Run (bring your own PostgreSQL)
+
+If you already have a PostgreSQL instance, you can run the container directly:
+
+```bash
+docker run -d --name mailserver \
+  -p 25:25 -p 587:587 -p 465:465 -p 2525:2525 \
+  -p 143:143 -p 993:993 -p 110:110 -p 995:995 \
+  -p 8080:8080 \
+  -v maildata:/data \
+  -e HOSTNAME=mail.example.com \
+  -e DATABASE_URL=postgres://mailserver:mailserver@your-pg-host/mailserver \
+  ghcr.io/tayyebi/mailserver:main
+```
 
 ---
 
@@ -63,7 +147,7 @@ Every step produces verbose log output so you can see exactly what is and isn't 
 # Key-based auth (recommended)
 mailserver provision --host mail.example.com --user root --key ~/.ssh/id_ed25519
 
-# Encrypted key + password fallback
+# Encrypted key + passphrase
 mailserver provision --host 10.0.0.5 --user admin \
   --key ~/.ssh/id_rsa --password mypassphrase
 
@@ -73,65 +157,6 @@ mailserver provision --host mail.example.com --user root \
 ```
 
 The `--env-file` flag uploads your local environment file to `/etc/mailserver/env` on the remote server. The service reads this file on startup for settings such as `DATABASE_URL`, `HOSTNAME`, `SEED_USER`, and `SEED_PASS`.
-
----
-
-## ✨ Features
-
-| Feature | Description |
-|---|---|
-| 🛠️ **Auto-Provisioning** | One-command SSH deployment to any Linux VPS — idempotent, verbose, zero credential storage |
-| 📋 **Admin Dashboard** | Clean web UI to manage every aspect of your mail server |
-| 🌐 **Domain Management** | Add unlimited mail domains with one-click DKIM key generation |
-| 👤 **User Accounts** | Create mailboxes with passwords and storage quotas |
-| 🔀 **Aliases & Catch-all** | Forward addresses, wildcards (`*@domain.com`), and routing rules |
-| 📤 **Forwarding** | Forward mail from local addresses to any external destination, with optional local copy |
-| 📡 **Open Tracking** | Pixel-based email open tracking with per-message reports |
-| 🌐 **Built-in Webmail** | Read, compose, and manage email directly from your browser |
-| 🔒 **Fail2ban Protection** | Auto-ban IPs on repeated auth failures; manage whitelist & blacklist |
-| 🛡️ **2FA (TOTP)** | Two-factor authentication for the admin panel |
-| 📦 **Queue Management** | View and flush the Postfix mail queue from the dashboard |
-| 🗑️ **Unsubscribe Management** | Track and manage unsubscribe requests |
-| 🔍 **DNSBL / Spam Blocking** | DNS block-list management integrated with Postfix |
-| 📄 **DNS Runbook** | Per-domain DNS record viewer with SPF, DKIM, DMARC guidance |
-| 📊 **DMARC Reports** | Designate inboxes to receive DMARC aggregate reports and visualize results |
-| 🔁 **Outbound Relays** | Route outbound mail through external SMTP servers, assignable per domain, account, or alias |
-| 🔔 **Webhook Notifications** | Send HTTP webhooks on processed outbound emails |
-| ⚙️ **Config Viewer** | Inspect live Postfix/Dovecot/OpenDKIM configs from the UI |
-| 📁 **WebDAV File Storage** | Per-account WebDAV server at `/dav/{email}/` for file storage and sharing via FileLink |
-| 📅 **CalDAV Calendar Server** | Per-account CalDAV server at `/caldav/{email}/` for calendar sync with any CalDAV client |
-| 🤖 **MCP API** | Model Context Protocol endpoint for AI assistant integration (list/read/send/delete email) |
-
----
-
-## 🚀 Quick Start
-
-### Option A — Docker Compose (recommended)
-
-Docker Compose starts Mailserver together with a PostgreSQL database automatically:
-
-```bash
-cp .env.example .env
-# Edit .env to set your HOSTNAME and other settings
-docker compose up -d
-```
-
-Then open **http://your-server:8080** in your browser.
-
-### Option B — Docker Run (bring your own PostgreSQL)
-
-If you already have a PostgreSQL instance, you can run the container directly:
-
-```bash
-docker run -d --name mailserver \
-  -p 25:25 -p 587:587 -p 465:465 -p 2525:2525 \
-  -p 143:143 -p 993:993 -p 110:110 -p 995:995 \
-  -p 8080:8080 \
-  -v maildata:/data \
-  -e HOSTNAME=mail.example.com \
-  -e DATABASE_URL=postgres://mailserver:mailserver@your-pg-host/mailserver \
-  ghcr.io/tayyebi/mailserver:main
-```
 
 ---
 
@@ -152,35 +177,39 @@ Enable TOTP-based 2FA from the Settings page. Once enabled, append your 6-digit 
 
 ---
 
-## 🌐 Admin Dashboard Walkthrough
+## 🌐 Admin Dashboard
 
 ### Domains
 
-Add your mail domains, generate DKIM signing keys with one click, and get a ready-to-use DNS runbook showing every record you need (MX, SPF, DKIM, DMARC, PTR).
-
+Add your mail domains, generate DKIM signing keys with one click, and get a ready-to-use DNS runbook showing every record you need (MX, SPF, DKIM, DMARC, BIMI, PTR). Upload a per-domain SVG logo for BIMI support in compatible mail clients.
 
 ### Accounts
 
-Create email accounts for your users. Set display names, passwords, and per-account storage quotas.
-
+Create email accounts for your users. Set display names, passwords, and per-account storage quotas. Each account automatically gets WebDAV, CalDAV, and CardDAV access at the corresponding endpoints.
 
 ### Aliases & Catch-all
 
-Create forwarding rules between addresses. Use `*@yourdomain.com` as a catch-all to capture mail sent to any address on the domain. Toggle open tracking per alias.
+Create forwarding rules between addresses. Use `*@yourdomain.com` as a catch-all to capture mail sent to any address on the domain. Toggle open tracking and footer injection per alias.
 
 ### Forwarding
 
 Set up rules to forward mail from a local address to any external email address. Optionally keep a local copy in the original mailbox. Useful for redirecting mail to third-party inboxes without changing the sender's experience.
 
+### Email Footers
+
+Define HTML and plain-text footers that are automatically appended to outbound emails. Rules let you scope footers by sender pattern, domain, or alias — so you can have different signatures for different departments or domains.
+
 ### Open Tracking
 
-When tracking is enabled on an alias, outgoing emails get a tiny invisible tracking pixel injected into the HTML body. Every time the recipient opens the email, a record is created. View detailed per-message open reports from the **Tracking** section.
+When tracking is enabled on an alias, outgoing emails get a tiny invisible tracking pixel injected into the HTML body. Every time the recipient opens the email, a record is created. View detailed per-message open reports from the **Tracking** section. Conditional rules let you enable or disable tracking based on sender, recipient, or other criteria.
 
+### Rate Limiting
+
+Define per-account or per-domain outbound sending rate limits (e.g. max N messages per hour). Conditional rules allow fine-grained control — useful for preventing abuse or enforcing sending quotas on shared infrastructure.
 
 ### Webmail
 
-A lightweight webmail client is built right into the admin panel. Browse folders, read messages, compose new emails (with CC, BCC, Reply-To, priority, and custom headers), and delete messages — all without leaving the browser.
-
+A lightweight webmail client is built right into the admin panel. Browse folders, read messages, compose new emails (with CC, BCC, Reply-To, priority, and custom headers), and delete messages — all without leaving the browser. Uses IMAP IDLE for real-time push delivery of new messages.
 
 ### Fail2ban
 
@@ -190,7 +219,6 @@ Mailserver includes a built-in fail2ban system that monitors Postfix and Dovecot
 - Manually ban or unban individual IPs or CIDR ranges
 - Maintain a permanent whitelist and blacklist
 - Review a full audit log of all ban/unban events
-
 
 ### Queue
 
@@ -220,6 +248,10 @@ Each mail account gets a personal WebDAV drive at `/dav/{email}/`. Users can mou
 
 A built-in CalDAV server at `/caldav/{email}/` lets users sync calendars using any CalDAV-compatible client (Thunderbird, Apple Calendar, DAVx⁵ on Android, etc.). Calendars are created from the admin panel and are scoped per mail account.
 
+### CardDAV Contact Server
+
+A built-in CardDAV server at `/carddav/{email}/` lets users sync contacts with any CardDAV-compatible client (Apple Contacts, Thunderbird, DAVx⁵ on Android, etc.). Address books are managed from the admin panel and scoped per account.
+
 ### MCP API (AI Assistant Integration)
 
 A [Model Context Protocol](https://modelcontextprotocol.io/) endpoint at `POST /mcp` exposes mail operations to AI assistants and automation tools. Supported tools: `list_accounts`, `list_emails`, `read_email`, `send_email`, `delete_email`. Authentication uses the same admin credentials.
@@ -238,13 +270,13 @@ A [Model Context Protocol](https://modelcontextprotocol.io/) endpoint at `POST /
 | `993` | IMAPS | Email retrieval over TLS |
 | `110` | POP3 | Email retrieval (STARTTLS) |
 | `995` | POP3S | Email retrieval over TLS |
-| `8080` | HTTP | Admin dashboard & webmail |
+| `8080` | HTTP | Admin dashboard, webmail, WebDAV, CalDAV, CardDAV, APIs |
 
 ---
 
 ## ⚙️ Configuration
 
-All settings are managed from the admin dashboard. The only file you need to edit before starting is `.env`:
+All runtime settings are managed from the admin dashboard. The only file you need to edit before starting is `.env`:
 
 | Variable | Default | Description |
 |---|---|---|
@@ -277,92 +309,154 @@ The PostgreSQL database (accounts, domains, aliases, tracking data) is required 
 
 After adding a domain in the admin panel, go to **Domains → DNS** to get the exact DNS records you need to publish:
 
-- **MX** — points incoming mail to your server
-- **SPF** — authorizes your server to send mail for the domain
-- **DKIM** — cryptographic signature for outbound mail (key generated in the dashboard)
-- **DMARC** — policy for handling SPF/DKIM failures
-- **PTR** — reverse DNS (set at your VPS provider)
+| Record | Purpose |
+|---|---|
+| **MX** | Points incoming mail to your server |
+| **SPF** | Authorizes your server to send mail for the domain |
+| **DKIM** | Cryptographic signature for outbound mail (key generated in the dashboard) |
+| **DMARC** | Policy for handling SPF/DKIM failures |
+| **BIMI** | Brand logo display in supporting mail clients (requires DMARC enforcement) |
+| **PTR** | Reverse DNS — set at your VPS provider |
 
 The dashboard shows copy-pasteable values for every record.
+
+---
+
+## 🔗 Active-Active Replication
+
+Mailserver supports multi-node active-active clustering for high availability. Each node in the cluster can independently accept reads and writes. Changes are propagated between peers using a **Hybrid Logical Clock (HLC)** gossip protocol:
+
+- **Gossip-pull** — peers pull new change log entries from each other every 5 seconds
+- **Anti-entropy** — full reconciliation scan runs every 60 seconds to close any gaps
+- **Health probing** — peers are probed every 60 seconds; unhealthy nodes are skipped
+- **Log sweeping** — acknowledged log entries are pruned hourly to keep the database lean
+
+Replication endpoints are exposed at `/cluster/*` and use HMAC-signed requests for peer authentication.
 
 ---
 
 ## 🏗️ Architecture
 
 ```mermaid
-graph LR
+graph TB
     Internet((Internet))
+    PeerNode((Peer Node))
 
-    subgraph Docker Container
-        Admin[Rust Admin Dashboard :8080]
-        Filter[Content Filter + Footer Injector]
-        Postfix[Postfix SMTP :25/587/465]
-        Dovecot[Dovecot IMAP/POP3 :143/993/110/995]
-        OpenDKIM[OpenDKIM]
-        Postgres[(PostgreSQL DB)]
+    subgraph container ["Docker Container"]
+        direction TB
 
-        Admin -->|read/write| Postgres
-        Filter -->|tracking & footer lookups| Postgres
-        Admin -->|generate configs from DB| Postfix
-        Admin -->|generate passwd from DB| Dovecot
-        Admin -->|generate key tables from DB| OpenDKIM
-        Postfix -->|DKIM signing| OpenDKIM
-        Postfix -->|LMTP delivery| Dovecot
-        Postfix -->|pipe emails| Filter
-        Filter -->|reinject via SMTP :10025| Postfix
+        subgraph incoming ["Inbound Path"]
+            Postfix["Postfix\nSMTP :25 / :587 / :465"]
+            Dovecot["Dovecot\nIMAP :143/:993  POP3 :110/:995"]
+            OpenDKIM["OpenDKIM\nDKIM milter :8891"]
+        end
+
+        subgraph outbound ["Outbound Pipeline"]
+            Filter["Content Filter\n(footer · tracking · rate-limit)"]
+        end
+
+        subgraph app ["Rust Application :8080"]
+            Admin["Admin Dashboard"]
+            Webmail["Webmail (IMAP IDLE)"]
+            WebDAV["WebDAV  /dav/"]
+            CalDAV["CalDAV  /caldav/"]
+            CardDAV["CardDAV  /carddav/"]
+            Pixel["Pixel Tracker  /pixel/"]
+            MCP["MCP API  /mcp"]
+            BIMI["BIMI  /bimi/"]
+            Replication["Replication  /cluster/"]
+        end
+
+        Postgres[("PostgreSQL")]
     end
 
-    subgraph Persistent Volume /data
+    subgraph volume ["Persistent Volume  /data"]
         SSL["/data/ssl"]
-        DKIM["/data/dkim"]
+        DKIMStore["/data/dkim"]
         Mail["/data/mail"]
         DB["/data/db"]
     end
 
-    Internet -->|SMTP| Postfix
-    Internet -->|IMAP/POP3| Dovecot
-    Internet -->|HTTPS| Admin
+    Internet -->|"SMTP :25"| Postfix
+    Internet -->|"SMTP :587/:465"| Postfix
+    Internet -->|"IMAP/POP3"| Dovecot
+    Internet -->|"HTTPS :8080"| app
+    PeerNode <-->|"gossip replication"| Replication
+
+    Postfix -->|"LMTP :24"| Dovecot
+    Postfix -->|"pipe (outbound)"| Filter
+    Postfix <-->|"DKIM milter"| OpenDKIM
+    Filter -->|"reinject :10025"| Postfix
+    Filter <-->|"lookups"| Postgres
+
+    Admin -->|"read / write"| Postgres
+    Admin -->|"genconfig"| Postfix
+    Admin -->|"genconfig"| Dovecot
+    Admin -->|"genconfig"| OpenDKIM
+    Webmail -->|"IMAP"| Dovecot
+    WebDAV -->|"read / write"| Postgres
+    CalDAV -->|"read / write"| Postgres
+    CardDAV -->|"read / write"| Postgres
+    Pixel -->|"record open"| Postgres
+    MCP -->|"read / write"| Postgres
+    Replication -->|"sync"| Postgres
 
     Postgres --- DB
     Dovecot --- Mail
     Postfix --- SSL
-    OpenDKIM --- DKIM
+    OpenDKIM --- DKIMStore
 ```
+
+---
 
 ## 📨 Email Flow
 
 ```mermaid
 sequenceDiagram
-    participant Sender as Sender (Internet)
+    actor Sender as Sender
     participant Postfix
     participant Filter as Content Filter
-    participant Postgres as PostgreSQL DB
+    participant Postgres as PostgreSQL
     participant OpenDKIM
     participant Dovecot
-    participant Recipient as Recipient (Mailbox)
+    actor Recipient as Recipient
 
-    Note over Sender,Recipient: Inbound Email
-    Sender->>Postfix: SMTP :25
-    Postfix->>Dovecot: LMTP :24
-    Dovecot->>Recipient: store in Maildir
-
-    Note over Sender,Recipient: Outbound Email
-    Sender->>Postfix: SMTP :587 (authenticated)
-    Postfix->>Filter: pipe via pixelfilter
-    Filter->>Postgres: lookup tracking + footer_html
-    alt Footer configured
-        Filter->>Filter: inject domain footer (HTML/plain text)
+    rect rgb(230, 244, 255)
+        Note over Sender,Recipient: Inbound Email
+        Sender->>Postfix: SMTP :25
+        Postfix->>Dovecot: LMTP :24
+        Dovecot->>Recipient: store in Maildir
     end
-    alt Tracking enabled
-        Filter->>Postgres: insert tracked_message
-        Filter->>Filter: inject tracking pixel into HTML body
-    end
-    Filter->>Postfix: reinject via SMTP :10025
-    Postfix->>OpenDKIM: DKIM sign (milter :8891)
-    OpenDKIM-->>Postfix: signed message
-    Postfix->>Recipient: deliver to remote MTA
 
-    Note over Sender,Recipient: Tracking Pixel Open
-    Sender->>Postfix: (later) recipient opens email
-    Recipient->>Postgres: GET /pixel?id=... → record pixel_open
+    rect rgb(230, 255, 235)
+        Note over Sender,Recipient: Outbound Email
+        Sender->>Postfix: SMTP :587 (authenticated)
+
+        Postfix->>Filter: pipe via pixelfilter
+
+        Filter->>Postgres: check rate limit rules
+        alt Rate limit exceeded
+            Filter-->>Sender: reject (552)
+        end
+
+        Filter->>Postgres: lookup footer_html & tracking config
+        alt Footer configured
+            Filter->>Filter: inject footer (HTML + plain text)
+        end
+        alt Open tracking enabled
+            Filter->>Postgres: insert tracked_message record
+            Filter->>Filter: inject tracking pixel into HTML body
+        end
+
+        Filter->>Postfix: reinject via SMTP :10025
+        Postfix->>OpenDKIM: DKIM sign (milter :8891)
+        OpenDKIM-->>Postfix: signed message
+        Postfix->>Recipient: deliver to remote MTA
+    end
+
+    rect rgb(255, 250, 230)
+        Note over Sender,Recipient: Tracking Pixel Open
+        Recipient->>Postfix: (later) recipient opens email
+        Recipient->>Postgres: GET /pixel?id=… → record pixel_open
+    end
 ```
