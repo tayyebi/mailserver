@@ -499,11 +499,27 @@ pub struct DigestEntry {
 
 fn load_available_migrations() -> Vec<(String, String)> {
     let mut migrations = Vec::new();
-    let paths = vec!["migrations", "/app/migrations"];
+    let mut paths = vec![
+        std::path::PathBuf::from("migrations"),
+        std::path::PathBuf::from("/app/migrations"),
+    ];
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            paths.push(dir.join("migrations"));
+            paths.push(dir.join("mailserver/migrations"));
+        }
+    }
+
+    if let Ok(cwd) = std::env::current_dir() {
+        paths.push(cwd.join("mailserver/migrations"));
+    }
+
+    paths.sort();
+    paths.dedup();
     let mut found_any = false;
 
-    for base_path in paths {
-        let path = std::path::Path::new(base_path);
+    for path in &paths {
         if !path.exists() || !path.is_dir() {
             continue;
         }
@@ -527,7 +543,12 @@ fn load_available_migrations() -> Vec<(String, String)> {
     }
 
     if !found_any {
-        warn!("[db] no migrations directory found (checked ./migrations and /app/migrations)");
+        let checked = paths
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        warn!("[db] no migrations directory found (checked {})", checked);
     }
 
     // Sort by filename to ensure correct order
