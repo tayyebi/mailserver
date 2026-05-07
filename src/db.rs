@@ -1,6 +1,7 @@
 use log::{debug, error, info, warn};
 use postgres::{Client, NoTls};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 fn now() -> String {
@@ -515,8 +516,8 @@ fn load_available_migrations() -> Vec<(String, String)> {
         paths.push(cwd.join("mailserver/migrations"));
     }
 
-    paths.sort();
-    paths.dedup();
+    let mut seen = HashSet::new();
+    paths.retain(|p| seen.insert(p.to_string_lossy().into_owned()));
     let mut found_any = false;
 
     for path in &paths {

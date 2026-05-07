@@ -1,6 +1,7 @@
 use crate::db::Database;
 use chrono::Utc;
 use log::{debug, error, info, warn};
+use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -28,8 +29,8 @@ fn load_template(filename: &str) -> std::io::Result<String> {
         paths.push(cwd.join("mailserver/templates/config").join(filename));
     }
 
-    paths.sort();
-    paths.dedup();
+    let mut seen = HashSet::new();
+    paths.retain(|p| seen.insert(p.to_string_lossy().into_owned()));
 
     for path in &paths {
         if path.exists() {
