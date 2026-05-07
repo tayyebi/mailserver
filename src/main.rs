@@ -201,7 +201,10 @@ fn main() {
                 error!("[seed] failed to hash password: {}", e);
                 std::process::exit(1);
             });
-            database.seed_admin(&username, &hash);
+            if let Err(e) = database.seed_admin(&username, &hash) {
+                error!("[seed] failed to seed admin user: {}", e);
+                std::process::exit(1);
+            }
             info!("[seed] admin user seeded successfully: {}", username);
         }
         "genconfig" => {
