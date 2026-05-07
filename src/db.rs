@@ -797,18 +797,21 @@ impl Database {
         }
     }
 
-    pub fn seed_admin(&self, username: &str, password_hash: &str) {
+    pub fn seed_admin(&self, username: &str, password_hash: &str) -> Result<(), String> {
         info!("[db] seeding admin user: {}", username);
         let mut conn = self.conn();
         let ts = now();
-        if let Err(e) = conn.execute(
+        conn.execute(
             "INSERT INTO admins (username, password_hash, created_at, updated_at)
              VALUES ($1, $2, $3, $4)
              ON CONFLICT (username) DO NOTHING",
             &[&username, &password_hash, &ts, &ts],
-        ) {
+        )
+        .map_err(|e| {
             error!("[db] failed to execute query: {}", e);
-        }
+            e.to_string()
+        })?;
+        Ok(())
     }
 
     // ── Domain methods ──
