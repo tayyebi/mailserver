@@ -79,9 +79,9 @@ disable_vrfy_command = yes
 # Limits
 message_size_limit = {{ message_size_limit }}
 
-# Preserve environment variables from the container and pass them to pipe transports
+# Preserve selected container environment variables for Postfix pipe transports
 import_environment = TZ MAIL_CONFIG LANG DATABASE_URL HOSTNAME ADMIN_PORT
-# Export environment variables to pipe transport subprocesses (e.g. content filter)
+# Export the same variables to pipe transport subprocesses (e.g. content filter)
 export_environment = TZ MAIL_CONFIG LANG DATABASE_URL HOSTNAME ADMIN_PORT
 
 # Outbound relay configuration
