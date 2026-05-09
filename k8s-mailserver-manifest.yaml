@@ -11,9 +11,9 @@ metadata:
 type: Opaque
 stringData:
   # REQUIRED: replace with your PostgreSQL connection string
-  DATABASE_URL: "postgres://mailserver:CHANGEME_PLACEHOLDER_INSECURE@your-postgres-host/mailserver"
+  DATABASE_URL: "postgres://mailserver:YOUR_DB_PASSWORD_HERE@your-postgres-host/mailserver"
   # REQUIRED: change initial admin password
-  SEED_PASS: "CHANGEME_PLACEHOLDER_INSECURE"
+  SEED_PASS: "YOUR_ADMIN_PASSWORD_HERE"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -22,7 +22,7 @@ metadata:
   namespace: mailserver
 data:
   # REQUIRED: set to your real mail server FQDN (must match DNS/certificate setup).
-  HOSTNAME: mail.example.com
+  HOSTNAME: REQUIRED-CHANGE-ME.example.com
   SEED_USER: admin
   TZ: UTC
   RUST_LOG: info
@@ -60,6 +60,8 @@ spec:
     spec:
       containers:
         - name: mailserver
+          # Intentionally uses `main` to track the latest published image.
+          # For production change control, pin a release tag and use IfNotPresent.
           image: ghcr.io/tayyebi/mailserver:main
           # This uses the mutable `main` tag; keep Always so new pods pull the latest image.
           # For pinned immutable tags (e.g., v1.2.3), switch to IfNotPresent.
