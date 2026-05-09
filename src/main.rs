@@ -179,6 +179,33 @@ fn main() {
             }
             info!("[seed] admin user seeded successfully: {}", username);
         }
+        "reset-password" => {
+            let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
+                error!("[reset-password] DATABASE_URL not set; ensure it is provided via environment");
+                std::process::exit(1);
+            });
+            let username = env::var("RESET_USER").unwrap_or_else(|_| {
+                debug!("[reset-password] RESET_USER not set, defaulting to admin");
+                "admin".to_string()
+            });
+            let password = env::var("RESET_PASS").unwrap_or_else(|_| {
+                error!("[reset-password] RESET_PASS not set; provide the new password via RESET_PASS");
+                std::process::exit(1);
+            });
+
+            info!("[reset-password] resetting password for admin user: {}", username);
+            let database = db::Database::open(&db_url);
+            let admin = database.get_admin_by_username(&username).unwrap_or_else(|| {
+                error!("[reset-password] admin user not found: {}", username);
+                std::process::exit(1);
+            });
+            let hash = auth::hash_password(&password).unwrap_or_else(|e| {
+                error!("[reset-password] failed to hash password: {}", e);
+                std::process::exit(1);
+            });
+            database.update_admin_password(admin.id, &hash);
+            info!("[reset-password] password updated for admin user: {}", username);
+        }
         "genconfig" => {
             let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
                 error!("[genconfig] DATABASE_URL not set; ensure it is provided via environment");
@@ -242,8 +269,9 @@ fn main() {
             println!("Usage:");
             println!("  mailserver serve      Start admin dashboard and pixel server");
             println!("  mailserver filter     Run as Postfix content filter");
-            println!("  mailserver seed       Seed default admin user");
-            println!("  mailserver genconfig  Generate mail service configs");
+            println!("  mailserver seed           Seed default admin user");
+            println!("  mailserver reset-password Reset an admin user's password");
+            println!("  mailserver genconfig      Generate mail service configs");
             println!("  mailserver gencerts   Generate TLS certificates and DH parameters");
             println!("  mailserver provision  Auto-provision a remote server via SSH");
             println!();
@@ -254,6 +282,8 @@ fn main() {
             println!("  PIXEL_BASE_URL   Base URL for tracking pixels");
             println!("  SEED_USER        Default admin username (default: admin)");
             println!("  SEED_PASS        Default admin password (default: admin)");
+            println!("  RESET_USER       Admin username to reset (default: admin)");
+            println!("  RESET_PASS       New password (required for reset-password)");
             println!();
             println!("Run 'mailserver provision' without arguments for provisioning help.");
         }
