@@ -1,9 +1,10 @@
 use crate::db::Database;
 use chrono::Utc;
 use log::{debug, error, info, warn};
+use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 #[cfg(unix)]
@@ -12,22 +13,44 @@ use std::os::unix::fs::OpenOptionsExt;
 // ── Template Loading ──
 
 fn load_template(filename: &str) -> std::io::Result<String> {
-    // Try to load from templates/config directory
-    let paths = vec![
-        format!("templates/config/{}", filename),
-        format!("/app/templates/config/{}", filename),
+    let mut paths = vec![
+        PathBuf::from(format!("templates/config/{}", filename)),
+        PathBuf::from(format!("/app/templates/config/{}", filename)),
     ];
 
-    for path in paths {
-        if Path::new(&path).exists() {
-            debug!("[config] loading template from {}", path);
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            paths.push(dir.join("templates/config").join(filename));
+            paths.push(dir.join("mailserver/templates/config").join(filename));
+        }
+    }
+
+    if let Ok(cwd) = std::env::current_dir() {
+        paths.push(cwd.join("mailserver/templates/config").join(filename));
+    }
+
+    let mut seen = HashSet::new();
+    paths.retain(|p| seen.insert(p.to_string_lossy().into_owned()));
+
+    for path in &paths {
+        if path.exists() {
+            debug!("[config] loading template from {}", path.display());
             return fs::read_to_string(path);
         }
     }
 
+    let attempted_paths = paths
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+
     Err(std::io::Error::new(
         std::io::ErrorKind::NotFound,
-        format!("Template {} not found in any template directory", filename),
+        format!(
+            "Template {} not found in any template directory (attempted: {})",
+            filename, attempted_paths
+        ),
     ))
 }
 
