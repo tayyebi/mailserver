@@ -561,7 +561,7 @@ fn bootstrap_minimal_runtime_tables(client: &mut Client) {
     for stmt in minimal_runtime_bootstrap_sql() {
         client
             .execute(stmt, &[])
-            .expect("Failed to create minimal runtime table");
+            .expect("Failed to execute bootstrap SQL statement");
     }
 }
 
