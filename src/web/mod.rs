@@ -172,13 +172,7 @@ pub async fn start_server(state: AppState) {
 
     info!("[web] initializing admin web server on port {}", port);
 
-    let static_dir = if std::path::Path::new("/app/static").exists() {
-        info!("[web] serving static files from /app/static");
-        "/app/static"
-    } else {
-        info!("[web] serving static files from ./static");
-        "./static"
-    };
+    let static_dir = find_static_dir();
 
     let pixel_routes = routes::pixel::routes();
     let bimi_routes = routes::bimi::routes();
@@ -187,7 +181,18 @@ pub async fn start_server(state: AppState) {
     let registration_routes = routes::registration_routes();
     let auth_routes = routes::auth_routes();
 
-    let static_service = get_service(ServeDir::new(static_dir));
+    let static_routes: Router<AppState> = match static_dir {
+        Some(ref dir) => {
+            info!("[web] serving static files from {}", dir);
+            Router::new().nest_service("/static", get_service(ServeDir::new(dir)))
+        }
+        None => {
+            info!("[web] no static directory found, using embedded static files");
+            Router::new()
+                .route("/static/style.css", axum::routing::get(embedded_style_css))
+                .route("/static/desktop.css", axum::routing::get(embedded_desktop_css))
+        }
+    };
 
     let app = Router::new()
         .merge(pixel_routes)
@@ -195,6 +200,7 @@ pub async fn start_server(state: AppState) {
         .merge(unsubscribe_routes)
         .merge(webdav_routes)
         .merge(registration_routes)
+        .merge(static_routes)
         .merge(auth_routes)
         // CalDAV protocol handler — handles all HTTP methods on /caldav/{email}/...
         .route("/caldav/*path", axum::routing::any(routes::caldav::protocol_handler))
@@ -214,7 +220,6 @@ pub async fn start_server(state: AppState) {
                 axum::response::Redirect::permanent("/carddav/")
             }),
         )
-        .nest_service("/static", static_service)
         .fallback(handle_not_found)
         .with_state(state);
 
@@ -234,6 +239,36 @@ async fn handle_not_found(uri: Uri) -> Response {
         &message,
         "/",
         "Dashboard",
+    )
+}
+
+fn find_static_dir() -> Option<String> {
+    let candidates: Vec<String> = {
+        let mut v = vec![
+            "/app/static".to_string(),
+            "static".to_string(),
+        ];
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                v.push(dir.join("static").to_string_lossy().into_owned());
+            }
+        }
+        v
+    };
+    candidates.into_iter().find(|p| std::path::Path::new(p).is_dir())
+}
+
+async fn embedded_style_css() -> impl axum::response::IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "text/css; charset=utf-8")],
+        include_str!("../../static/style.css"),
+    )
+}
+
+async fn embedded_desktop_css() -> impl axum::response::IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "text/css; charset=utf-8")],
+        include_str!("../../static/desktop.css"),
     )
 }
 
