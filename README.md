@@ -2,9 +2,9 @@
 
 # 📬 Mailserver
 
-**A fully self-hosted mail server in a single Docker container.**
+**A fully self-hosted mail server — single Docker container or single binary.**
 
-Send, receive, and manage email with a sleek web admin panel, built-in webmail, open tracking, fail2ban protection, DKIM signing, CalDAV/CardDAV, active-active replication, and more. No complex setup. No third-party dependencies.
+Send, receive, and manage email with a sleek web admin panel, built-in webmail, open tracking, fail2ban protection, DKIM signing, CalDAV/CardDAV, and more. No complex setup. No third-party dependencies.
 
 [![Docker Image](https://img.shields.io/badge/ghcr.io-tayyebi%2Fmailserver-blue?logo=docker)](https://ghcr.io/tayyebi/mailserver)
 [![License](https://img.shields.io/github/license/tayyebi/mailserver)](LICENSE)
@@ -12,7 +12,7 @@ Send, receive, and manage email with a sleek web admin panel, built-in webmail, 
 
 > **Less moving parts. Less failure.**
 
-Alpine · Postfix · Dovecot · OpenDKIM · Rust · PostgreSQL — all in one container.
+Alpine · Postfix · Dovecot · OpenDKIM · Rust · PostgreSQL
 
 </div>
 
@@ -21,15 +21,17 @@ Alpine · Postfix · Dovecot · OpenDKIM · Rust · PostgreSQL — all in one co
 ## Table of Contents
 
 - [Features](#-features)
-- [Quick Start](#-quick-start)
-- [Auto-Provisioning](#️-auto-provisioning)
+- [Installation](#-installation)
+  - [Method 1 — Docker Compose (recommended)](#method-1--docker-compose-recommended)
+  - [Method 2 — Docker Run](#method-2--docker-run)
+  - [Method 3 — Single Binary (bare metal)](#method-3--single-binary-bare-metal)
+  - [Method 4 — Auto-Provisioning (SSH)](#method-4--auto-provisioning-ssh)
 - [First Login](#-first-login)
 - [Admin Dashboard](#-admin-dashboard)
 - [Port Reference](#-port-reference)
 - [Configuration](#️-configuration)
 - [Persistent Data](#-persistent-data)
 - [DNS Setup](#-dns-setup)
-- [Active-Active Replication](#-active-active-replication)
 - [Architecture](#️-architecture)
 - [Email Flow](#-email-flow)
 
@@ -63,7 +65,6 @@ Alpine · Postfix · Dovecot · OpenDKIM · Rust · PostgreSQL — all in one co
 | 📅 **CalDAV Calendar Server** | Per-account CalDAV server at `/caldav/{email}/` for calendar sync with any CalDAV client |
 | 📇 **CardDAV Contact Server** | Per-account CardDAV server at `/carddav/{email}/` for contact sync with any CardDAV client |
 | 🖼️ **BIMI Support** | Serve per-domain SVG brand logos at `/bimi/{domain}/logo.svg` for supporting mail clients |
-| 🔗 **Active-Active Replication** | Multi-node cluster with HLC-based gossip replication for high availability |
 | 🤖 **MCP API** | Model Context Protocol endpoint for AI assistant integration (list/read/send/delete email) |
 | 📡 **REST & SOAP APIs** | Programmatic access to mail operations via REST and SOAP endpoints |
 | 📝 **Self-Registration** | Optional user self-registration portal for invite-based account creation |
@@ -71,40 +72,257 @@ Alpine · Postfix · Dovecot · OpenDKIM · Rust · PostgreSQL — all in one co
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Installation
 
-### Option A — Docker Compose (recommended)
+### Method 1 — Docker Compose (recommended)
 
-Docker Compose starts Mailserver together with a PostgreSQL database automatically:
+The simplest path. Docker Compose starts the mail server **and** a PostgreSQL database together with a single command. Everything — TLS certificates, DKIM keys, Postfix/Dovecot/OpenDKIM configs — is generated automatically on first start.
+
+**Prerequisites:** Docker Engine 24+ and Docker Compose v2.
+
+**Step 1 — Clone the repository and create your environment file**
 
 ```bash
+git clone https://github.com/tayyebi/mailserver.git
+cd mailserver
 cp .env.example .env
-# Edit .env — at minimum set HOSTNAME to your mail server's FQDN
+```
+
+**Step 2 — Set your hostname**
+
+Open `.env` and set `HOSTNAME` to the fully-qualified domain name you'll use for mail (e.g. `mail.example.com`). Change `SEED_PASS` while you're there.
+
+```bash
+# .env (minimum required change)
+HOSTNAME=mail.example.com
+SEED_PASS=changeme
+```
+
+**Step 3 — Start the stack**
+
+```bash
 docker compose up -d
 ```
 
-Then open **http://your-server:8080** in your browser.
+This starts two containers:
+- `db` — PostgreSQL 16 (data stored in the `maildb` volume)
+- `mailserver` — the mail server (data stored in the `maildata` volume)
 
-### Option B — Docker Run (bring your own PostgreSQL)
+**Step 4 — Open the admin dashboard**
 
-If you already have a PostgreSQL instance, you can run the container directly:
+```
+http://your-server-ip:8080
+```
+
+Login with `admin` / `changeme` (or whatever you set in `SEED_PASS`).
+
+**Upgrading**
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+---
+
+### Method 2 — Docker Run
+
+Use this if you already have a PostgreSQL instance you want to reuse.
+
+**Prerequisites:** Docker Engine 24+ and a running PostgreSQL instance.
+
+**Step 1 — Create the database**
+
+```sql
+CREATE USER mailserver WITH PASSWORD 'strongpassword';
+CREATE DATABASE mailserver OWNER mailserver;
+```
+
+**Step 2 — Run the container**
 
 ```bash
 docker run -d --name mailserver \
+  --restart unless-stopped \
   -p 25:25 -p 587:587 -p 465:465 -p 2525:2525 \
   -p 143:143 -p 993:993 -p 110:110 -p 995:995 \
   -p 8080:8080 \
   -v maildata:/data \
   -e HOSTNAME=mail.example.com \
-  -e DATABASE_URL=postgres://mailserver:mailserver@your-pg-host/mailserver \
+  -e DATABASE_URL=postgres://mailserver:strongpassword@your-pg-host/mailserver \
+  -e SEED_PASS=changeme \
+  -e TZ=UTC \
   ghcr.io/tayyebi/mailserver:main
+```
+
+**Step 3 — Open the admin dashboard**
+
+```
+http://your-server-ip:8080
+```
+
+**To put the admin panel behind HTTPS**, place Nginx or Caddy in front and proxy to port 8080. The mail ports (25, 587, 465, 143, 993, etc.) connect directly.
+
+---
+
+### Method 3 — Single Binary (bare metal)
+
+The `mailserver` binary is fully self-contained: config templates, database migrations, and static assets are all compiled in. You only need to install the system mail services it manages.
+
+**Supported distros:** Debian/Ubuntu (tested), Alpine, RHEL/CentOS (via `dnf`/`yum`).
+
+#### Step 1 — Install system dependencies
+
+**Debian / Ubuntu:**
+
+```bash
+apt-get update
+apt-get install -y \
+  postfix postfix-pcre \
+  dovecot-core dovecot-imapd dovecot-pop3d dovecot-lmtpd \
+  opendkim opendkim-tools \
+  openssl curl \
+  postgresql postgresql-client
+```
+
+When the Postfix installer prompts for a mail type, choose **"No configuration"** — the binary generates the config itself.
+
+**Alpine:**
+
+```bash
+apk add --no-cache \
+  postfix dovecot dovecot-lmtpd dovecot-pop3d \
+  opendkim opendkim-utils \
+  openssl curl \
+  postgresql16
+```
+
+#### Step 2 — Set up PostgreSQL
+
+```bash
+# Start PostgreSQL (Debian/Ubuntu)
+systemctl enable --now postgresql
+
+# Create the database and user
+sudo -u postgres psql <<'SQL'
+CREATE USER mailserver WITH PASSWORD 'strongpassword';
+CREATE DATABASE mailserver OWNER mailserver;
+SQL
+```
+
+#### Step 3 — Download the binary
+
+Download the latest binary from the [Releases page](https://github.com/tayyebi/mailserver/releases) or pull it from the container image:
+
+```bash
+# Option A — from GitHub Releases
+curl -L https://github.com/tayyebi/mailserver/releases/latest/download/mailserver \
+  -o /usr/local/bin/mailserver
+chmod +x /usr/local/bin/mailserver
+
+# Option B — extract from the Docker image (always matches main branch)
+docker create --name tmp ghcr.io/tayyebi/mailserver:main
+docker cp tmp:/usr/local/bin/mailserver /usr/local/bin/mailserver
+docker rm tmp
+chmod +x /usr/local/bin/mailserver
+```
+
+#### Step 4 — Create the environment file
+
+```bash
+mkdir -p /etc/mailserver
+
+cat > /etc/mailserver/env <<'EOF'
+HOSTNAME=mail.example.com
+DATABASE_URL=postgres://mailserver:strongpassword@localhost/mailserver
+ADMIN_PORT=8080
+SEED_USER=admin
+SEED_PASS=changeme
+TZ=UTC
+EOF
+
+chmod 600 /etc/mailserver/env
+```
+
+#### Step 5 — Create system users and directories
+
+```bash
+# vmail user for Dovecot mailbox ownership
+useradd -r -s /sbin/nologin -d /dev/null vmail 2>/dev/null || true
+
+# Required directories
+mkdir -p /data/ssl /data/dkim /data/mail
+chown -R vmail:vmail /data/mail
+```
+
+#### Step 6 — Run initial setup
+
+```bash
+set -a; source /etc/mailserver/env; set +a
+
+# Generate TLS certificates (skipped if /data/ssl/cert.pem already exists)
+mailserver gencerts
+
+# Seed the admin user into the database
+mailserver seed
+
+# Generate Postfix / Dovecot / OpenDKIM config files
+mailserver genconfig
+```
+
+#### Step 7 — Install the systemd service
+
+```bash
+cat > /etc/systemd/system/mailserver.service <<'EOF'
+[Unit]
+Description=Mailserver (Postfix + Dovecot + OpenDKIM)
+After=network.target postgresql.service
+Wants=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/mailserver/env
+ExecStartPre=/usr/local/bin/mailserver genconfig
+ExecStart=/usr/local/bin/mailserver serve
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now mailserver
+```
+
+> **Note:** `serve` manages configuration regeneration but does **not** start Postfix/Dovecot/OpenDKIM — those are managed by the OS service manager. The `entrypoint.sh` in the Docker image handles starting all four together; for bare-metal you manage each service separately.
+
+Start the mail services:
+
+```bash
+systemctl enable --now dovecot opendkim postfix
+```
+
+#### Step 8 — Open the admin dashboard
+
+```
+http://your-server-ip:8080
+```
+
+#### Resetting the admin password
+
+If you ever lose access:
+
+```bash
+RESET_USER=admin RESET_PASS=newpassword mailserver reset-password
 ```
 
 ---
 
-## 🛠️ Auto-Provisioning
+### Method 4 — Auto-Provisioning (SSH)
 
-Spin up a fresh mailserver on **any Linux VPS in one command** — no manual SSH steps, no config files to write by hand.
+Spin up a fresh mailserver on **any Linux VPS in one command** — no manual SSH steps, no config files to write by hand. Run this from your local machine.
+
+**Prerequisites:** The `mailserver` binary on your local machine (see Step 3 above).
 
 ```bash
 mailserver provision \
@@ -113,20 +331,19 @@ mailserver provision \
   --key ~/.ssh/id_ed25519
 ```
 
-The command connects over SSH, then idempotently:
+The command connects over SSH and idempotently:
 
 1. **Detects the package manager** — `apt-get`, `apk`, `dnf`, or `yum`
-2. **Installs system dependencies** — Postfix, Dovecot (with LMTP/IMAP/POP3 plugins), OpenDKIM, OpenSSL, curl, PostgreSQL client — skipped if already present
-3. **Creates system users & directories** — `vmail`, `opendkim`, `/data/…`, `/app/…`, `/etc/mailserver` — skipped if already present
-4. **Uploads the current binary** — copies itself to `/usr/local/bin/mailserver` so the remote is always in sync
-5. **Uploads supporting files** — `templates/`, `migrations/`, `static/`, `entrypoint.sh` — each file skipped if already present
-6. **Runs initial setup** — `gencerts` (skipped if certs exist), `seed`, `genconfig`
-7. **Installs the system service** — writes a `systemd` unit (or OpenRC init script on Alpine) — skipped if already installed
-8. **Enables and starts the service**
+2. **Installs system dependencies** — Postfix, Dovecot, OpenDKIM, OpenSSL, PostgreSQL — skipped if already present
+3. **Creates system users and directories** — `vmail`, `opendkim`, `/data/…` — skipped if already present
+4. **Uploads the current binary** — copies itself to `/usr/local/bin/mailserver`
+5. **Runs initial setup** — `gencerts` (skipped if certs exist), `seed`, `genconfig`
+6. **Installs the system service** — writes a `systemd` unit (or OpenRC init script on Alpine) — skipped if already installed
+7. **Enables and starts the service**
 
 Every step produces verbose log output so you can see exactly what is and isn't being done.
 
-### Options
+**Options:**
 
 | Flag | Default | Description |
 |---|---|---|
@@ -137,26 +354,21 @@ Every step produces verbose log output so you can see exactly what is and isn't 
 | `--password <pwd>` | — | Password for SSH auth **or** passphrase for an encrypted key |
 | `--env-file <path>` | — | Local `.env` file to upload as `/etc/mailserver/env` |
 
-> **Credentials are held in memory only — they are never written to disk.**
->
-> Public-key authentication is tried first; password is used as a fallback.
+> Credentials are held in memory only — they are never written to disk.
 
-### Examples
+**Examples:**
 
 ```bash
 # Key-based auth (recommended)
 mailserver provision --host mail.example.com --user root --key ~/.ssh/id_ed25519
 
-# Encrypted key + passphrase
-mailserver provision --host 10.0.0.5 --user admin \
-  --key ~/.ssh/id_rsa --password mypassphrase
-
-# Password-only + upload environment file
+# Upload an environment file (sets HOSTNAME, DATABASE_URL, SEED_PASS, etc. on the remote)
 mailserver provision --host mail.example.com --user root \
-  --password s3cr3t --env-file .env.prod
-```
+  --key ~/.ssh/id_ed25519 --env-file .env.prod
 
-The `--env-file` flag uploads your local environment file to `/etc/mailserver/env` on the remote server. The service reads this file on startup for settings such as `DATABASE_URL`, `HOSTNAME`, `SEED_USER`, and `SEED_PASS`.
+# Password auth
+mailserver provision --host mail.example.com --user root --password s3cr3t
+```
 
 ---
 
@@ -164,10 +376,17 @@ The `--env-file` flag uploads your local environment file to `/etc/mailserver/en
 
 | Field | Value |
 |---|---|
-| **Username** | `admin` |
-| **Password** | `admin` |
+| **URL** | `http://your-server:8080` |
+| **Username** | `admin` (or `SEED_USER`) |
+| **Password** | `admin` (or `SEED_PASS`) |
 
-> ⚠️ **Change your password immediately** after first login via **Settings**.
+> ⚠️ **Change your password immediately** after first login via **Settings → Password**.
+
+If you lose access, reset the password without a login session:
+
+```bash
+RESET_USER=admin RESET_PASS=newpassword mailserver reset-password
+```
 
 ### Two-Factor Authentication (2FA)
 
@@ -193,32 +412,27 @@ Create forwarding rules between addresses. Use `*@yourdomain.com` as a catch-all
 
 ### Forwarding
 
-Set up rules to forward mail from a local address to any external email address. Optionally keep a local copy in the original mailbox. Useful for redirecting mail to third-party inboxes without changing the sender's experience.
+Set up rules to forward mail from a local address to any external email address. Optionally keep a local copy in the original mailbox.
 
 ### Email Footers
 
-Define HTML and plain-text footers that are automatically appended to outbound emails. Rules let you scope footers by sender pattern, domain, or alias — so you can have different signatures for different departments or domains.
+Define HTML and plain-text footers that are automatically appended to outbound emails. Rules let you scope footers by sender pattern, domain, or alias.
 
 ### Open Tracking
 
-When tracking is enabled on an alias, outgoing emails get a tiny invisible tracking pixel injected into the HTML body. Every time the recipient opens the email, a record is created. View detailed per-message open reports from the **Tracking** section. Conditional rules let you enable or disable tracking based on sender, recipient, or other criteria.
+When tracking is enabled on an alias, outgoing emails get a tiny invisible tracking pixel injected into the HTML body. Every time the recipient opens the email, a record is created. View detailed per-message open reports from the **Tracking** section.
 
 ### Rate Limiting
 
-Define per-account or per-domain outbound sending rate limits (e.g. max N messages per hour). Conditional rules allow fine-grained control — useful for preventing abuse or enforcing sending quotas on shared infrastructure.
+Define per-account or per-domain outbound sending rate limits (e.g. max N messages per hour). Conditional rules allow fine-grained control.
 
 ### Webmail
 
-A lightweight webmail client is built right into the admin panel. Browse folders, read messages, compose new emails (with CC, BCC, Reply-To, priority, and custom headers), and delete messages — all without leaving the browser. Uses IMAP IDLE for real-time push delivery of new messages.
+A lightweight webmail client built right into the admin panel. Browse folders, read messages, compose new emails (with CC, BCC, Reply-To, priority, and custom headers), and delete messages. Uses IMAP IDLE for real-time push delivery of new messages.
 
 ### Fail2ban
 
-Mailserver includes a built-in fail2ban system that monitors Postfix and Dovecot logs for repeated authentication failures on SMTP, IMAP, and POP3. Offending IPs are automatically banned. You can:
-
-- Configure thresholds and ban duration per service
-- Manually ban or unban individual IPs or CIDR ranges
-- Maintain a permanent whitelist and blacklist
-- Review a full audit log of all ban/unban events
+Monitors Postfix and Dovecot logs for repeated authentication failures. Offending IPs are automatically banned. Configure thresholds, manage whitelist/blacklist, and review a full audit log.
 
 ### Queue
 
@@ -226,35 +440,35 @@ Inspect the live Postfix mail queue and flush stuck messages directly from the a
 
 ### DMARC Reports
 
-Designate one or more mailboxes as DMARC report inboxes. The dashboard automatically parses incoming DMARC aggregate reports and lets you visualize pass/fail results, sending sources, and policy dispositions per domain.
+Designate one or more mailboxes as DMARC report inboxes. The dashboard automatically parses incoming DMARC aggregate reports and visualizes pass/fail results.
 
 ### DNS Check
 
-Per-domain DNS health checker with individual shortcut links for each record type. Catch delivery problems before they affect your users.
+Per-domain DNS health checker. Catch delivery problems before they affect your users.
 
 ### Config Viewer
 
-Inspect the live Postfix, Dovecot, and OpenDKIM configuration files generated from your database — useful for debugging.
+Inspect the live Postfix, Dovecot, and OpenDKIM configuration files generated from your database.
 
 ### Outbound Relays
 
-Configure external SMTP relays to route outbound mail through third-party providers (e.g. SendGrid, SES, or a corporate relay). Relays can be assigned globally or scoped to a specific domain, account, or alias, with support for PLAIN and LOGIN authentication.
+Configure external SMTP relays to route outbound mail through third-party providers (SendGrid, SES, etc.). Relays can be assigned globally or scoped to a specific domain, account, or alias.
 
 ### WebDAV File Storage
 
-Each mail account gets a personal WebDAV drive at `/dav/{email}/`. Users can mount it in their OS file manager, upload/download files, and share individual files via one-time FileLink download URLs — all authenticated with their mail credentials.
+Each mail account gets a personal WebDAV drive at `/dav/{email}/`. Users can mount it in their OS file manager and share individual files via one-time FileLink download URLs.
 
 ### CalDAV Calendar Server
 
-A built-in CalDAV server at `/caldav/{email}/` lets users sync calendars using any CalDAV-compatible client (Thunderbird, Apple Calendar, DAVx⁵ on Android, etc.). Calendars are created from the admin panel and are scoped per mail account.
+A built-in CalDAV server at `/caldav/{email}/` for syncing calendars with Thunderbird, Apple Calendar, DAVx⁵ on Android, etc.
 
 ### CardDAV Contact Server
 
-A built-in CardDAV server at `/carddav/{email}/` lets users sync contacts with any CardDAV-compatible client (Apple Contacts, Thunderbird, DAVx⁵ on Android, etc.). Address books are managed from the admin panel and scoped per account.
+A built-in CardDAV server at `/carddav/{email}/` for syncing contacts with Apple Contacts, Thunderbird, DAVx⁵, etc.
 
 ### MCP API (AI Assistant Integration)
 
-A [Model Context Protocol](https://modelcontextprotocol.io/) endpoint at `POST /mcp` exposes mail operations to AI assistants and automation tools. Supported tools: `list_accounts`, `list_emails`, `read_email`, `send_email`, `delete_email`. Authentication uses the same admin credentials.
+A [Model Context Protocol](https://modelcontextprotocol.io/) endpoint at `POST /mcp` exposes mail operations to AI assistants. Supported tools: `list_accounts`, `list_emails`, `read_email`, `send_email`, `delete_email`.
 
 ---
 
@@ -281,27 +495,27 @@ All runtime settings are managed from the admin dashboard. The only file you nee
 | Variable | Default | Description |
 |---|---|---|
 | `HOSTNAME` | `mail.example.com` | Fully-qualified domain name of the mail server |
-| `HTTP_PORT` | `8080` | Admin dashboard port |
+| `ADMIN_PORT` / `HTTP_PORT` | `8080` | Admin dashboard port |
 | `SMTP_PORT` | `25` | Inbound SMTP port |
 | `SUBMISSION_PORT` | `587` | Submission port |
 | `DATABASE_URL` | `postgres://mailserver:mailserver@localhost/mailserver` | PostgreSQL connection string |
-| `SEED_USER` | `admin` | Initial admin username |
-| `SEED_PASS` | `admin` | Initial admin password |
-| `TZ` | `UTC` | Container timezone |
+| `SEED_USER` | `admin` | Initial admin username (used only on first `seed` run) |
+| `SEED_PASS` | `admin` | Initial admin password (used only on first `seed` run) |
+| `TZ` | `UTC` | Timezone |
 
 ---
 
 ## 💾 Persistent Data
 
-All mail data is stored in the `maildata` Docker volume mounted at `/data`:
+All mail data is stored under `/data`:
 
 | Path | Contents |
 |---|---|
 | `/data/ssl/` | TLS certificates (auto-generated self-signed on first start) |
-| `/data/dkim/` | DKIM signing keys |
-| `/data/mail/` | User mailboxes (Maildir format) |
+| `/data/dkim/` | DKIM signing keys (generated per domain from the dashboard) |
+| `/data/mail/` | User mailboxes in Maildir format (`/data/mail/{domain}/{user}/Maildir`) |
 
-The PostgreSQL database (accounts, domains, aliases, tracking data) is required by the mail server. When using Docker Compose, it runs in a separate `db` container with its data stored in the `maildb` volume. When running standalone, point `DATABASE_URL` to your own PostgreSQL instance.
+When using Docker Compose, `/data` is stored in the `maildata` volume. On bare metal, it lives directly on the host. Back up the entire `/data` directory and your PostgreSQL database to preserve all mail and configuration.
 
 ---
 
@@ -322,27 +536,13 @@ The dashboard shows copy-pasteable values for every record.
 
 ---
 
-## 🔗 Active-Active Replication
-
-Mailserver supports multi-node active-active clustering for high availability. Each node in the cluster can independently accept reads and writes. Changes are propagated between peers using a **Hybrid Logical Clock (HLC)** gossip protocol:
-
-- **Gossip-pull** — peers pull new change log entries from each other every 5 seconds
-- **Anti-entropy** — full reconciliation scan runs every 60 seconds to close any gaps
-- **Health probing** — peers are probed every 60 seconds; unhealthy nodes are skipped
-- **Log sweeping** — acknowledged log entries are pruned hourly to keep the database lean
-
-Replication endpoints are exposed at `/cluster/*` and use HMAC-signed requests for peer authentication.
-
----
-
 ## 🏗️ Architecture
 
 ```mermaid
 graph TB
     Internet((Internet))
-    PeerNode((Peer Node))
 
-    subgraph container ["Docker Container"]
+    subgraph container ["Docker Container / Bare-metal Server"]
         direction TB
 
         subgraph incoming ["Inbound Path"]
@@ -364,24 +564,21 @@ graph TB
             Pixel["Pixel Tracker  /pixel/"]
             MCP["MCP API  /mcp"]
             BIMI["BIMI  /bimi/"]
-            Replication["Replication  /cluster/"]
         end
 
         Postgres[("PostgreSQL")]
     end
 
-    subgraph volume ["Persistent Volume  /data"]
+    subgraph volume ["Persistent Data  /data"]
         SSL["/data/ssl"]
         DKIMStore["/data/dkim"]
         Mail["/data/mail"]
-        DB["/data/db"]
     end
 
     Internet -->|"SMTP :25"| Postfix
     Internet -->|"SMTP :587/:465"| Postfix
     Internet -->|"IMAP/POP3"| Dovecot
-    Internet -->|"HTTPS :8080"| app
-    PeerNode <-->|"gossip replication"| Replication
+    Internet -->|"HTTP :8080"| app
 
     Postfix -->|"LMTP :24"| Dovecot
     Postfix -->|"pipe (outbound)"| Filter
@@ -399,12 +596,10 @@ graph TB
     CardDAV -->|"read / write"| Postgres
     Pixel -->|"record open"| Postgres
     MCP -->|"read / write"| Postgres
-    Replication -->|"sync"| Postgres
 
-    Postgres --- DB
-    Dovecot --- Mail
     Postfix --- SSL
     OpenDKIM --- DKIMStore
+    Dovecot --- Mail
 ```
 
 ---
