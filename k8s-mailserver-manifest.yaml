@@ -10,6 +10,8 @@ metadata:
   namespace: mailserver
 type: Opaque
 stringData:
+  # WARNING: template values below must be replaced before use.
+  # For production, prefer external secret managers (Sealed Secrets / External Secrets).
   # REQUIRED: replace with your PostgreSQL connection string
   DATABASE_URL: "postgres://mailserver:YOUR_DB_PASSWORD_HERE@your-postgres-host/mailserver"
   # REQUIRED: change initial admin password
@@ -22,7 +24,7 @@ metadata:
   namespace: mailserver
 data:
   # REQUIRED: set to your real mail server FQDN (must match DNS/certificate setup).
-  HOSTNAME: REQUIRED-CHANGE-ME.example.com
+  HOSTNAME: MUST-BE-CHANGED-OR-DEPLOYMENT-WILL-FAIL
   SEED_USER: admin
   TZ: UTC
   RUST_LOG: info

@@ -434,7 +434,11 @@ kubectl -n mailserver get svc mailserver
 ```
 
 Use the service external IP/hostname to access the admin panel on port `8080` and route mail ports (25/465/587/143/993/110/995) to that endpoint.
-Also configure DNS records for mail delivery: `A`/`AAAA` for your mail host, `MX` for your domain, matching `PTR` (reverse DNS) on the load balancer public IP, plus `SPF`, `DKIM`, and `DMARC`.
+Also configure DNS records for mail delivery:
+- `A`/`AAAA` — resolves your mail host name to the load balancer endpoint
+- `MX` — routes domain mail flow to your mail host
+- `PTR` — reverse DNS for the public IP (required by many receiving providers)
+- `SPF`, `DKIM`, `DMARC` — sender authentication and deliverability protection
 
 ---
 
