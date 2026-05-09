@@ -11,9 +11,9 @@ metadata:
 type: Opaque
 stringData:
   # REQUIRED: replace with your PostgreSQL connection string
-  DATABASE_URL: "postgres://mailserver:<REPLACE_WITH_STRONG_PASSWORD>@your-postgres-host/mailserver"
+  DATABASE_URL: "postgres://mailserver:CHANGEME_PLACEHOLDER_INSECURE@your-postgres-host/mailserver"
   # REQUIRED: change initial admin password
-  SEED_PASS: "<REPLACE_WITH_STRONG_PASSWORD>"
+  SEED_PASS: "CHANGEME_PLACEHOLDER_INSECURE"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -48,6 +48,7 @@ metadata:
   namespace: mailserver
 spec:
   # Keep 1 replica: this deployment mounts a ReadWriteOnce PVC, so only one pod can mount /data at a time.
+  # On reschedule/updates, brief interruption can occur while the PVC detaches/attaches to the replacement pod.
   replicas: 1
   selector:
     matchLabels:
@@ -141,6 +142,7 @@ metadata:
   name: mailserver
   namespace: mailserver
 spec:
+  # Exposes mail/admin ports publicly; add NetworkPolicy/firewall controls for your environment.
   type: LoadBalancer
   selector:
     app: mailserver
