@@ -433,7 +433,8 @@ kubectl apply -f k8s-mailserver-manifest.yaml
 kubectl -n mailserver get svc mailserver
 ```
 
-Use the service external IP/hostname to access the admin panel on port `8080` and route mail ports (25/465/587/143/993/110/995) to that endpoint.
+Use the service external IP/hostname to access the admin panel on port `8080`.
+Route mail ports (25/465/587/143/993/110/995) to the same endpoint.
 Also configure DNS records for mail delivery:
 - `A`/`AAAA` — resolves your mail host name to the load balancer endpoint
 - `MX` — routes domain mail flow to your mail host
