@@ -269,7 +269,42 @@ mailserver seed
 mailserver genconfig
 ```
 
-#### Step 7 — Install the systemd service
+#### Step 7 — Verify the generated configuration files
+
+`mailserver genconfig` writes the live mail-service config directly into the system paths used by Postfix, Dovecot, and OpenDKIM. There is no extra "copy templates into `/etc`" step on bare metal.
+
+The main generated files are:
+
+```text
+/etc/postfix/main.cf
+/etc/postfix/master.cf
+/etc/postfix/virtual_domains
+/etc/postfix/vmailbox
+/etc/postfix/virtual_aliases
+/etc/postfix/recipient_bcc
+/etc/postfix/sender_login_maps
+/etc/postfix/transport_maps
+/etc/postfix/sasl_passwd
+/etc/dovecot/dovecot.conf
+/etc/dovecot/passwd
+/etc/opendkim/opendkim.conf
+/etc/opendkim/KeyTable
+/etc/opendkim/SigningTable
+/etc/opendkim/TrustedHosts
+```
+
+Postfix map files are also compiled with `postmap` during `genconfig`, and DKIM private keys are written under `/data/dkim`.
+
+You can quickly inspect the generated files before enabling services:
+
+```bash
+ls -l /etc/postfix /etc/dovecot /etc/opendkim
+postconf -n
+```
+
+> **Important:** Treat these files as generated output. If you re-run `mailserver genconfig` (or start the managed service), it will regenerate them in place.
+
+#### Step 8 — Install the systemd service
 
 ```bash
 cat > /etc/systemd/system/mailserver.service <<'EOF'
@@ -302,7 +337,7 @@ Start the mail services:
 systemctl enable --now dovecot opendkim postfix
 ```
 
-#### Step 8 — Open the admin dashboard
+#### Step 9 — Open the admin dashboard
 
 ```
 http://your-server-ip:8080
