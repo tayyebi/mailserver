@@ -47,7 +47,7 @@ metadata:
   name: mailserver
   namespace: mailserver
 spec:
-  # Keep 1 replica unless you redesign storage/session consistency for multi-node mail delivery.
+  # Keep 1 replica: this deployment mounts a ReadWriteOnce PVC, so only one pod can mount /data at a time.
   replicas: 1
   selector:
     matchLabels:
@@ -60,8 +60,9 @@ spec:
       containers:
         - name: mailserver
           image: ghcr.io/tayyebi/mailserver:main
-          # For production, prefer a pinned tag (e.g., v1.2.3). Use Always only if tracking mutable tags.
-          imagePullPolicy: IfNotPresent
+          # This uses the mutable `main` tag; keep Always so new pods pull the latest image.
+          # For pinned immutable tags (e.g., v1.2.3), switch to IfNotPresent.
+          imagePullPolicy: Always
           env:
             - name: DATABASE_URL
               valueFrom:
