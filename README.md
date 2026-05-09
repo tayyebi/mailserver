@@ -26,6 +26,7 @@ Alpine · Postfix · Dovecot · OpenDKIM · Rust · PostgreSQL
   - [Method 2 — Docker Run](#method-2--docker-run)
   - [Method 3 — Single Binary (bare metal)](#method-3--single-binary-bare-metal)
   - [Method 4 — Auto-Provisioning (SSH)](#method-4--auto-provisioning-ssh)
+  - [Method 5 — Kubernetes Manifest (K8s providers)](#method-5--kubernetes-manifest-k8s-providers)
 - [First Login](#-first-login)
 - [Admin Dashboard](#-admin-dashboard)
 - [Port Reference](#-port-reference)
@@ -404,6 +405,41 @@ mailserver provision --host mail.example.com --user root \
 # Password auth
 mailserver provision --host mail.example.com --user root --password s3cr3t
 ```
+
+---
+
+### Method 5 — Kubernetes Manifest (K8s providers)
+
+Use the included manifest file if you deploy on Kubernetes providers (EKS/GKE/AKS, etc.).
+
+It uses the current registry image: `ghcr.io/tayyebi/mailserver:main`.
+
+**Step 1 — Edit required placeholders**
+
+Update these values in `k8s-mailserver-manifest.yaml` before applying:
+- `DATABASE_URL`
+- `SEED_PASS`
+- `HOSTNAME`
+
+**Step 2 — Apply the manifest**
+
+```bash
+kubectl apply -f k8s-mailserver-manifest.yaml
+```
+
+**Step 3 — Get external endpoint**
+
+```bash
+kubectl -n mailserver get svc mailserver
+```
+
+Use the service external IP/hostname to access the admin panel on port `8080`.
+Route mail ports (25/465/587/143/993/110/995) to the same endpoint.
+Also configure DNS records for mail delivery:
+- `A`/`AAAA` — resolves your mail host name to the load balancer endpoint
+- `MX` — routes domain mail flow to your mail host
+- `PTR` — reverse DNS for the public IP (required by many receiving providers)
+- `SPF`, `DKIM`, `DMARC` — sender authentication and deliverability protection
 
 ---
 
