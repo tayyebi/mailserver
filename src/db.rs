@@ -557,6 +557,37 @@ fn load_available_migrations() -> Vec<(String, String)> {
     migrations
 }
 
+fn embedded_migrations() -> Vec<(String, String)> {
+    let mut m: Vec<(String, String)> = vec![
+        ("001_initial_schema".into(), include_str!("../migrations/001_initial_schema.sql").into()),
+        ("002_fail2ban".into(), include_str!("../migrations/002_fail2ban.sql").into()),
+        ("003_bimi".into(), include_str!("../migrations/003_bimi.sql").into()),
+        ("004_unsubscribe".into(), include_str!("../migrations/004_unsubscribe.sql").into()),
+        ("005_spambl".into(), include_str!("../migrations/005_spambl.sql").into()),
+        ("006_forwarding".into(), include_str!("../migrations/006_forwarding.sql").into()),
+        ("006_webhook_log".into(), include_str!("../migrations/006_webhook_log.sql").into()),
+        ("007_dmarc_inboxes".into(), include_str!("../migrations/007_dmarc_inboxes.sql").into()),
+        ("008_outbound_relays".into(), include_str!("../migrations/008_outbound_relays.sql").into()),
+        ("009_tracking_patterns".into(), include_str!("../migrations/009_tracking_patterns.sql").into()),
+        ("009_webdav".into(), include_str!("../migrations/009_webdav.sql").into()),
+        ("010_caldav".into(), include_str!("../migrations/010_caldav.sql").into()),
+        ("010_tracking_rules".into(), include_str!("../migrations/010_tracking_rules.sql").into()),
+        ("011_mcp_log".into(), include_str!("../migrations/011_mcp_log.sql").into()),
+        ("012_abuse_inboxes".into(), include_str!("../migrations/012_abuse_inboxes.sql").into()),
+        ("012_dmarc_ruf".into(), include_str!("../migrations/012_dmarc_ruf.sql").into()),
+        ("013_unsubscribe_patterns_api_token".into(), include_str!("../migrations/013_unsubscribe_patterns_api_token.sql").into()),
+        ("014_mcp_log_request_body".into(), include_str!("../migrations/014_mcp_log_request_body.sql").into()),
+        ("015_footer_rules".into(), include_str!("../migrations/015_footer_rules.sql").into()),
+        ("016_registration".into(), include_str!("../migrations/016_registration.sql").into()),
+        ("017_rate_limit_rules".into(), include_str!("../migrations/017_rate_limit_rules.sql").into()),
+        ("018_carddav".into(), include_str!("../migrations/018_carddav.sql").into()),
+        ("019_replication".into(), include_str!("../migrations/019_replication.sql").into()),
+        ("020_hlc_replication".into(), include_str!("../migrations/020_hlc_replication.sql").into()),
+    ];
+    m.sort_by(|a, b| a.0.cmp(&b.0));
+    m
+}
+
 fn bootstrap_minimal_runtime_tables(client: &mut Client) {
     for stmt in minimal_runtime_bootstrap_sql() {
         client
@@ -588,13 +619,16 @@ fn run_migrations(client: &mut Client) {
         .expect("Failed to create _migrations table");
     bootstrap_minimal_runtime_tables(client);
 
-    // 2. Load migrations from files
-    let migrations = load_available_migrations();
-
-    if migrations.is_empty() {
-        warn!("[db] no migration files found");
-        return;
-    }
+    // 2. Load migrations from files, falling back to embedded migrations
+    let migrations = {
+        let from_disk = load_available_migrations();
+        if from_disk.is_empty() {
+            info!("[db] no migration files found on disk, using embedded migrations");
+            embedded_migrations()
+        } else {
+            from_disk
+        }
+    };
 
     // 3. Apply pending migrations
     for (name, sql) in migrations {

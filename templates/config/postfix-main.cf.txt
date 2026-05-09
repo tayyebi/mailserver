@@ -16,10 +16,10 @@ alias_database =
 
 # Virtual mailbox delivery via Dovecot LMTP
 virtual_transport = lmtp:inet:127.0.0.1:24
-virtual_mailbox_domains = lmdb:/etc/postfix/virtual_domains
-virtual_mailbox_maps = lmdb:/etc/postfix/vmailbox
-virtual_alias_maps = lmdb:/etc/postfix/virtual_aliases
-recipient_bcc_maps = lmdb:/etc/postfix/recipient_bcc
+virtual_mailbox_domains = hash:/etc/postfix/virtual_domains
+virtual_mailbox_maps = hash:/etc/postfix/vmailbox
+virtual_alias_maps = hash:/etc/postfix/virtual_aliases
+recipient_bcc_maps = hash:/etc/postfix/recipient_bcc
 
 # SASL auth via Dovecot
 smtpd_sasl_type = dovecot
@@ -49,11 +49,8 @@ smtpd_tls_ciphers = medium
 smtpd_tls_mandatory_ciphers = medium
 tls_medium_cipherlist = ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:AES128-GCM-SHA256:AES256-GCM-SHA384
 
-# TLS session cache to improve performance and reduce handshake overhead
-# Note: These LMDB databases will persist on disk and may grow over time
-# in high-traffic environments. Monitor disk usage in production.
-smtpd_tls_session_cache_database = lmdb:${data_directory}/smtpd_scache
-smtp_tls_session_cache_database = lmdb:${data_directory}/smtp_scache
+smtpd_tls_session_cache_database = btree:${data_directory}/smtpd_scache
+smtp_tls_session_cache_database = btree:${data_directory}/smtp_scache
 
 # Disable SSL compression (CRIME attack mitigation)
 tls_ssl_options = NO_COMPRESSION
@@ -65,7 +62,7 @@ smtpd_timeout = 120s
 {{ milter_config }}
 
 # Sender login maps — allow accounts to send as their aliases
-smtpd_sender_login_maps = lmdb:/etc/postfix/sender_login_maps
+smtpd_sender_login_maps = hash:/etc/postfix/sender_login_maps
 smtpd_sender_restrictions = reject_authenticated_sender_login_mismatch, permit
 
 # Restrictions

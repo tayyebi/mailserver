@@ -45,6 +45,11 @@ fn load_template(filename: &str) -> std::io::Result<String> {
         .collect::<Vec<_>>()
         .join(", ");
 
+    if let Some(content) = embedded_template(filename) {
+        debug!("[config] using embedded template for {}", filename);
+        return Ok(content.to_string());
+    }
+
     Err(std::io::Error::new(
         std::io::ErrorKind::NotFound,
         format!(
@@ -52,6 +57,21 @@ fn load_template(filename: &str) -> std::io::Result<String> {
             filename, attempted_paths
         ),
     ))
+}
+
+fn embedded_template(filename: &str) -> Option<&'static str> {
+    match filename {
+        "postfix-main.cf.txt" => {
+            Some(include_str!("../templates/config/postfix-main.cf.txt"))
+        }
+        "postfix-master.cf.txt" => {
+            Some(include_str!("../templates/config/postfix-master.cf.txt"))
+        }
+        "dovecot.conf.txt" => Some(include_str!("../templates/config/dovecot.conf.txt")),
+        "opendkim.conf.txt" => Some(include_str!("../templates/config/opendkim.conf.txt")),
+        "openssl.cnf.txt" => Some(include_str!("../templates/config/openssl.cnf.txt")),
+        _ => None,
+    }
 }
 
 fn safe_filename(name: &str) -> String {
@@ -218,14 +238,14 @@ milter_default_action = accept"#
     let has_auth = assignments.iter().any(|(r, _)| r.auth_type != "none");
 
     let relay_config = if has_auth {
-        r#"transport_maps = lmdb:/etc/postfix/transport_maps
+        r#"transport_maps = hash:/etc/postfix/transport_maps
 smtp_sasl_auth_enable = yes
-smtp_sasl_password_maps = lmdb:/etc/postfix/sasl_passwd
+smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd
 smtp_sasl_security_options = noanonymous
 smtp_sasl_tls_security_options = noanonymous"#
             .to_string()
     } else if has_assignments {
-        "transport_maps = lmdb:/etc/postfix/transport_maps".to_string()
+        "transport_maps = hash:/etc/postfix/transport_maps".to_string()
     } else {
         "# No outbound relay configured".to_string()
     };
@@ -831,22 +851,21 @@ pub fn postmap_files() {
         "/etc/postfix/transport_maps",
         "/etc/postfix/sasl_passwd",
     ] {
-        // Explicitly specify lmdb format for Alpine Linux compatibility
-        let lmdb_path = format!("lmdb:{}", path);
-        match Command::new("postmap").arg(&lmdb_path).output() {
+        let map_path = format!("hash:{}", path);
+        match Command::new("postmap").arg(&map_path).output() {
             Ok(output) if output.status.success() => {
-                debug!("[config] postmap succeeded for {}", lmdb_path);
+                debug!("[config] postmap succeeded for {}", map_path);
             }
             Ok(output) => {
                 warn!(
                     "[config] postmap for {} exited with status {}: {}",
-                    lmdb_path,
+                    map_path,
                     output.status,
                     String::from_utf8_lossy(&output.stderr)
                 );
             }
             Err(e) => {
-                warn!("[config] failed to run postmap for {}: {}", lmdb_path, e);
+                warn!("[config] failed to run postmap for {}: {}", map_path, e);
             }
         }
     }
