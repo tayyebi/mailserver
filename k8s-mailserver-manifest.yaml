@@ -11,9 +11,9 @@ metadata:
 type: Opaque
 stringData:
   # REQUIRED: replace with your PostgreSQL connection string
-  DATABASE_URL: postgres://mailserver:CHANGEME_INSECURE@your-postgres-host/mailserver
+  DATABASE_URL: "postgres://mailserver:<REPLACE_WITH_STRONG_PASSWORD>@your-postgres-host/mailserver"
   # REQUIRED: change initial admin password
-  SEED_PASS: CHANGEME_INSECURE
+  SEED_PASS: "<REPLACE_WITH_STRONG_PASSWORD>"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -21,6 +21,7 @@ metadata:
   name: mailserver-config
   namespace: mailserver
 data:
+  # REQUIRED: set to your real mail server FQDN (must match DNS/certificate setup).
   HOSTNAME: mail.example.com
   SEED_USER: admin
   TZ: UTC
@@ -59,8 +60,8 @@ spec:
       containers:
         - name: mailserver
           image: ghcr.io/tayyebi/mailserver:main
-          # For production, prefer a pinned tag (e.g., v1.2.3) with IfNotPresent.
-          imagePullPolicy: Always
+          # For production, prefer a pinned tag (e.g., v1.2.3). Use Always only if tracking mutable tags.
+          imagePullPolicy: IfNotPresent
           env:
             - name: DATABASE_URL
               valueFrom:
