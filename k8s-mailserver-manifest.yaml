@@ -1,0 +1,178 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mailserver
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mailserver-secrets
+  namespace: mailserver
+type: Opaque
+stringData:
+  # REQUIRED: replace with your PostgreSQL connection string
+  DATABASE_URL: postgres://mailserver:change-me@your-postgres-host/mailserver
+  # REQUIRED: change initial admin password
+  SEED_PASS: change-me
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mailserver-config
+  namespace: mailserver
+data:
+  HOSTNAME: mail.example.com
+  SEED_USER: admin
+  TZ: UTC
+  RUST_LOG: info
+  HTTP_PORT: "8080"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mailserver-data
+  namespace: mailserver
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mailserver
+  namespace: mailserver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mailserver
+  template:
+    metadata:
+      labels:
+        app: mailserver
+    spec:
+      containers:
+        - name: mailserver
+          image: ghcr.io/tayyebi/mailserver:main
+          imagePullPolicy: Always
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mailserver-secrets
+                  key: DATABASE_URL
+            - name: SEED_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: mailserver-secrets
+                  key: SEED_PASS
+            - name: HOSTNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: mailserver-config
+                  key: HOSTNAME
+            - name: SEED_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: mailserver-config
+                  key: SEED_USER
+            - name: TZ
+              valueFrom:
+                configMapKeyRef:
+                  name: mailserver-config
+                  key: TZ
+            - name: RUST_LOG
+              valueFrom:
+                configMapKeyRef:
+                  name: mailserver-config
+                  key: RUST_LOG
+            - name: HTTP_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: mailserver-config
+                  key: HTTP_PORT
+          ports:
+            - name: smtp
+              containerPort: 25
+              protocol: TCP
+            - name: submission
+              containerPort: 587
+              protocol: TCP
+            - name: smtps
+              containerPort: 465
+              protocol: TCP
+            - name: smtp-alt
+              containerPort: 2525
+              protocol: TCP
+            - name: imap
+              containerPort: 143
+              protocol: TCP
+            - name: imaps
+              containerPort: 993
+              protocol: TCP
+            - name: pop3
+              containerPort: 110
+              protocol: TCP
+            - name: pop3s
+              containerPort: 995
+              protocol: TCP
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          volumeMounts:
+            - name: maildata
+              mountPath: /data
+      volumes:
+        - name: maildata
+          persistentVolumeClaim:
+            claimName: mailserver-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailserver
+  namespace: mailserver
+spec:
+  type: LoadBalancer
+  selector:
+    app: mailserver
+  ports:
+    - name: smtp
+      port: 25
+      targetPort: smtp
+      protocol: TCP
+    - name: submission
+      port: 587
+      targetPort: submission
+      protocol: TCP
+    - name: smtps
+      port: 465
+      targetPort: smtps
+      protocol: TCP
+    - name: smtp-alt
+      port: 2525
+      targetPort: smtp-alt
+      protocol: TCP
+    - name: imap
+      port: 143
+      targetPort: imap
+      protocol: TCP
+    - name: imaps
+      port: 993
+      targetPort: imaps
+      protocol: TCP
+    - name: pop3
+      port: 110
+      targetPort: pop3
+      protocol: TCP
+    - name: pop3s
+      port: 995
+      targetPort: pop3s
+      protocol: TCP
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
