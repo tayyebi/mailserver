@@ -11,9 +11,9 @@ metadata:
 type: Opaque
 stringData:
   # REQUIRED: replace with your PostgreSQL connection string
-  DATABASE_URL: postgres://mailserver:REPLACE_WITH_SECURE_PASSWORD@your-postgres-host/mailserver
+  DATABASE_URL: postgres://mailserver:CHANGEME_INSECURE@your-postgres-host/mailserver
   # REQUIRED: change initial admin password
-  SEED_PASS: REPLACE_WITH_SECURE_PASSWORD
+  SEED_PASS: CHANGEME_INSECURE
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -37,6 +37,7 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
+      # Adjust for mailbox volume, retention policy, and expected user count.
       storage: 20Gi
 ---
 apiVersion: apps/v1
@@ -58,6 +59,7 @@ spec:
       containers:
         - name: mailserver
           image: ghcr.io/tayyebi/mailserver:main
+          # For production, prefer a pinned tag (e.g., v1.2.3) with IfNotPresent.
           imagePullPolicy: Always
           env:
             - name: DATABASE_URL
