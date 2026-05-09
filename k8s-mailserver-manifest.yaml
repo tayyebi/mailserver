@@ -11,9 +11,9 @@ metadata:
 type: Opaque
 stringData:
   # REQUIRED: replace with your PostgreSQL connection string
-  DATABASE_URL: postgres://mailserver:change-me@your-postgres-host/mailserver
+  DATABASE_URL: postgres://mailserver:REPLACE_WITH_SECURE_PASSWORD@your-postgres-host/mailserver
   # REQUIRED: change initial admin password
-  SEED_PASS: change-me
+  SEED_PASS: REPLACE_WITH_SECURE_PASSWORD
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -45,6 +45,7 @@ metadata:
   name: mailserver
   namespace: mailserver
 spec:
+  # Keep 1 replica unless you redesign storage/session consistency for multi-node mail delivery.
   replicas: 1
   selector:
     matchLabels:
