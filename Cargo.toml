@@ -36,7 +36,5 @@ quick-xml = "0.39"
 flate2 = "1"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
-ed25519-dalek = { version = "2", features = ["rand_core"] }
-jsonwebtoken = "9"
 hex = "0.4"
 russh = { version = "0.60.2", default-features = false, features = ["flate2", "ring"] }

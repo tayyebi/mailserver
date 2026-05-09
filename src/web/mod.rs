@@ -142,10 +142,6 @@ pub struct AppState {
     pub mcp_guard: Arc<Mutex<McpGuard>>,
     /// Registry of active webmail IMAP-IDLE (SSE) sessions.
     pub idle_registry: ImapIdleRegistry,
-    /// Time the server process started (used for uptime reporting in /cluster/health).
-    pub cluster_start_time: std::time::SystemTime,
-    /// Nonce replay cache for peer-to-peer JWT authentication.
-    pub nonce_cache: Arc<Mutex<crate::web::routes::cluster::NonceCache>>,
 }
 
 impl AppState {
@@ -191,15 +187,6 @@ pub async fn start_server(state: AppState) {
     let registration_routes = routes::registration_routes();
     let auth_routes = routes::auth_routes();
 
-    // Public replication endpoint (authentication is HMAC-based, not session-based)
-    let replication_routes = Router::new().route(
-        "/replication/apply",
-        axum::routing::post(routes::replication::apply),
-    );
-
-    // Cluster wire-protocol endpoints (peer-to-peer, Ed25519 JWT auth)
-    let cluster_routes = routes::cluster_routes();
-
     let static_service = get_service(ServeDir::new(static_dir));
 
     let app = Router::new()
@@ -208,8 +195,6 @@ pub async fn start_server(state: AppState) {
         .merge(unsubscribe_routes)
         .merge(webdav_routes)
         .merge(registration_routes)
-        .merge(replication_routes)
-        .merge(cluster_routes)
         .merge(auth_routes)
         // CalDAV protocol handler — handles all HTTP methods on /caldav/{email}/...
         .route("/caldav/*path", axum::routing::any(routes::caldav::protocol_handler))
