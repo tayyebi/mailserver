@@ -557,6 +557,21 @@ fn load_available_migrations() -> Vec<(String, String)> {
     migrations
 }
 
+fn bootstrap_minimal_runtime_tables(client: &mut Client) {
+    for stmt in minimal_runtime_bootstrap_sql() {
+        client
+            .execute(stmt, &[])
+            .expect("Failed to execute bootstrap SQL statement");
+    }
+}
+
+fn minimal_runtime_bootstrap_sql() -> [&'static str; 1] {
+    ["CREATE TABLE IF NOT EXISTS node_state (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    )"]
+}
+
 fn run_migrations(client: &mut Client) {
     info!("[db] checking for database migrations");
 
@@ -571,6 +586,7 @@ fn run_migrations(client: &mut Client) {
             &[],
         )
         .expect("Failed to create _migrations table");
+    bootstrap_minimal_runtime_tables(client);
 
     // 2. Load migrations from files
     let migrations = load_available_migrations();
@@ -5269,7 +5285,17 @@ impl Database {
 
 #[cfg(test)]
 mod tests {
-    use super::{evaluate_condition, evaluate_rule, matches_from_pattern, TrackingCondition, TrackingRule};
+    use super::{
+        evaluate_condition, evaluate_rule, matches_from_pattern, minimal_runtime_bootstrap_sql,
+        TrackingCondition, TrackingRule,
+    };
+
+    #[test]
+    fn minimal_runtime_bootstrap_includes_node_state_table() {
+        let statements = minimal_runtime_bootstrap_sql();
+        assert_eq!(statements.len(), 1);
+        assert!(statements[0].contains("CREATE TABLE IF NOT EXISTS node_state"));
+    }
 
     #[test]
     fn matches_from_pattern_wildcard_matches_all() {
