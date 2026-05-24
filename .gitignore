@@ -29,3 +29,6 @@ data/
 .DS_Store
 Thumbs.db
 tmp/
+
+# Docker
+docker-compose.override.yml
