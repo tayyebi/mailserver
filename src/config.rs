@@ -874,14 +874,18 @@ pub fn postmap_files() {
 pub fn reload_services() {
     info!("[config] reloading mail services");
 
-    match Command::new("postfix").arg("reload").output() {
-        Ok(output) if output.status.success() => info!("[config] postfix reloaded successfully"),
-        Ok(output) => warn!(
-            "[config] postfix reload exited with status {}: {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr)
-        ),
-        Err(e) => warn!("[config] failed to reload postfix: {}", e),
+    if Path::new("/etc/postfix/main.cf").exists() {
+        match Command::new("postfix").arg("reload").output() {
+            Ok(output) if output.status.success() => info!("[config] postfix reloaded successfully"),
+            Ok(output) => warn!(
+                "[config] postfix reload exited with status {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr)
+            ),
+            Err(e) => warn!("[config] failed to reload postfix: {}", e),
+        }
+    } else {
+        info!("[config] skipping postfix reload: /etc/postfix/main.cf not found");
     }
 
     match Command::new("dovecot").arg("reload").output() {
