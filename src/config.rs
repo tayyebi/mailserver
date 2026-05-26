@@ -92,6 +92,44 @@ fn generated_at() -> String {
     Utc::now().to_rfc3339()
 }
 
+fn parse_major_minor(version: &str) -> Option<(u32, u32)> {
+    let mut parts = version.split('.');
+    let major = parts.next()?.parse::<u32>().ok()?;
+    let minor = parts.next()?.parse::<u32>().ok()?;
+    Some((major, minor))
+}
+
+fn dovecot_config_version_line() -> String {
+    let output = match Command::new("dovecot").arg("--version").output() {
+        Ok(output) if output.status.success() => output,
+        Ok(output) => {
+            debug!(
+                "[config] dovecot --version exited with status {}",
+                output.status
+            );
+            return String::new();
+        }
+        Err(e) => {
+            debug!("[config] failed to detect dovecot version: {}", e);
+            return String::new();
+        }
+    };
+
+    let version = String::from_utf8_lossy(&output.stdout);
+    let version_token = version.split_whitespace().next().unwrap_or("").trim();
+    if version_token.is_empty() {
+        return String::new();
+    }
+
+    if let Some((major, minor)) = parse_major_minor(version_token) {
+        if (major, minor) >= (2, 4) {
+            return format!("dovecot_config_version = {}\n", version_token);
+        }
+    }
+
+    String::new()
+}
+
 /// Write content to a file with secure permissions (0600 - owner read/write only)
 /// This is used for sensitive files like DKIM private keys and password databases
 ///
@@ -667,6 +705,7 @@ pub fn generate_dovecot_conf(hostname: &str) {
     };
 
     let config = template
+        .replace("{{ dovecot_config_version_line }}", &dovecot_config_version_line())
         .replace("{{ generated_at }}", &generated_at())
         .replace("{{ hostname }}", hostname);
 
@@ -726,6 +765,10 @@ pub fn generate_dovecot_passwd(db: &Database) {
 
 pub fn generate_opendkim_conf() {
     info!("[config] generating /etc/opendkim/opendkim.conf");
+    if let Err(e) = fs::create_dir_all("/etc/opendkim") {
+        error!("[config] failed to create /etc/opendkim directory: {}", e);
+        return;
+    }
     let template = match load_template("opendkim.conf.txt") {
         Ok(t) => t,
         Err(e) => {
@@ -746,6 +789,10 @@ pub fn generate_opendkim_conf() {
 
 pub fn generate_opendkim_tables(db: &Database) {
     info!("[config] generating OpenDKIM key/signing/trusted tables");
+    if let Err(e) = fs::create_dir_all("/etc/opendkim") {
+        error!("[config] failed to create /etc/opendkim directory: {}", e);
+        return;
+    }
     let domains = db.list_domains();
 
     let timestamp = generated_at();
@@ -874,24 +921,36 @@ pub fn postmap_files() {
 pub fn reload_services() {
     info!("[config] reloading mail services");
 
-    match Command::new("postfix").arg("reload").output() {
-        Ok(output) if output.status.success() => info!("[config] postfix reloaded successfully"),
-        Ok(output) => warn!(
-            "[config] postfix reload exited with status {}: {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr)
-        ),
-        Err(e) => warn!("[config] failed to reload postfix: {}", e),
+    if Path::new("/etc/postfix/main.cf").exists() {
+        if Path::new("/var/spool/postfix/pid/master.pid").exists() {
+            match Command::new("postfix").arg("reload").output() {
+                Ok(output) if output.status.success() => info!("[config] postfix reloaded successfully"),
+                Ok(output) => warn!(
+                    "[config] postfix reload exited with status {}: {}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr)
+                ),
+                Err(e) => warn!("[config] failed to reload postfix: {}", e),
+            }
+        } else {
+            info!("[config] skipping postfix reload: Postfix is not running");
+        }
+    } else {
+        info!("[config] skipping postfix reload: /etc/postfix/main.cf not found");
     }
 
-    match Command::new("dovecot").arg("reload").output() {
-        Ok(output) if output.status.success() => info!("[config] dovecot reloaded successfully"),
-        Ok(output) => warn!(
-            "[config] dovecot reload exited with status {}: {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr)
-        ),
-        Err(e) => warn!("[config] failed to reload dovecot: {}", e),
+    if Path::new("/run/dovecot/master.pid").exists() {
+        match Command::new("dovecot").arg("reload").output() {
+            Ok(output) if output.status.success() => info!("[config] dovecot reloaded successfully"),
+            Ok(output) => warn!(
+                "[config] dovecot reload exited with status {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr)
+            ),
+            Err(e) => warn!("[config] failed to reload dovecot: {}", e),
+        }
+    } else {
+        info!("[config] skipping dovecot reload: Dovecot is not running");
     }
 
     // Signal opendkim to reload via USR1
@@ -1055,6 +1114,7 @@ mod tests {
     use super::extract_container_id_from_path;
     use super::load_template;
     use super::normalize_virtual_alias_source;
+    use super::parse_major_minor;
 
     #[test]
     fn normalize_virtual_alias_source_rewrites_catch_all_patterns() {
@@ -1093,6 +1153,19 @@ mod tests {
     fn extract_container_id_ignores_short_hex() {
         let line = "/docker/abc123 something";
         assert_eq!(extract_container_id_from_path(line), None);
+    }
+
+    #[test]
+    fn parse_major_minor_extracts_numeric_parts() {
+        assert_eq!(parse_major_minor("2.4.1"), Some((2, 4)));
+        assert_eq!(parse_major_minor("3.0"), Some((3, 0)));
+    }
+
+    #[test]
+    fn parse_major_minor_rejects_invalid_versions() {
+        assert_eq!(parse_major_minor("2"), None);
+        assert_eq!(parse_major_minor("v2.4.1"), None);
+        assert_eq!(parse_major_minor(""), None);
     }
 
     #[test]
