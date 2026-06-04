@@ -126,6 +126,10 @@ fn dovecot_config_version_line() -> String {
     }
 
     if let Some((major, minor)) = parse_major_minor(version_token) {
+        // Dovecot 2.4.x versions strictly validate dovecot_config_version.
+        // Some installations fail if the exact patch version (e.g., 2.4.2) is used
+        // before the internal parser baseline is bumped. Mapping all 2.4.x to the
+        // baseline syntax version "2.4.0" ensures strict parser compatibility.
         if (major, minor) == (2, 4) {
             return "dovecot_config_version = 2.4.0\n".to_string();
         } else if (major, minor) > (2, 4) {
@@ -1176,8 +1180,9 @@ mod tests {
     }
 
     #[test]
-    fn test_is_docker_runs_without_panic() {
-        let _ = super::is_docker();
+    fn test_is_docker_behavior() {
+        let exists = std::path::Path::new("/.dockerenv").exists();
+        assert_eq!(super::is_docker(), exists);
     }
 
     #[test]
