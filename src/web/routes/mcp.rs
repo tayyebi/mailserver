@@ -761,8 +761,13 @@ async fn tool_send_email(state: &AppState, args: &Value) -> Result<Value, String
             .map_err(|e| format!("Failed to build email: {}", e))?,
     };
 
+    let smtp_port: u16 = std::env::var("SMTP_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(25);
+
     SmtpTransport::builder_dangerous("127.0.0.1")
-        .port(25)
+        .port(smtp_port)
         .build()
         .send(&email)
         .map_err(|e| format!("SMTP error: {}", e))?;
