@@ -1,21 +1,22 @@
 FROM rust:1.95.0-alpine AS builder
-RUN apk add --update musl-dev pkgconf
+RUN --mount=type=cache,target=/var/cache/apk,source=apk-cache \
+    apk add --update musl-dev pkgconf
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,source=cargo-registry-cache \
     mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release 2>/dev/null; rm -rf src
 COPY templates/ templates/
 COPY migrations/ migrations/
 COPY static/ static/
 COPY src/ src/
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/build/target \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,source=cargo-registry-cache \
+    --mount=type=cache,target=/build/target,source=cargo-target-cache \
     cargo build --release \
     && cp target/release/mailserver /output \
     && strip /output
 
 FROM alpine:3.21
-RUN --mount=type=cache,target=/var/cache/apk \
+RUN --mount=type=cache,target=/var/cache/apk,source=apk-cache \
     apk add --update \
     postfix \
     dovecot \
