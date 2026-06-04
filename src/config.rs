@@ -298,6 +298,12 @@ smtp_sasl_tls_security_options = noanonymous"#
         "# No outbound relay configured".to_string()
     };
 
+    let maillog_file_line = if is_docker() {
+        "maillog_file = /dev/stdout"
+    } else {
+        "# maillog_file = /dev/stdout"
+    };
+
     let mut config = template
         .replace("{{ generated_at }}", &generated_at)
         .replace("{{ hostname }}", hostname)
@@ -305,11 +311,8 @@ smtp_sasl_tls_security_options = noanonymous"#
         .replace("{{ milter_config }}", &milter_config)
         .replace("{{ rbl_checks }}", &rbl_checks)
         .replace("{{ relay_config }}", &relay_config)
-        .replace("{{ message_size_limit }}", &message_size_limit);
-
-    if !is_docker() {
-        config = config.replace("maillog_file = /dev/stdout", "# maillog_file = /dev/stdout");
-    }
+        .replace("{{ message_size_limit }}", &message_size_limit)
+        .replace("{{ maillog_file_line }}", maillog_file_line);
 
     match fs::write("/etc/postfix/main.cf", config) {
         Ok(_) => debug!("[config] wrote /etc/postfix/main.cf"),
@@ -718,14 +721,17 @@ pub fn generate_dovecot_conf(hostname: &str) {
         }
     };
 
-    let mut config = template
+    let log_path_line = if is_docker() {
+        "log_path = /dev/stdout"
+    } else {
+        "# log_path = /dev/stdout"
+    };
+
+    let config = template
         .replace("{{ dovecot_config_version_line }}", &dovecot_config_version_line())
         .replace("{{ generated_at }}", &generated_at())
-        .replace("{{ hostname }}", hostname);
-
-    if !is_docker() {
-        config = config.replace("log_path = /dev/stdout", "# log_path = /dev/stdout");
-    }
+        .replace("{{ hostname }}", hostname)
+        .replace("{{ log_path_line }}", log_path_line);
 
     match fs::write("/etc/dovecot/dovecot.conf", config) {
         Ok(_) => debug!("[config] wrote /etc/dovecot/dovecot.conf"),
@@ -1180,7 +1186,7 @@ mod tests {
     }
 
     #[test]
-    fn test_is_docker_behavior() {
+    fn test_is_docker_detects_dockerenv_file() {
         let exists = std::path::Path::new("/.dockerenv").exists();
         assert_eq!(super::is_docker(), exists);
     }

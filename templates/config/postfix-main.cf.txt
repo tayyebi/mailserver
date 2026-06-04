@@ -7,7 +7,7 @@ inet_interfaces = all
 inet_protocols = all
 
 # Log directly to stdout (no syslog needed)
-maillog_file = /dev/stdout
+{{ maillog_file_line }}
 compatibility_level = 3.6
 
 # Disable local alias database (we only use virtual domains)
