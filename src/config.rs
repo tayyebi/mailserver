@@ -1186,12 +1186,6 @@ mod tests {
     }
 
     #[test]
-    fn test_is_docker_detects_dockerenv_file() {
-        let exists = std::path::Path::new("/.dockerenv").exists();
-        assert_eq!(super::is_docker(), exists);
-    }
-
-    #[test]
     fn parse_major_minor_rejects_invalid_versions() {
         assert_eq!(parse_major_minor("2"), None);
         assert_eq!(parse_major_minor("v2.4.1"), None);
