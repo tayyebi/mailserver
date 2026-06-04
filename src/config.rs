@@ -99,6 +99,10 @@ fn parse_major_minor(version: &str) -> Option<(u32, u32)> {
     Some((major, minor))
 }
 
+fn is_docker() -> bool {
+    Path::new("/.dockerenv").exists()
+}
+
 fn dovecot_config_version_line() -> String {
     let output = match Command::new("dovecot").arg("--version").output() {
         Ok(output) if output.status.success() => output,
@@ -122,7 +126,13 @@ fn dovecot_config_version_line() -> String {
     }
 
     if let Some((major, minor)) = parse_major_minor(version_token) {
-        if (major, minor) >= (2, 4) {
+        // Dovecot 2.4.x versions strictly validate dovecot_config_version.
+        // Some installations fail if the exact patch version (e.g., 2.4.2) is used
+        // before the internal parser baseline is bumped. Mapping all 2.4.x to the
+        // baseline syntax version "2.4.0" ensures strict parser compatibility.
+        if (major, minor) == (2, 4) {
+            return "dovecot_config_version = 2.4.0\n".to_string();
+        } else if (major, minor) > (2, 4) {
             return format!("dovecot_config_version = {}\n", version_token);
         }
     }
@@ -288,6 +298,12 @@ smtp_sasl_tls_security_options = noanonymous"#
         "# No outbound relay configured".to_string()
     };
 
+    let maillog_file_line = if is_docker() {
+        "maillog_file = /dev/stdout"
+    } else {
+        "# maillog_file = /dev/stdout"
+    };
+
     let config = template
         .replace("{{ generated_at }}", &generated_at)
         .replace("{{ hostname }}", hostname)
@@ -295,7 +311,8 @@ smtp_sasl_tls_security_options = noanonymous"#
         .replace("{{ milter_config }}", &milter_config)
         .replace("{{ rbl_checks }}", &rbl_checks)
         .replace("{{ relay_config }}", &relay_config)
-        .replace("{{ message_size_limit }}", &message_size_limit);
+        .replace("{{ message_size_limit }}", &message_size_limit)
+        .replace("{{ maillog_file_line }}", maillog_file_line);
 
     match fs::write("/etc/postfix/main.cf", config) {
         Ok(_) => debug!("[config] wrote /etc/postfix/main.cf"),
@@ -704,10 +721,17 @@ pub fn generate_dovecot_conf(hostname: &str) {
         }
     };
 
+    let log_path_line = if is_docker() {
+        "log_path = /dev/stdout"
+    } else {
+        "# log_path = /dev/stdout"
+    };
+
     let config = template
         .replace("{{ dovecot_config_version_line }}", &dovecot_config_version_line())
         .replace("{{ generated_at }}", &generated_at())
-        .replace("{{ hostname }}", hostname);
+        .replace("{{ hostname }}", hostname)
+        .replace("{{ log_path_line }}", log_path_line);
 
     match fs::write("/etc/dovecot/dovecot.conf", config) {
         Ok(_) => debug!("[config] wrote /etc/dovecot/dovecot.conf"),
