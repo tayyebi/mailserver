@@ -99,6 +99,10 @@ fn parse_major_minor(version: &str) -> Option<(u32, u32)> {
     Some((major, minor))
 }
 
+pub fn is_docker() -> bool {
+    std::path::Path::new("/.dockerenv").exists()
+}
+
 fn dovecot_config_version_line() -> String {
     let output = match Command::new("dovecot").arg("--version").output() {
         Ok(output) if output.status.success() => output,
@@ -122,7 +126,9 @@ fn dovecot_config_version_line() -> String {
     }
 
     if let Some((major, minor)) = parse_major_minor(version_token) {
-        if (major, minor) >= (2, 4) {
+        if (major, minor) == (2, 4) {
+            return "dovecot_config_version = 2.4.0\n".to_string();
+        } else if (major, minor) > (2, 4) {
             return format!("dovecot_config_version = {}\n", version_token);
         }
     }
@@ -288,7 +294,7 @@ smtp_sasl_tls_security_options = noanonymous"#
         "# No outbound relay configured".to_string()
     };
 
-    let config = template
+    let mut config = template
         .replace("{{ generated_at }}", &generated_at)
         .replace("{{ hostname }}", hostname)
         .replace("{{ mydomain }}", mydomain)
@@ -296,6 +302,10 @@ smtp_sasl_tls_security_options = noanonymous"#
         .replace("{{ rbl_checks }}", &rbl_checks)
         .replace("{{ relay_config }}", &relay_config)
         .replace("{{ message_size_limit }}", &message_size_limit);
+
+    if !is_docker() {
+        config = config.replace("maillog_file = /dev/stdout", "# maillog_file = /dev/stdout");
+    }
 
     match fs::write("/etc/postfix/main.cf", config) {
         Ok(_) => debug!("[config] wrote /etc/postfix/main.cf"),
@@ -704,10 +714,14 @@ pub fn generate_dovecot_conf(hostname: &str) {
         }
     };
 
-    let config = template
+    let mut config = template
         .replace("{{ dovecot_config_version_line }}", &dovecot_config_version_line())
         .replace("{{ generated_at }}", &generated_at())
         .replace("{{ hostname }}", hostname);
+
+    if !is_docker() {
+        config = config.replace("log_path = /dev/stdout", "# log_path = /dev/stdout");
+    }
 
     match fs::write("/etc/dovecot/dovecot.conf", config) {
         Ok(_) => debug!("[config] wrote /etc/dovecot/dovecot.conf"),
@@ -1159,6 +1173,11 @@ mod tests {
     fn parse_major_minor_extracts_numeric_parts() {
         assert_eq!(parse_major_minor("2.4.1"), Some((2, 4)));
         assert_eq!(parse_major_minor("3.0"), Some((3, 0)));
+    }
+
+    #[test]
+    fn test_is_docker_runs_without_panic() {
+        let _ = super::is_docker();
     }
 
     #[test]
