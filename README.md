@@ -24,9 +24,10 @@ Alpine · Postfix · Dovecot · OpenDKIM · Rust · PostgreSQL
 - [Installation](#-installation)
   - [Method 1 — Docker Compose (recommended)](#method-1--docker-compose-recommended)
   - [Method 2 — Docker Run](#method-2--docker-run)
-  - [Method 3 — Single Binary (bare metal)](#method-3--single-binary-bare-metal)
-  - [Method 4 — Auto-Provisioning (SSH)](#method-4--auto-provisioning-ssh)
-  - [Method 5 — Kubernetes Manifest (K8s providers)](#method-5--kubernetes-manifest-k8s-providers)
+  - [Method 3 — Docker Image from Release](#method-3--docker-image-from-release)
+  - [Method 4 — Single Binary (bare metal)](#method-4--single-binary-bare-metal)
+  - [Method 5 — Auto-Provisioning (SSH)](#method-5--auto-provisioning-ssh)
+  - [Method 6 — Kubernetes Manifest (K8s providers)](#method-6--kubernetes-manifest-k8s-providers)
 - [First Login](#-first-login)
 - [Admin Dashboard](#-admin-dashboard)
 - [Port Reference](#-port-reference)
@@ -165,7 +166,60 @@ http://your-server-ip:8080
 
 ---
 
-### Method 3 — Single Binary (bare metal)
+### Method 3 — Docker Image from Release
+
+Download a pre-built Docker image from the [Releases page](https://github.com/tayyebi/mailserver/releases) — no local build needed.
+
+**Step 1 — Download the tarball**
+
+```bash
+curl -L https://github.com/tayyebi/mailserver/releases/latest/download/mailserver-docker.tar \
+  -o mailserver-docker.tar
+```
+
+**Step 2 — Load the image**
+
+The release tarball is created with `docker save`, so use `docker load` to preserve the entrypoint and all image metadata:
+
+```bash
+docker load -i mailserver-docker.tar
+```
+
+After loading, tag the image with a friendly name:
+
+```bash
+docker tag ghcr.io/tayyebi/mailserver mailserver:latest
+```
+
+> ⚠️ **Do not use `docker import`** — it creates a filesystem-only image and strips the ENTRYPOINT, resulting in `Error response from daemon: no command specified` at runtime. Always use `docker load` for tarballs created with `docker save`.
+>
+> If you must use `docker import`, specify the entrypoint explicitly when running: `docker run --entrypoint /entrypoint.sh ...`
+
+**Step 3 — Run the container**
+
+```bash
+docker run -d --name mailserver \
+  --restart unless-stopped \
+  -p 25:25 -p 587:587 -p 465:465 -p 2525:2525 \
+  -p 143:143 -p 993:993 -p 110:110 -p 995:995 \
+  -p 8080:8080 \
+  -v maildata:/data \
+  -e HOSTNAME=mail.example.com \
+  -e DATABASE_URL=postgres://mailserver:strongpassword@your-pg-host/mailserver \
+  -e SEED_PASS=changeme \
+  -e TZ=UTC \
+  mailserver:latest
+```
+
+**Step 4 — Open the admin dashboard**
+
+```
+http://your-server-ip:8080
+```
+
+---
+
+### Method 4 — Single Binary (bare metal)
 
 The `mailserver` binary is fully self-contained: config templates, database migrations, and static assets are all compiled in. You only need to install the system mail services it manages.
 
@@ -354,11 +408,11 @@ RESET_USER=admin RESET_PASS=newpassword mailserver reset-password
 
 ---
 
-### Method 4 — Auto-Provisioning (SSH)
+### Method 5 — Auto-Provisioning (SSH)
 
 Spin up a fresh mailserver on **any Linux VPS in one command** — no manual SSH steps, no config files to write by hand. Run this from your local machine.
 
-**Prerequisites:** The `mailserver` binary on your local machine (see Step 3 above).
+**Prerequisites:** The `mailserver` binary on your local machine (see [Method 4 — Single Binary](#method-4--single-binary-bare-metal), Step 3).
 
 ```bash
 mailserver provision \
@@ -408,7 +462,7 @@ mailserver provision --host mail.example.com --user root --password s3cr3t
 
 ---
 
-### Method 5 — Kubernetes Manifest (K8s providers)
+### Method 6 — Kubernetes Manifest (K8s providers)
 
 Use the included manifest file if you deploy on Kubernetes providers (EKS/GKE/AKS, etc.).
 
