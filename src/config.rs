@@ -99,8 +99,8 @@ fn parse_major_minor(version: &str) -> Option<(u32, u32)> {
     Some((major, minor))
 }
 
-pub fn is_docker() -> bool {
-    std::path::Path::new("/.dockerenv").exists()
+fn is_docker() -> bool {
+    Path::new("/.dockerenv").exists()
 }
 
 fn dovecot_config_version_line() -> String {
