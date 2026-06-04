@@ -304,7 +304,7 @@ smtp_sasl_tls_security_options = noanonymous"#
         "# maillog_file = /dev/stdout"
     };
 
-    let mut config = template
+    let config = template
         .replace("{{ generated_at }}", &generated_at)
         .replace("{{ hostname }}", hostname)
         .replace("{{ mydomain }}", mydomain)
