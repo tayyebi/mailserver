@@ -12,6 +12,7 @@ services:
   mailserver:
     image: ghcr.io/tayyebi/mailserver:main
     build: .
+    entrypoint: ["/entrypoint.sh"]
     env_file: .env
     depends_on:
       - db
