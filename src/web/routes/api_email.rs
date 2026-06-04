@@ -377,8 +377,13 @@ pub async fn send_email(
         }
     };
 
+    let smtp_port: u16 = std::env::var("SMTP_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(25);
+
     match SmtpTransport::builder_dangerous("127.0.0.1")
-        .port(25)
+        .port(smtp_port)
         .build()
         .send(&email)
     {

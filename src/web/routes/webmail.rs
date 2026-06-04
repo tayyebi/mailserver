@@ -1450,12 +1450,17 @@ pub async fn send_email(
                 },
             };
 
-            send_log.push("Connecting to SMTP server at 127.0.0.1:25...".to_string());
+            let smtp_port: u16 = std::env::var("SMTP_PORT")
+                .ok()
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(25);
+
+            send_log.push(format!("Connecting to SMTP server at 127.0.0.1:{}...", smtp_port));
             use lettre::{SmtpTransport, Transport};
             // builder_dangerous disables TLS — safe here because we connect to the
             // local Postfix instance on the loopback interface (same as filter.rs).
             match SmtpTransport::builder_dangerous("127.0.0.1")
-                .port(25)
+                .port(smtp_port)
                 .build()
                 .send(&email)
             {
