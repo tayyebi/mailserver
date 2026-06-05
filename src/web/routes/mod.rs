@@ -5,6 +5,7 @@ pub mod api_docs;
 pub mod api_email;
 pub mod api_soap;
 pub mod bimi;
+pub mod bounce;
 pub mod caldav;
 pub mod carddav;
 pub mod configs;
@@ -171,6 +172,9 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/abuse", get(abuse::list).post(abuse::create))
         .route("/abuse/:id/delete", post(abuse::delete))
         .route("/abuse/:id/reports", get(abuse::reports))
+        .route("/bounce", get(bounce::list).post(bounce::create))
+        .route("/bounce/:id/delete", post(bounce::delete))
+        .route("/bounce/:id/reports", get(bounce::reports))
         .route("/relays/new", get(relays::new_form))
         .route("/relays", get(relays::list).post(relays::create))
         .route("/relays/:id/edit", get(relays::edit_form))
