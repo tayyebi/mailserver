@@ -965,7 +965,7 @@ impl Database {
 
     pub fn delete_domain(&self, id: i64) {
         warn!("[db] deleting domain id={}", id);
-        let domain_name = self.get_domain(id).map(|d| d.domain);
+        let _domain_name = self.get_domain(id).map(|d| d.domain);
         {
             let mut conn = self.conn();
             if let Err(e) = conn.execute("DELETE FROM domains WHERE id = $1", &[&id]) {
@@ -1121,7 +1121,7 @@ impl Database {
 
     pub fn delete_account(&self, id: i64) {
         warn!("[db] deleting account id={}", id);
-        let account_info = self.get_account_with_domain(id);
+        let _account_info = self.get_account_with_domain(id);
         {
             let mut conn = self.conn();
             if let Err(e) = conn.execute("DELETE FROM accounts WHERE id = $1", &[&id]) {
@@ -2879,6 +2879,7 @@ impl Database {
         })
     }
 
+    #[allow(dead_code)]
     pub fn get_dmarc_inbox_by_domain(&self, domain: &str) -> Option<DmarcInbox> {
         debug!("[db] getting dmarc inbox for domain={}", domain);
         let mut conn = self.conn();

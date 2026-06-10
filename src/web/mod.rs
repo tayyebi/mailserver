@@ -71,6 +71,7 @@ impl McpGuard {
     }
 
     /// Return the current consecutive-failure count (for testing / diagnostics).
+    #[allow(dead_code)]
     pub fn consecutive_failures(&self) -> u32 {
         self.consecutive_failures
     }
