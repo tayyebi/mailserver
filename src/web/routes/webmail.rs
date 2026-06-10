@@ -90,6 +90,8 @@ pub struct WebmailQuery {
     pub account_id: Option<i64>,
     pub folder: Option<String>,
     pub page: Option<usize>,
+    pub sort_by: Option<String>,
+    pub sort_order: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -451,6 +453,8 @@ struct InboxTemplate<'a> {
     total_pages: usize,
     prev_page: Option<usize>,
     next_page: Option<usize>,
+    sort_by: String,
+    sort_order: String,
     logs: Vec<String>,
 }
 
@@ -501,6 +505,9 @@ pub async fn inbox(
     let mut all_emails: Vec<WebmailEmail> = Vec::new();
     let mut raw_folders: Vec<WebmailFolder> = Vec::new();
 
+    let sort_by = query.sort_by.clone().unwrap_or_else(|| "date".to_string());
+    let sort_order = query.sort_order.clone().unwrap_or_else(|| "desc".to_string());
+
     let current_folder = query
         .folder
         .as_deref()
@@ -529,6 +536,16 @@ pub async fn inbox(
                 raw_folders = scan_folders(&maildir_base);
                 all_emails = read_emails(&maildir_base, &current_folder, &mut logs);
                 logs.push(format!("Total emails found: {}", all_emails.len()));
+
+                all_emails.sort_by(|a, b| {
+                    let cmp = match sort_by.as_str() {
+                        "from" => a.from.to_lowercase().cmp(&b.from.to_lowercase()),
+                        "subject" => a.subject.to_lowercase().cmp(&b.subject.to_lowercase()),
+                        _ => a.date.cmp(&b.date),
+                    };
+                    if sort_order == "desc" { cmp.reverse() } else { cmp }
+                });
+
                 selected_account = Some(acct);
             }
         } else {
@@ -587,6 +604,8 @@ pub async fn inbox(
         total_pages,
         prev_page,
         next_page,
+        sort_by,
+        sort_order,
         logs,
     };
     Html(tmpl.render().unwrap())

@@ -71,7 +71,25 @@
     <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>Date</th><th>From</th><th>Subject</th><th>Status</th><th>Actions</th></tr>
+        <tr>
+          <th>
+            <a href="/webmail?account_id={{ sel.id }}&folder={{ current_folder }}&sort_by=date&sort_order={% if sort_by == "date" %}{% if sort_order == "desc" %}asc{% else %}desc{% endif %}{% else %}desc{% endif %}&page=1">
+              Date{% if sort_by == "date" %}{% if sort_order == "desc" %} ▼{% else %} ▲{% endif %}{% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="/webmail?account_id={{ sel.id }}&folder={{ current_folder }}&sort_by=from&sort_order={% if sort_by == "from" %}{% if sort_order == "asc" %}desc{% else %}asc{% endif %}{% else %}asc{% endif %}&page=1">
+              From{% if sort_by == "from" %}{% if sort_order == "asc" %} ▲{% else %} ▼{% endif %}{% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="/webmail?account_id={{ sel.id }}&folder={{ current_folder }}&sort_by=subject&sort_order={% if sort_by == "subject" %}{% if sort_order == "asc" %}desc{% else %}asc{% endif %}{% else %}asc{% endif %}&page=1">
+              Subject{% if sort_by == "subject" %}{% if sort_order == "asc" %} ▲{% else %} ▼{% endif %}{% endif %}
+            </a>
+          </th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
       </thead>
       <tbody>
         {% for email in emails %}
@@ -102,11 +120,11 @@
     {% if total_pages > 1 %}
     <nav class="pagination" aria-label="Pagination">
       {% if let Some(p) = prev_page %}
-      <a href="/webmail?account_id={{ sel.id }}&folder={{ current_folder }}&page={{ p }}">← Previous</a>
+      <a href="/webmail?account_id={{ sel.id }}&folder={{ current_folder }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}&page={{ p }}">← Previous</a>
       {% endif %}
       <span>Page {{ current_page }} of {{ total_pages }}</span>
       {% if let Some(n) = next_page %}
-      <a href="/webmail?account_id={{ sel.id }}&folder={{ current_folder }}&page={{ n }}">Next →</a>
+      <a href="/webmail?account_id={{ sel.id }}&folder={{ current_folder }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}&page={{ n }}">Next →</a>
       {% endif %}
     </nav>
     {% endif %}

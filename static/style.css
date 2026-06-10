@@ -681,6 +681,18 @@ th {
   color: var(--color-text-subtle);
 }
 
+th a {
+  display: inline-block;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+th a:hover {
+  color: var(--color-text);
+  text-decoration: underline;
+}
+
 /* ── Mark (status badges) ── */
 
 mark {
