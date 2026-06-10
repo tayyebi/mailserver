@@ -344,6 +344,15 @@ pub(crate) fn read_emails(maildir_base: &str, folder: &str, logs: &mut Vec<Strin
                 );
             }
         }
+        if let Err(e) = std::process::Command::new("chown")
+            .arg("-R")
+            .arg("vmail:vmail")
+            .arg(&root)
+            .status()
+        {
+            logs.push(format!("Warning: Failed to chown maildir {}: {}", root, e));
+            warn!("[web] failed to chown maildir {}: {}", root, e);
+        }
     }
 
     for (subdir, is_new) in &[("new", true), ("cur", false)] {

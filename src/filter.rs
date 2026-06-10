@@ -804,6 +804,16 @@ fn move_recipient_to_junk(recipient: &str, mail_root: &str) -> Option<String> {
         }
     }
 
+    if let Err(e) = std::process::Command::new("chown")
+        .arg("-R")
+        .arg("vmail:vmail")
+        .arg(&maildir_base)
+        .status()
+    {
+        warn!("[filter] failed to chown maildir {}: {}", maildir_base, e);
+        return None;
+    }
+
     Some(format!("{}+Junk@{}", base_local, domain))
 }
 
