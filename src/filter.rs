@@ -624,23 +624,25 @@ fn send_webhook(
         (response_status, response_body, error, duration_ms)
     };
 
-    // Always log the email processing event to the database (best-effort — don't let logging failures surface).
-    if let Ok(db) = Database::try_open_with_options(
-        db_url,
-        1,
-        std::time::Duration::from_millis(100),
-        std::time::Duration::from_millis(500),
-    ) {
-        db.log_webhook(
-            webhook_url,
-            &request_body,
-            response_status,
-            &response_body,
-            &error,
-            duration_ms,
-            sender,
-            subject,
-        );
+    // Log to the database when a webhook was actually dispatched (best-effort).
+    if !webhook_url.is_empty() {
+        if let Ok(db) = Database::try_open_with_options(
+            db_url,
+            1,
+            std::time::Duration::from_millis(100),
+            std::time::Duration::from_millis(500),
+        ) {
+            db.log_webhook(
+                webhook_url,
+                &request_body,
+                response_status,
+                &response_body,
+                &error,
+                duration_ms,
+                sender,
+                subject,
+            );
+        }
     }
 }
 

@@ -78,5 +78,87 @@
 </main>
 <footer><small>Mailserver Admin</small></footer>
 </div>
+<script>
+// Client-side table sorting for all [data-sortable] tables.
+// Skips tables whose headers already contain links (e.g. webmail with server-side sort).
+(function () {
+  document.querySelectorAll("table").forEach(function (table) {
+    var tbody = table.querySelector("tbody");
+    if (!tbody) return;
+    var rows = Array.from(tbody.querySelectorAll("tr"));
+    if (rows.length === 0) return;
+    var thead = table.querySelector("thead");
+    if (!thead) return;
+    var ths = thead.querySelectorAll("th");
+    // Skip last column (Actions) — never sort by it.
+    var sortable = Array.from(ths).slice(0, -1);
+    if (sortable.length === 0) return;
+    // Skip if any header already has a link (server-side sort).
+    if (sortable.some(function (th) { return th.querySelector("a"); })) return;
+
+    var currentDir = table.getAttribute("data-sort-dir") || "desc";
+    var currentCol = parseInt(table.getAttribute("data-sort-col"));
+    if (isNaN(currentCol)) {
+      // Auto-detect date/time column by header keywords
+      var dateKw = ["date", "time", "added", "arrival", "created", "banned", "unsubscribed", "sent"];
+      currentCol = 0;
+      sortable.some(function (th, i) {
+        var label = th.textContent.trim().toLowerCase();
+        if (dateKw.some(function (kw) { return label.indexOf(kw) !== -1; })) {
+          currentCol = i;
+          return true;
+        }
+        return false;
+      });
+    }
+
+    function getVal(row, col) {
+      var cell = row.children[col];
+      if (!cell) return "";
+      var text = cell.textContent.trim();
+      var d = Date.parse(text);
+      if (!isNaN(d)) return d;
+      var n = parseFloat(text.replace(/[^0-9.\-]/g, ""));
+      if (!isNaN(n)) return n;
+      return text.toLowerCase();
+    }
+
+    function sortTable(col, dir) {
+      currentCol = col;
+      currentDir = dir;
+      var sorted = rows.slice().sort(function (a, b) {
+        var va = getVal(a, col);
+        var vb = getVal(b, col);
+        if (typeof va === "number" && typeof vb === "number") {
+          return dir === "asc" ? va - vb : vb - va;
+        }
+        if (va < vb) return dir === "asc" ? -1 : 1;
+        if (va > vb) return dir === "asc" ? 1 : -1;
+        return 0;
+      });
+      sorted.forEach(function (row) { tbody.appendChild(row); });
+      sortable.forEach(function (th, i) {
+        var s = th.querySelector(".sort-indicator");
+        if (s) s.remove();
+        if (i === col) {
+          var span = document.createElement("span");
+          span.className = "sort-indicator";
+          span.textContent = dir === "asc" ? " ▲" : " ▼";
+          th.appendChild(span);
+        }
+      });
+    }
+
+    sortable.forEach(function (th, i) {
+      th.style.cursor = "pointer";
+      th.addEventListener("click", function () {
+        sortTable(i, i === currentCol && currentDir === "desc" ? "asc" : "desc");
+      });
+    });
+
+    sortTable(currentCol, currentDir);
+  });
+})();
+</script>
 </body>
 </html>

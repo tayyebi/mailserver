@@ -2828,15 +2828,15 @@ impl Database {
                  LEFT JOIN domains d ON a.domain_id = d.id
                  LEFT JOIN accounts ra ON di.ruf_account_id = ra.id
                  LEFT JOIN domains rd ON ra.domain_id = rd.id
-                 ORDER BY di.id ASC",
-                &[],
-            )
-            .unwrap_or_else(|e| {
-                error!("[db] failed to list dmarc inboxes: {}", e);
-                Vec::new()
-            });
-        rows.into_iter()
-            .map(|row| DmarcInbox {
+                 ORDER BY di.created_at DESC",
+                 &[],
+             )
+             .unwrap_or_else(|e| {
+                 error!("[db] failed to list dmarc inboxes: {}", e);
+                 Vec::new()
+             });
+         rows.into_iter()
+             .map(|row| DmarcInbox {
                 id: row.get(0),
                 account_id: row.get(1),
                 label: row.get::<_, Option<String>>(2).unwrap_or_default(),
@@ -3022,15 +3022,15 @@ impl Database {
                  FROM abuse_inboxes ai
                  JOIN accounts a ON ai.account_id = a.id
                  LEFT JOIN domains d ON a.domain_id = d.id
-                 ORDER BY ai.id ASC",
-                &[],
-            )
-            .unwrap_or_else(|e| {
-                error!("[db] failed to list abuse inboxes: {}", e);
-                Vec::new()
-            });
-        rows.into_iter()
-            .map(|row| AbuseInbox {
+                 ORDER BY ai.created_at DESC",
+                 &[],
+             )
+             .unwrap_or_else(|e| {
+                 error!("[db] failed to list abuse inboxes: {}", e);
+                 Vec::new()
+             });
+         rows.into_iter()
+             .map(|row| AbuseInbox {
                 id: row.get(0),
                 account_id: row.get(1),
                 label: row.get::<_, Option<String>>(2).unwrap_or_default(),
@@ -3099,15 +3099,15 @@ impl Database {
                  FROM bounce_inboxes bi
                  JOIN accounts a ON bi.account_id = a.id
                  LEFT JOIN domains d ON a.domain_id = d.id
-                 ORDER BY bi.id ASC",
-                &[],
-            )
-            .unwrap_or_else(|e| {
-                error!("[db] failed to list bounce inboxes: {}", e);
-                Vec::new()
-            });
-        rows.into_iter()
-            .map(|row| BounceInbox {
+                 ORDER BY bi.created_at DESC",
+                 &[],
+             )
+             .unwrap_or_else(|e| {
+                 error!("[db] failed to list bounce inboxes: {}", e);
+                 Vec::new()
+             });
+         rows.into_iter()
+             .map(|row| BounceInbox {
                 id: row.get(0),
                 account_id: row.get(1),
                 label: row.get::<_, Option<String>>(2).unwrap_or_default(),

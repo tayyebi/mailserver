@@ -296,13 +296,14 @@ pub(crate) async fn regen_configs(state: &AppState) {
 /// `details` — a JSON-serialisable value with event-specific information
 pub(crate) fn fire_webhook(state: &AppState, event: &str, details: serde_json::Value) {
     let db = state.db.clone();
+    let webhook_url = db.get_setting("webhook_url").unwrap_or_default();
+    if webhook_url.is_empty() {
+        return;
+    }
+
     let event = event.to_string();
 
     std::thread::spawn(move || {
-        let webhook_url = db.get_setting("webhook_url").unwrap_or_default();
-        if webhook_url.is_empty() {
-            return;
-        }
 
         let timestamp = chrono::Utc::now().to_rfc3339();
         let payload = serde_json::json!({
