@@ -286,14 +286,14 @@ milter_default_action = accept"#
     let has_auth = assignments.iter().any(|(r, _)| r.auth_type != "none");
 
     let relay_config = if has_auth {
-        r#"transport_maps = hash:/etc/postfix/transport_maps
+        r#"transport_maps = texthash:/etc/postfix/transport_maps
 smtp_sasl_auth_enable = yes
-smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd
+smtp_sasl_password_maps = texthash:/etc/postfix/sasl_passwd
 smtp_sasl_security_options = noanonymous
 smtp_sasl_tls_security_options = noanonymous"#
             .to_string()
     } else if has_assignments {
-        "transport_maps = hash:/etc/postfix/transport_maps".to_string()
+        "transport_maps = texthash:/etc/postfix/transport_maps".to_string()
     } else {
         "# No outbound relay configured".to_string()
     };
@@ -912,34 +912,7 @@ localhost
 }
 
 pub fn postmap_files() {
-    info!("[config] running postmap on virtual maps");
-    for path in &[
-        "/etc/postfix/virtual_domains",
-        "/etc/postfix/vmailbox",
-        "/etc/postfix/virtual_aliases",
-        "/etc/postfix/recipient_bcc",
-        "/etc/postfix/sender_login_maps",
-        "/etc/postfix/transport_maps",
-        "/etc/postfix/sasl_passwd",
-    ] {
-        let map_path = format!("hash:{}", path);
-        match Command::new("postmap").arg(&map_path).output() {
-            Ok(output) if output.status.success() => {
-                debug!("[config] postmap succeeded for {}", map_path);
-            }
-            Ok(output) => {
-                warn!(
-                    "[config] postmap for {} exited with status {}: {}",
-                    map_path,
-                    output.status,
-                    String::from_utf8_lossy(&output.stderr)
-                );
-            }
-            Err(e) => {
-                warn!("[config] failed to run postmap for {}: {}", map_path, e);
-            }
-        }
-    }
+    info!("[config] texthash maps used — postmap not needed");
 }
 
 pub fn reload_services() {
