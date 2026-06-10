@@ -170,6 +170,8 @@ http://your-server-ip:8080
 
 Download a pre-built Docker image from the [Releases page](https://github.com/tayyebi/mailserver/releases) — no local build needed.
 
+#### Option A — Run directly on this machine
+
 **Step 1 — Download the tarball**
 
 ```bash
@@ -185,15 +187,13 @@ The release tarball is created with `docker save`, so use `docker load` to prese
 docker load -i mailserver-docker.tar
 ```
 
-After loading, tag the image with a friendly name:
+After loading, tag the image:
 
 ```bash
-docker tag ghcr.io/tayyebi/mailserver mailserver:latest
+docker tag <image-id> mailserver:latest
 ```
 
-> ⚠️ **Do not use `docker import`** — it creates a filesystem-only image and strips the ENTRYPOINT, resulting in `Error response from daemon: no command specified` at runtime. Always use `docker load` for tarballs created with `docker save`.
->
-> If you must use `docker import`, specify the entrypoint explicitly when running: `docker run --entrypoint /entrypoint.sh ...`
+(Find `<image-id>` from the `Loaded image ID` line printed by `docker load`, then replace the `sha256:` prefix with the full SHA.)
 
 **Step 3 — Run the container**
 
@@ -211,10 +211,66 @@ docker run -d --name mailserver \
   mailserver:latest
 ```
 
+> ⚠️ **Do not use `docker import`** — it creates a filesystem-only image and strips the ENTRYPOINT, resulting in `Error response from daemon: no command specified` at runtime. Always use `docker load` for tarballs created with `docker save`.
+
 **Step 4 — Open the admin dashboard**
 
 ```
 http://your-server-ip:8080
+```
+
+#### Option B — Upload to a remote server (air-gapped / restricted network)
+
+Use this when the target server cannot reach GitHub directly (e.g. behind a firewall or in a restricted region).
+
+**Step 1** — On your local machine, download the tarball from the [Releases page](https://github.com/tayyebi/mailserver/releases):
+
+```bash
+curl -L https://github.com/tayyebi/mailserver/releases/latest/download/mailserver-docker.tar \
+  -o mailserver-docker.tar
+```
+
+**Step 2** — Upload the tarball to the remote server via `scp`:
+
+```bash
+scp mailserver-docker.tar user@your-server:/tmp/mailserver-docker.tar
+```
+
+**Step 3** — SSH into the remote server and load the image:
+
+```bash
+ssh user@your-server
+docker load -i /tmp/mailserver-docker.tar
+```
+
+Note the `Loaded image ID: sha256:...` output — you will need the image ID to tag it.
+
+**Step 4** — Tag the image with a friendly name:
+
+```bash
+docker tag <image-id> ghcr.io/tayyebi/mailserver:latest
+```
+
+**Step 5** — Create a `docker-compose.yml` and `.env` file (see [Method 1](#method-1--docker-compose-recommended) for the full compose template) or run directly:
+
+```bash
+docker run -d --name mailserver \
+  --restart unless-stopped \
+  -p 25:25 -p 587:587 -p 465:465 -p 2525:2525 \
+  -p 143:143 -p 993:993 -p 110:110 -p 995:995 \
+  -p 8080:8080 \
+  -v maildata:/data \
+  -e HOSTNAME=mail.example.com \
+  -e DATABASE_URL=postgres://mailserver:strongpassword@your-pg-host/mailserver \
+  -e SEED_PASS=changeme \
+  -e TZ=UTC \
+  ghcr.io/tayyebi/mailserver:latest
+```
+
+**Step 6** — Clean up the temporary tarball:
+
+```bash
+rm /tmp/mailserver-docker.tar
 ```
 
 ---
