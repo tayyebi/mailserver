@@ -236,14 +236,24 @@ fn scan_folders(maildir_base: &str) -> Vec<WebmailFolder> {
             .flatten()
             .filter(|e| {
                 let name = e.file_name().to_string_lossy().to_string();
-                e.file_type().map(|t| t.is_dir()).unwrap_or(false)
-                    && name.starts_with('.')
-                    && std::path::Path::new(&format!(
-                        "{}/{}/cur",
-                        maildir_base,
-                        e.file_name().to_string_lossy()
-                    ))
-                    .is_dir()
+                if !(e.file_type().map(|t| t.is_dir()).unwrap_or(false) && name.starts_with('.')) {
+                    return false;
+                }
+                let new_path = format!("{}/{}/new", maildir_base, name);
+                let cur_path = format!("{}/{}/cur", maildir_base, name);
+                let tmp_path = format!("{}/{}/tmp", maildir_base, name);
+                if std::path::Path::new(&cur_path).is_dir() {
+                    return true;
+                }
+                // Likely a Maildir folder if it has new/ or tmp/ — eagerly create cur/
+                let has_maildir_structure = std::path::Path::new(&new_path).is_dir()
+                    || std::path::Path::new(&tmp_path).is_dir();
+                if has_maildir_structure {
+                    let _ = std::fs::create_dir_all(&cur_path);
+                    true
+                } else {
+                    false
+                }
             })
             .map(|e| e.file_name().to_string_lossy().to_string())
             .collect();
@@ -1497,6 +1507,33 @@ pub async fn send_email(
                     send_log.push("Email sent successfully!".to_string());
                     info!("[web] email sent successfully to {}", form.to);
                     flash = Some("Email sent successfully!".to_string());
+
+                    let raw_bytes = email.formatted();
+                    let maildir_base = format!("/data/mail/{}/{}", domain, acct.username);
+                    let sent_dir = format!("{}/Maildir/.Sent/new", maildir_base);
+                    if let Err(e) = std::fs::create_dir_all(&sent_dir) {
+                        warn!("[web] failed to create .Sent/new dir: {}", e);
+                    } else {
+                        let ts = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0);
+                        let pid = std::process::id();
+                        let hostname = std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".into());
+                        let fname = format!(
+                            "{}.M{}P1.{},S={},W={}",
+                            ts, pid, hostname, raw_bytes.len(), raw_bytes.len() + 15,
+                        );
+                        let sent_path = format!("{}/{}", sent_dir, fname);
+                        match std::fs::write(&sent_path, &raw_bytes) {
+                            Ok(_) => {
+                                send_log.push(format!("Saved copy to Sent folder"));
+                            }
+                            Err(e) => {
+                                warn!("[web] failed to save .Sent copy: {}", e);
+                            }
+                        }
+                    }
                 }
                 Err(e) => {
                     send_log.push(format!("SMTP error: {}", e));
