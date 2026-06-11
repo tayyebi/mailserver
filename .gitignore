@@ -32,3 +32,4 @@ tmp/
 
 # Docker
 docker-compose.override.yml
+*-docker.tar

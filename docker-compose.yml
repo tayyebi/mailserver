@@ -40,6 +40,13 @@ services:
       - SEED_PASS=${SEED_PASS:-admin}
       - TZ=${TZ:-UTC}
     restart: unless-stopped
+    networks:
+      - default
+      - mailserver_shared
+
+networks:
+  mailserver_shared:
+    external: true
 
 volumes:
   maildata:
