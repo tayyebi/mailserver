@@ -516,6 +516,8 @@ fn embedded_migrations() -> Vec<(String, String)> {
         ("016_registration".into(), include_str!("../migrations/016_registration.sql").into()),
         ("017_rate_limit_rules".into(), include_str!("../migrations/017_rate_limit_rules.sql").into()),
         ("018_carddav".into(), include_str!("../migrations/018_carddav.sql").into()),
+        ("019_bounce_inboxes".into(), include_str!("../migrations/019_bounce_inboxes.sql").into()),
+        ("020_jmap".into(), include_str!("../migrations/020_jmap.sql").into()),
     ];
     m.sort_by(|a, b| a.0.cmp(&b.0));
     m
@@ -3668,6 +3670,70 @@ impl Database {
     }
 
     // ── Account helper ──
+
+    // ── JMAP methods ──
+
+    pub fn get_jmap_account_by_email(&self, email: &str) -> Option<Account> {
+        self.get_account_by_email(email)
+    }
+
+    pub fn create_jmap_token(&self, account_id: i64, token: &str, created_at: &str) {
+        debug!("[db] creating JMAP token for account_id={}", account_id);
+        if let Err(e) = self.conn().execute(
+            "INSERT INTO jmap_tokens (account_id, token, created_at) VALUES ($1, $2, $3)",
+            &[&account_id, &token, &created_at],
+        ) {
+            error!("[db] failed to create JMAP token: {}", e);
+        }
+    }
+
+    pub fn verify_jmap_token(&self, token: &str) -> Option<Account> {
+        debug!("[db] verifying JMAP token");
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT a.id, a.domain_id, a.username, a.password_hash, a.name, a.active, a.quota, d.domain
+             FROM jmap_tokens t
+             JOIN accounts a ON a.id = t.account_id
+             JOIN domains d ON d.id = a.domain_id
+             WHERE t.token = $1",
+            &[&token],
+        )
+        .ok()
+        .flatten()
+        .map(|row| Account {
+            id: row.get(0),
+            domain_id: row.get(1),
+            username: row.get(2),
+            password_hash: row.get(3),
+            name: row.get(4),
+            active: row.get(5),
+            quota: row.get(6),
+            domain_name: row.get(7),
+            is_system: false,
+        })
+    }
+
+    pub fn get_jmap_state(&self, account_id: i64) -> (String, String) {
+        let mut conn = self.conn();
+        match conn.query_opt(
+            "SELECT state, snapshot FROM jmap_state WHERE account_id = $1",
+            &[&account_id],
+        ) {
+            Ok(Some(row)) => (row.get(0), row.get(1)),
+            _ => ("1".to_string(), "{}".to_string()),
+        }
+    }
+
+    pub fn update_jmap_state(&self, account_id: i64, state: &str, snapshot: &str) {
+        if let Err(e) = self.conn().execute(
+            "INSERT INTO jmap_state (account_id, state, snapshot)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (account_id) DO UPDATE SET state = $2, snapshot = $3",
+            &[&account_id, &state, &snapshot],
+        ) {
+            error!("[db] failed to update JMAP state: {}", e);
+        }
+    }
 
     pub fn get_account_by_email(&self, email: &str) -> Option<Account> {
         debug!("[db] looking up account by email={}", email);

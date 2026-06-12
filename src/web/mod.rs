@@ -180,6 +180,7 @@ pub async fn start_server(state: AppState) {
     let unsubscribe_routes = routes::unsubscribe::public_routes();
     let webdav_routes = routes::webdav::public_routes();
     let registration_routes = routes::registration_routes();
+    let jmap_routes = routes::jmap::jmap_routes();
     let auth_routes = routes::auth_routes();
 
     let static_routes: Router<AppState> = match static_dir {
@@ -201,6 +202,7 @@ pub async fn start_server(state: AppState) {
         .merge(unsubscribe_routes)
         .merge(webdav_routes)
         .merge(registration_routes)
+        .merge(jmap_routes)
         .merge(static_routes)
         .merge(auth_routes)
         // CalDAV protocol handler — handles all HTTP methods on /caldav/{email}/...

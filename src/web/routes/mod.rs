@@ -28,6 +28,7 @@ pub mod tracking;
 pub mod unsubscribe;
 pub mod webhook;
 pub mod webdav;
+pub mod jmap;
 pub mod webmail;
 
 use super::AppState;
