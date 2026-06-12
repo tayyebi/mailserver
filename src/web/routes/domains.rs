@@ -7,7 +7,7 @@ use axum::{
 use log::{debug, error, info, warn};
 use serde::Deserialize;
 
-use crate::db::Account;
+use crate::db::{AbuseInbox, Account, BounceInbox};
 use crate::web::auth::AuthAdmin;
 use crate::web::fire_webhook;
 use crate::web::forms::{DomainEditForm, DomainForm};
@@ -161,6 +161,8 @@ struct DnsTemplate<'a> {
     /// `ruf=mailto:<ruf>` failure-report destination (RFC 7489 §6.3 / RFC 6591).
     dmarc_ruf: Option<String>,
     dmarc_inbox: Option<crate::db::DmarcInbox>,
+    abuse_inbox: Option<AbuseInbox>,
+    bounce_inbox: Option<BounceInbox>,
     domain_accounts: Vec<Account>,
 }
 
@@ -544,6 +546,13 @@ pub async fn dns_info(
         let dom = inbox.ruf_account_domain.as_ref()?;
         Some(format!("{}@{}", username, dom))
     });
+    let abuse_inbox = state
+        .blocking_db(move |db| db.get_abuse_inbox_by_domain_id(domain.id))
+        .await;
+    let domain_id_for_bounce = domain.id;
+    let bounce_inbox = state
+        .blocking_db(move |db| db.get_bounce_inbox_by_domain_id(domain_id_for_bounce))
+        .await;
     let domain_id_for_accounts = domain.id;
     let domain_accounts = state
         .blocking_db(move |db| db.list_accounts_by_domain(domain_id_for_accounts))
@@ -562,6 +571,8 @@ pub async fn dns_info(
         dmarc_rua,
         dmarc_ruf,
         dmarc_inbox,
+        abuse_inbox,
+        bounce_inbox,
         domain_accounts,
     };
     Html(tmpl.render().unwrap()).into_response()
@@ -665,6 +676,88 @@ pub async fn remove_dmarc_ruf_inbox(
         let existing_id = existing_inbox.id;
         state
             .blocking_db(move |db| db.set_dmarc_inbox_ruf(existing_id, None))
+            .await;
+    }
+    Redirect::to(&format!("/domains/{}/dns", id)).into_response()
+}
+
+pub async fn set_abuse_inbox(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Form(form): Form<SetDmarcForm>,
+) -> Response {
+    info!(
+        "[web] POST /domains/{}/abuse — setting abuse inbox account_id={}",
+        id, form.account_id
+    );
+    let existing = state
+        .blocking_db(move |db| db.get_abuse_inbox_by_domain_id(id))
+        .await;
+    if let Some(existing_inbox) = existing {
+        state
+            .blocking_db(move |db| db.delete_abuse_inbox(existing_inbox.id))
+            .await;
+    }
+    let _ = state
+        .blocking_db(move |db| db.create_abuse_inbox(form.account_id, ""))
+        .await;
+    Redirect::to(&format!("/domains/{}/dns", id)).into_response()
+}
+
+pub async fn remove_abuse_inbox(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Response {
+    info!("[web] POST /domains/{}/abuse/delete — removing abuse inbox", id);
+    let existing = state
+        .blocking_db(move |db| db.get_abuse_inbox_by_domain_id(id))
+        .await;
+    if let Some(existing_inbox) = existing {
+        state
+            .blocking_db(move |db| db.delete_abuse_inbox(existing_inbox.id))
+            .await;
+    }
+    Redirect::to(&format!("/domains/{}/dns", id)).into_response()
+}
+
+pub async fn set_bounce_inbox(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Form(form): Form<SetDmarcForm>,
+) -> Response {
+    info!(
+        "[web] POST /domains/{}/bounce — setting bounce inbox account_id={}",
+        id, form.account_id
+    );
+    let existing = state
+        .blocking_db(move |db| db.get_bounce_inbox_by_domain_id(id))
+        .await;
+    if let Some(existing_inbox) = existing {
+        state
+            .blocking_db(move |db| db.delete_bounce_inbox(existing_inbox.id))
+            .await;
+    }
+    let _ = state
+        .blocking_db(move |db| db.create_bounce_inbox(form.account_id, ""))
+        .await;
+    Redirect::to(&format!("/domains/{}/dns", id)).into_response()
+}
+
+pub async fn remove_bounce_inbox(
+    _auth: AuthAdmin,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Response {
+    info!("[web] POST /domains/{}/bounce/delete — removing bounce inbox", id);
+    let existing = state
+        .blocking_db(move |db| db.get_bounce_inbox_by_domain_id(id))
+        .await;
+    if let Some(existing_inbox) = existing {
+        state
+            .blocking_db(move |db| db.delete_bounce_inbox(existing_inbox.id))
             .await;
     }
     Redirect::to(&format!("/domains/{}/dns", id)).into_response()

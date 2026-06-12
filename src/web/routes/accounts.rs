@@ -30,6 +30,7 @@ struct AccountListRow {
     active: bool,
     quota_display: String,
     mailbox_path: String,
+    is_system: bool,
 }
 
 // ── Templates ──
@@ -120,6 +121,7 @@ pub async fn list(
                 active: a.active,
                 quota_display,
                 mailbox_path,
+                is_system: a.is_system,
             }
         })
         .collect();

@@ -2,13 +2,12 @@ use askama::Template;
 use axum::{
     extract::{Path, Query, State},
     response::{Html, IntoResponse, Redirect, Response},
-    Form,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use serde::Deserialize;
 
-use crate::db::{Account, BounceInbox};
+use crate::db::BounceInbox;
 use crate::web::{auth::AuthAdmin, fire_webhook, AppState};
 
 // ── Constants ──
@@ -353,13 +352,7 @@ fn paginate_reports(
     }
 }
 
-// ── Forms ──
-
-#[derive(Deserialize)]
-pub struct AddBounceInboxForm {
-    pub account_id: i64,
-    pub label: String,
-}
+// ── Query params ──
 
 #[derive(Deserialize)]
 pub struct ReportsQuery {
@@ -372,15 +365,6 @@ fn default_page() -> usize {
 }
 
 // ── Templates ──
-
-#[derive(Template)]
-#[template(path = "bounce/list.html")]
-struct ListTemplate<'a> {
-    nav_active: &'a str,
-    flash: Option<String>,
-    inboxes: Vec<BounceInbox>,
-    accounts: Vec<Account>,
-}
 
 #[derive(Template)]
 #[template(path = "bounce/reports.html")]
@@ -397,67 +381,6 @@ struct ReportsTemplate<'a> {
 }
 
 // ── Handlers ──
-
-pub async fn list(
-    _auth: AuthAdmin,
-    State(state): State<AppState>,
-) -> Html<String> {
-    info!("[web] GET /bounce — list bounce inboxes");
-    let inboxes = state.blocking_db(|db| db.list_bounce_inboxes()).await;
-    let accounts = state
-        .blocking_db(|db| db.list_all_accounts_with_domain())
-        .await;
-    let tmpl = ListTemplate {
-        nav_active: "Bounces",
-        flash: None,
-        inboxes,
-        accounts,
-    };
-    Html(tmpl.render().unwrap())
-}
-
-pub async fn create(
-    _auth: AuthAdmin,
-    State(state): State<AppState>,
-    Form(form): Form<AddBounceInboxForm>,
-) -> Response {
-    info!(
-        "[web] POST /bounce — creating bounce inbox account_id={}",
-        form.account_id
-    );
-    let account_id = form.account_id;
-    let label = form.label.clone();
-    let result = state
-        .blocking_db(move |db| db.create_bounce_inbox(account_id, &label))
-        .await;
-    match result {
-        Ok(_) => Redirect::to("/bounce").into_response(),
-        Err(e) => {
-            error!("[web] failed to create bounce inbox: {}", e);
-            let inboxes = state.blocking_db(|db| db.list_bounce_inboxes()).await;
-            let accounts = state
-                .blocking_db(|db| db.list_all_accounts_with_domain())
-                .await;
-            let tmpl = ListTemplate {
-                nav_active: "Bounces",
-                flash: Some(format!("Error: {}", e)),
-                inboxes,
-                accounts,
-            };
-            Html(tmpl.render().unwrap()).into_response()
-        }
-    }
-}
-
-pub async fn delete(
-    _auth: AuthAdmin,
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> Response {
-    warn!("[web] POST /bounce/{}/delete — deleting bounce inbox", id);
-    state.blocking_db(move |db| db.delete_bounce_inbox(id)).await;
-    Redirect::to("/bounce").into_response()
-}
 
 pub async fn reports(
     _auth: AuthAdmin,

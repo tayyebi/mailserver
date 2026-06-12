@@ -1324,6 +1324,7 @@ mod tests {
             active: true,
             quota: 0,
             domain_name: Some(domain.to_string()),
+            is_system: false,
         }
     }
 

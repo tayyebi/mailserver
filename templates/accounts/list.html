@@ -12,15 +12,19 @@
 <thead><tr><th>Email Address</th><th>Full Name</th><th>Status</th><th>Quota</th><th>Mailbox Directory</th><th>Actions</th></tr></thead>
 <tbody>
 {% for row in account_rows %}
-<tr>
-    <td><strong>{{ row.email }}</strong></td>
+<tr{% if row.is_system %} class="system-account"{% endif %}>
+    <td><strong>{{ row.email }}</strong>{% if row.is_system %} <mark data-variant="muted">System</mark>{% endif %}</td>
     <td>{{ row.name }}</td>
     <td>{% if row.active %}<mark>Active</mark>{% else %}<mark data-variant="muted">Inactive</mark>{% endif %}</td>
     <td>{{ row.quota_display }}</td>
     <td><code>{{ row.mailbox_path }}</code></td>
     <td>
+        {% if row.is_system %}
+        <span class="muted">Locked</span>
+        {% else %}
         <a href="/accounts/{{ row.id }}/edit">Edit</a>
         <form method="post" action="/accounts/{{ row.id }}/delete" class="form-inline" onsubmit="return confirm('Delete this account?')"><button type="submit">Delete</button></form>
+        {% endif %}
     </td>
 </tr>
 {% endfor %}

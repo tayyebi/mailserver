@@ -1,7 +1,20 @@
 {% extends "layout.html" %}
-{% block title %}DNS Records{% endblock %}
+{% block title %}Domain — {{ domain_name }}{% endblock %}
 {% block content %}
-<section>
+<div class="domain-layout">
+<nav class="domain-subnav">
+    <a href="#dns">DNS Records</a>
+    <a href="#dkim">DKIM</a>
+    <a href="#dmarc">DMARC</a>
+    <a href="#abuse">Abuse</a>
+    <a href="#bounce">Bounces</a>
+    <hr style="margin: var(--space-sm) 0; border-color: var(--color-border-subtle);">
+    <a href="/domains/{{ domain_id }}/edit">Edit Domain</a>
+    <a href="/domains/{{ domain_id }}/check?type=ptr">Check PTR</a>
+    <a href="/domains/{{ domain_id }}/check?type=spf">Check SPF</a>
+</nav>
+<div class="domain-content">
+<section id="dns">
     <hgroup>
         <small>DNS runbook</small>
         <h1>{{ domain_name }}</h1>
@@ -35,12 +48,6 @@
         {% if !dkim_record.is_empty() %}
         <tr><td>TXT</td><td><code>{{ dkim_selector }}._domainkey</code></td><td><code>v=DKIM1; k=rsa; p={{ dkim_record }}</code></td><td>DKIM signing key</td></tr>
         {% endif %}
-        {# DMARC record (RFC 7489 §6.3).
-           rua: aggregate report URI — receiving MTAs POST daily XML summaries to this
-                RFC 5321 mailbox address (local-part@domain, RFC 5321 §4.1.2) via SMTP.
-           ruf: failure report URI  — receiving MTAs deliver per-message forensic reports
-                in ARF format (RFC 6591 / RFC 5965) to this RFC 5321 mailbox address via SMTP.
-           Both fall back to postmaster@<domain> (RFC 5321 §4.5.1) when not configured. #}
         <tr><td>TXT</td><td>_dmarc</td><td><code>v=DMARC1; p=reject; adkim=s; aspf=s; fo=1; rua=mailto:{% if let Some(rua) = dmarc_rua %}{{ rua }}{% else %}postmaster@{{ domain_name }}{% endif %}; ruf=mailto:{% if let Some(ruf) = dmarc_ruf %}{{ ruf }}{% else %}postmaster@{{ domain_name }}{% endif %}</code></td><td>DMARC enforcement</td></tr>
         <tr><td>SRV</td><td>_autodiscover._tcp</td><td><code>0 0 443 {{ hostname }}.</code></td><td>Outlook autodiscover</td></tr>
         <tr><td>CNAME</td><td>autoconfig</td><td><code>{{ hostname }}.</code></td><td>Thunderbird autoconfig</td></tr>
@@ -53,7 +60,8 @@
     </tbody>
 </table>
 </div>
-<section>
+
+<section id="dkim">
     <hgroup>
         <small>DKIM payload</small>
         <h2>Selector {{ dkim_selector }}</h2>
@@ -67,7 +75,8 @@
     <p><em>Generate a DKIM key to unlock signing coverage.</em></p>
     {% endif %}
 </section>
-<section>
+
+<section id="dmarc">
     <hgroup>
         <small>DMARC report inbox</small>
         <h2>DMARC</h2>
@@ -98,11 +107,10 @@
     {% else %}
     <p><small>Create an account for this domain first to enable DMARC reporting.</small></p>
     {% endif %}
-</section>
-<section>
+
     <hgroup>
         <small>DMARC failure report inbox</small>
-        <h2>DMARC ruf</h2>
+        <h3>DMARC ruf</h3>
     </hgroup>
     {% if let Some(inbox) = dmarc_inbox %}
     {% if let Some(ruf_username) = inbox.ruf_account_username.as_deref() %}
@@ -132,9 +140,78 @@
     <p><small>Configure a DMARC rua inbox above before setting an ruf inbox.</small></p>
     {% endif %}
 </section>
+
+<section id="abuse">
+    <hgroup>
+        <small>Abuse report inbox</small>
+        <h2>Abuse</h2>
+    </hgroup>
+    {% if let Some(inbox) = abuse_inbox %}
+    <p>
+        Abuse reports are delivered to
+        <strong>{{ inbox.account_username.as_deref().unwrap_or("?") }}@{{ inbox.account_domain.as_deref().unwrap_or("?") }}</strong>.
+        <a href="/abuse/{{ inbox.id }}/reports">View reports →</a>
+    </p>
+    <form method="post" action="/domains/{{ domain_id }}/abuse/delete" class="form-inline">
+        <button type="submit" class="button-danger button-small">Remove abuse inbox</button>
+    </form>
+    {% else %}
+    <p>No abuse report inbox configured for this domain.</p>
+    {% endif %}
+    {% if !domain_accounts.is_empty() %}
+    <form method="post" action="/domains/{{ domain_id }}/abuse">
+        <label for="abuse_account_id">Set abuse inbox account:</label>
+        <select name="account_id" id="abuse_account_id" required>
+            <option value="">— Select account —</option>
+            {% for a in domain_accounts %}
+            <option value="{{ a.id }}">{{ a.username }}@{{ a.domain_name.as_deref().unwrap_or("?") }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit">Save</button>
+    </form>
+    {% else %}
+    <p><small>Create an account for this domain first to enable abuse reporting.</small></p>
+    {% endif %}
+</section>
+
+<section id="bounce">
+    <hgroup>
+        <small>Bounce processing inbox</small>
+        <h2>Bounces</h2>
+    </hgroup>
+    {% if let Some(inbox) = bounce_inbox %}
+    <p>
+        Bounce (DSN) notifications are delivered to
+        <strong>{{ inbox.account_username.as_deref().unwrap_or("?") }}@{{ inbox.account_domain.as_deref().unwrap_or("?") }}</strong>.
+        <a href="/bounce/{{ inbox.id }}/reports">View reports →</a>
+    </p>
+    <form method="post" action="/domains/{{ domain_id }}/bounce/delete" class="form-inline">
+        <button type="submit" class="button-danger button-small">Remove bounce inbox</button>
+    </form>
+    {% else %}
+    <p>No bounce inbox configured for this domain.</p>
+    {% endif %}
+    {% if !domain_accounts.is_empty() %}
+    <form method="post" action="/domains/{{ domain_id }}/bounce">
+        <label for="bounce_account_id">Set bounce inbox account:</label>
+        <select name="account_id" id="bounce_account_id" required>
+            <option value="">— Select account —</option>
+            {% for a in domain_accounts %}
+            <option value="{{ a.id }}">{{ a.username }}@{{ a.domain_name.as_deref().unwrap_or("?") }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit">Save</button>
+    </form>
+    {% else %}
+    <p><small>Create an account for this domain first to enable bounce processing.</small></p>
+    {% endif %}
+</section>
+
 <aside>
     <h2>Reverse DNS</h2>
     <p>Ask your provider to point the PTR record for your public IP back to <code>{{ hostname }}</code>.</p>
     <p><a href="/domains">Back to Domains</a></p>
 </aside>
+</div>
+</div>
 {% endblock %}

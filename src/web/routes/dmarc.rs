@@ -2,15 +2,14 @@ use askama::Template;
 use axum::{
     extract::{Path, Query, State},
     response::{Html, IntoResponse, Redirect, Response},
-    Form,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::io::Read;
 
-use crate::db::{Account, DmarcInbox};
+use crate::db::DmarcInbox;
 use crate::web::{auth::AuthAdmin, fire_webhook, AppState};
 
 // ── Constants ──
@@ -438,13 +437,7 @@ fn paginate_reports(
     }
 }
 
-// ── Forms ──
-
-#[derive(Deserialize)]
-pub struct AddDmarcInboxForm {
-    pub account_id: i64,
-    pub label: String,
-}
+// ── Query params ──
 
 #[derive(Deserialize)]
 pub struct ReportsQuery {
@@ -457,15 +450,6 @@ fn default_page() -> usize {
 }
 
 // ── Templates ──
-
-#[derive(Template)]
-#[template(path = "dmarc/list.html")]
-struct ListTemplate<'a> {
-    nav_active: &'a str,
-    flash: Option<String>,
-    inboxes: Vec<DmarcInbox>,
-    accounts: Vec<Account>,
-}
 
 #[derive(Template)]
 #[template(path = "dmarc/reports.html")]
@@ -482,67 +466,6 @@ struct ReportsTemplate<'a> {
 }
 
 // ── Handlers ──
-
-pub async fn list(
-    _auth: AuthAdmin,
-    State(state): State<AppState>,
-) -> Html<String> {
-    info!("[web] GET /dmarc — list DMARC inboxes");
-    let inboxes = state.blocking_db(|db| db.list_dmarc_inboxes()).await;
-    let accounts = state
-        .blocking_db(|db| db.list_all_accounts_with_domain())
-        .await;
-    let tmpl = ListTemplate {
-        nav_active: "DMARC",
-        flash: None,
-        inboxes,
-        accounts,
-    };
-    Html(tmpl.render().unwrap())
-}
-
-pub async fn create(
-    _auth: AuthAdmin,
-    State(state): State<AppState>,
-    Form(form): Form<AddDmarcInboxForm>,
-) -> Response {
-    info!(
-        "[web] POST /dmarc — creating DMARC inbox account_id={}",
-        form.account_id
-    );
-    let account_id = form.account_id;
-    let label = form.label.clone();
-    let result = state
-        .blocking_db(move |db| db.create_dmarc_inbox(account_id, &label))
-        .await;
-    match result {
-        Ok(_) => Redirect::to("/dmarc").into_response(),
-        Err(e) => {
-            error!("[web] failed to create DMARC inbox: {}", e);
-            let inboxes = state.blocking_db(|db| db.list_dmarc_inboxes()).await;
-            let accounts = state
-                .blocking_db(|db| db.list_all_accounts_with_domain())
-                .await;
-            let tmpl = ListTemplate {
-                nav_active: "DMARC",
-                flash: Some(format!("Error: {}", e)),
-                inboxes,
-                accounts,
-            };
-            Html(tmpl.render().unwrap()).into_response()
-        }
-    }
-}
-
-pub async fn delete(
-    _auth: AuthAdmin,
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> Response {
-    warn!("[web] POST /dmarc/{}/delete — deleting DMARC inbox", id);
-    state.blocking_db(move |db| db.delete_dmarc_inbox(id)).await;
-    Redirect::to("/dmarc").into_response()
-}
 
 pub async fn reports(
     _auth: AuthAdmin,

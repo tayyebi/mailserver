@@ -1783,3 +1783,91 @@ mark.mark-muted {
 [data-theme="light"] select:not([multiple]) {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%23545350' d='M4 6l4 4 4-4z'/%3E%3Csvg%3E");
 }
+
+/* ── System account row styling ── */
+
+tr.system-account {
+  opacity: 0.6;
+}
+
+tr.system-account td {
+  border-block-end-color: var(--color-border-subtle);
+}
+
+tr.system-account a,
+tr.system-account button {
+  pointer-events: none;
+  opacity: 0.4;
+}
+
+.muted {
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
+}
+
+/* ── Domain layout (sub-sidebar + content side by side) ── */
+
+.domain-layout {
+  display: flex;
+  gap: var(--space-lg);
+  align-items: flex-start;
+}
+
+.domain-layout > .domain-subnav {
+  flex: 0 0 14rem;
+  min-inline-size: 12rem;
+}
+
+.domain-layout > .domain-content {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+@media (max-width: 767px) {
+  .domain-layout {
+    flex-direction: column;
+  }
+  .domain-layout > .domain-subnav {
+    flex: none;
+    inline-size: 100%;
+    position: static;
+  }
+}
+
+/* ── Domain sub-sidebar (pinned to left) ── */
+
+.domain-subnav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-block-end: var(--space-lg);
+  background: var(--color-bg-subtle);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space-sm);
+  position: sticky;
+  inset-block-start: calc(var(--header-height) + var(--space-md));
+}
+
+.domain-subnav a {
+  display: block;
+  padding-block: var(--space-sm);
+  padding-inline: var(--space-md);
+  border-radius: var(--radius);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  text-decoration: none;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.domain-subnav a:hover {
+  background: var(--color-bg-muted);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.domain-subnav a[aria-current="true"] {
+  color: var(--color-accent);
+  background: var(--color-bg-muted);
+  font-weight: 600;
+}

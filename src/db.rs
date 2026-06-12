@@ -55,6 +55,7 @@ pub struct Account {
     pub active: bool,
     pub quota: i64,
     pub domain_name: Option<String>,
+    pub is_system: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -1027,6 +1028,7 @@ impl Database {
             active: row.get(5),
             quota: row.get(6),
             domain_name: None,
+            is_system: false,
         })
     }
 
@@ -1051,6 +1053,7 @@ impl Database {
             active: row.get(5),
             quota: row.get(6),
             domain_name: row.get(7),
+            is_system: false,
         })
     }
 
@@ -1136,7 +1139,10 @@ impl Database {
         let mut conn = self.conn();
         let rows = conn
             .query(
-                "SELECT a.id, a.domain_id, a.username, a.password_hash, a.name, a.active, a.quota, d.domain
+                "SELECT a.id, a.domain_id, a.username, a.password_hash, a.name, a.active, a.quota, d.domain,
+                        EXISTS (SELECT 1 FROM abuse_inboxes WHERE account_id = a.id)
+                        OR EXISTS (SELECT 1 FROM bounce_inboxes WHERE account_id = a.id)
+                        OR EXISTS (SELECT 1 FROM dmarc_inboxes WHERE account_id = a.id) AS is_system
                  FROM accounts a
                  LEFT JOIN domains d ON a.domain_id = d.id
                  ORDER BY a.username",
@@ -1157,6 +1163,7 @@ impl Database {
                 active: row.get(5),
                 quota: row.get(6),
                 domain_name: row.get(7),
+                is_system: row.get(8),
             })
             .collect()
     }
@@ -2945,7 +2952,10 @@ impl Database {
         let mut conn = self.conn();
         let rows = conn
             .query(
-                "SELECT a.id, a.domain_id, a.username, a.password_hash, a.name, a.active, a.quota, d.domain
+                "SELECT a.id, a.domain_id, a.username, a.password_hash, a.name, a.active, a.quota, d.domain,
+                        EXISTS (SELECT 1 FROM abuse_inboxes WHERE account_id = a.id)
+                        OR EXISTS (SELECT 1 FROM bounce_inboxes WHERE account_id = a.id)
+                        OR EXISTS (SELECT 1 FROM dmarc_inboxes WHERE account_id = a.id) AS is_system
                  FROM accounts a
                  LEFT JOIN domains d ON a.domain_id = d.id
                  WHERE a.domain_id = $1
@@ -2966,6 +2976,7 @@ impl Database {
                 active: row.get(5),
                 quota: row.get(6),
                 domain_name: row.get(7),
+                is_system: row.get(8),
             })
             .collect()
     }
@@ -3065,6 +3076,30 @@ impl Database {
         })
     }
 
+    pub fn get_abuse_inbox_by_domain_id(&self, domain_id: i64) -> Option<AbuseInbox> {
+        debug!("[db] getting abuse inbox for domain_id={}", domain_id);
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT ai.id, ai.account_id, ai.label, ai.created_at, a.username, d.domain
+             FROM abuse_inboxes ai
+             JOIN accounts a ON ai.account_id = a.id
+             JOIN domains d ON a.domain_id = d.id
+             WHERE d.id = $1
+             LIMIT 1",
+            &[&domain_id],
+        )
+        .ok()
+        .flatten()
+        .map(|row| AbuseInbox {
+            id: row.get(0),
+            account_id: row.get(1),
+            label: row.get::<_, Option<String>>(2).unwrap_or_default(),
+            created_at: row.get::<_, Option<String>>(3).unwrap_or_default(),
+            account_username: row.get(4),
+            account_domain: row.get(5),
+        })
+    }
+
     pub fn create_abuse_inbox(&self, account_id: i64, label: &str) -> Result<i64, String> {
         info!("[db] creating abuse inbox account_id={}", account_id);
         let mut conn = self.conn();
@@ -3129,6 +3164,30 @@ impl Database {
              LEFT JOIN domains d ON a.domain_id = d.id
              WHERE bi.id = $1",
             &[&id],
+        )
+        .ok()
+        .flatten()
+        .map(|row| BounceInbox {
+            id: row.get(0),
+            account_id: row.get(1),
+            label: row.get::<_, Option<String>>(2).unwrap_or_default(),
+            created_at: row.get::<_, Option<String>>(3).unwrap_or_default(),
+            account_username: row.get(4),
+            account_domain: row.get(5),
+        })
+    }
+
+    pub fn get_bounce_inbox_by_domain_id(&self, domain_id: i64) -> Option<BounceInbox> {
+        debug!("[db] getting bounce inbox for domain_id={}", domain_id);
+        let mut conn = self.conn();
+        conn.query_opt(
+            "SELECT bi.id, bi.account_id, bi.label, bi.created_at, a.username, d.domain
+             FROM bounce_inboxes bi
+             JOIN accounts a ON bi.account_id = a.id
+             JOIN domains d ON a.domain_id = d.id
+             WHERE d.id = $1
+             LIMIT 1",
+            &[&domain_id],
         )
         .ok()
         .flatten()
@@ -3637,6 +3696,7 @@ impl Database {
             active: row.get(5),
             quota: row.get(6),
             domain_name: row.get(7),
+            is_system: false,
         })
     }
 
