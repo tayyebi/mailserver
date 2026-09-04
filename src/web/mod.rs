@@ -275,18 +275,21 @@ async fn embedded_desktop_css() -> impl axum::response::IntoResponse {
     )
 }
 
+/// Regenerate mail service configs and reload postfix/dovecot/opendkim.
+///
+/// This runs in the background rather than being awaited by the caller: it reads
+/// from the DB and shells out to `postfix reload`/`dovecot reload`, which together
+/// can take several seconds. Blocking the HTTP response on it made the admin UI
+/// appear to hang after routine changes (e.g. adding a domain) and encouraged
+/// impatient users to resubmit the form, which then hit the DB a second time.
 pub(crate) async fn regen_configs(state: &AppState) {
-    info!("[web] regenerating mail service configs");
+    info!("[web] scheduling mail service config regeneration");
     let db = state.db.clone();
     let hostname = state.hostname.clone();
-    let (tx, rx) = tokio::sync::oneshot::channel();
 
     std::thread::spawn(move || {
         crate::config::generate_all_configs(&db, &hostname);
-        let _ = tx.send(());
     });
-
-    let _ = rx.await;
 }
 
 /// Fire a webhook notification for a system activity event.

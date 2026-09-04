@@ -4,6 +4,27 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, MutexGuard};
 
+/// Turn a Postgres unique-violation into a message an admin can act on, instead of
+/// the raw "db error: ERROR: duplicate key value violates unique constraint ..." text.
+/// Any other error is passed through unchanged. `message` is only evaluated when the
+/// error actually is a unique violation.
+fn friendly_insert_error(e: postgres::Error, message: impl FnOnce() -> String) -> String {
+    if e.code() == Some(&postgres::error::SqlState::UNIQUE_VIOLATION) {
+        message()
+    } else {
+        e.to_string()
+    }
+}
+
+/// "A domain named ..." / "An account named ..." — picks the article from the entity noun.
+fn duplicate_name_error(entity: &str, value: &str) -> String {
+    let article = match entity.chars().next().map(|c| c.to_ascii_lowercase()) {
+        Some('a' | 'e' | 'i' | 'o' | 'u') => "An",
+        _ => "A",
+    };
+    format!("{} {} named \"{}\" already exists.", article, entity, value)
+}
+
 fn now() -> String {
     chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
 }
@@ -923,7 +944,7 @@ impl Database {
                 )
                 .map_err(|e| {
                     error!("[db] failed to create domain {}: {}", domain, e);
-                    e.to_string()
+                    friendly_insert_error(e, || duplicate_name_error("domain", domain))
                 })?;
             row.get::<_, i64>(0)
         };
@@ -1083,7 +1104,9 @@ impl Database {
                 )
                 .map_err(|e| {
                     error!("[db] failed to create account {}: {}", username, e);
-                    e.to_string()
+                    friendly_insert_error(e, || {
+                        format!("An account named \"{}\" already exists in this domain.", username)
+                    })
                 })?;
             row.get::<_, i64>(0)
         };
@@ -1349,7 +1372,7 @@ impl Database {
             )
             .map_err(|e| {
                 error!("[db] failed to create tracking pattern {}: {}", pattern, e);
-                e.to_string()
+                friendly_insert_error(e, || duplicate_name_error("tracking pattern", pattern))
             })?;
         let id: i64 = row.get(0);
         info!("[db] tracking pattern created: {} (id={})", pattern, id);
@@ -1455,7 +1478,7 @@ impl Database {
             )
             .map_err(|e| {
                 error!("[db] failed to create unsubscribe pattern {}: {}", pattern, e);
-                e.to_string()
+                friendly_insert_error(e, || duplicate_name_error("unsubscribe pattern", pattern))
             })?;
         let id: i64 = row.get(0);
         info!("[db] unsubscribe pattern created: {} (id={})", pattern, id);
@@ -1590,7 +1613,7 @@ impl Database {
             )
             .map_err(|e| {
                 error!("[db] failed to create footer pattern {}: {}", pattern, e);
-                e.to_string()
+                friendly_insert_error(e, || duplicate_name_error("footer pattern", pattern))
             })?;
         let id: i64 = row.get(0);
         info!("[db] footer pattern created: {} (id={})", pattern, id);
@@ -2995,7 +3018,9 @@ impl Database {
         .map(|row| row.get(0))
         .map_err(|e| {
             error!("[db] failed to create dmarc inbox: {}", e);
-            e.to_string()
+            friendly_insert_error(e, || {
+                "This account is already set up as a DMARC inbox.".to_string()
+            })
         })
     }
 
@@ -3114,7 +3139,9 @@ impl Database {
         .map(|row| row.get(0))
         .map_err(|e| {
             error!("[db] failed to create abuse inbox: {}", e);
-            e.to_string()
+            friendly_insert_error(e, || {
+                "This account is already set up as an abuse inbox.".to_string()
+            })
         })
     }
 
@@ -3215,7 +3242,9 @@ impl Database {
         .map(|row| row.get(0))
         .map_err(|e| {
             error!("[db] failed to create bounce inbox: {}", e);
-            e.to_string()
+            friendly_insert_error(e, || {
+                "This account is already set up as a bounce inbox.".to_string()
+            })
         })
     }
 
@@ -3873,7 +3902,9 @@ impl Database {
             )
             .map_err(|e| {
                 error!("[db] failed to create CalDAV calendar: {}", e);
-                e.to_string()
+                friendly_insert_error(e, || {
+                    format!("A calendar with the slug \"{}\" already exists for this account.", slug)
+                })
             })?;
         let id: i64 = row.get(0);
         info!("[db] CalDAV calendar created id={}", id);
@@ -4096,7 +4127,9 @@ impl Database {
         })
         .map_err(|e| {
             error!("[db] failed to create CardDAV address book: {}", e);
-            e.to_string()
+            friendly_insert_error(e, || {
+                format!("An address book with the slug \"{}\" already exists for this account.", slug)
+            })
         })
     }
 
