@@ -6,5 +6,16 @@
 	<h1>{{ title }}</h1>
 	<p>{{ message }}</p>
 	<p><a href="{{ back_url }}">{{ back_label }}</a></p>
+	{% if status_code == 401 %}
+	<div class="reset-guide">
+		<h2>Lost access? Reset the password from the server terminal</h2>
+		<p>If you don't know the current admin credentials, run this on the server to set a new password without logging in:</p>
+		<p><strong>Docker</strong></p>
+		<pre><code>docker compose exec mailserver env RESET_USER=admin RESET_PASS=newpassword mailserver reset-password</code></pre>
+		<p><strong>Bare metal / systemd</strong></p>
+		<pre><code>RESET_USER=admin RESET_PASS=newpassword mailserver reset-password</code></pre>
+		<p>Replace <code>admin</code> and <code>newpassword</code> with the username and new password you want. Then log in again with the new password.</p>
+	</div>
+	{% endif %}
 </section>
 {% endblock %}
