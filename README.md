@@ -54,6 +54,7 @@ Alpine · Postfix · Dovecot · OpenDKIM · Rust · PostgreSQL
 | ⏱️ **Rate Limiting** | Configurable per-account/per-domain outbound sending rate limits with conditional rules |
 | 🌐 **Built-in Webmail** | Read, compose, and manage email directly from your browser with IMAP IDLE push |
 | 🔒 **Fail2ban Protection** | Auto-ban IPs on repeated auth failures; manage whitelist & blacklist with full audit log |
+| 🧰 **Toolbox** | Diagnostic tools run from the server; the SPF resolver walks a domain's full SPF policy, follows includes, and counts DNS lookups against the RFC 7208 limit |
 | 📜 **Logs** | Dedicated Logs section: filtered mail log viewer, application log buffer, and the fail2ban, webhook, MCP, and tracking logs, with an overview of where each log is stored |
 | 🛡️ **2FA (TOTP)** | Two-factor authentication for the admin panel |
 | 📦 **Queue Management** | View and flush the Postfix mail queue from the dashboard |

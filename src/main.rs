@@ -2,9 +2,11 @@ mod applog;
 mod auth;
 mod config;
 mod db;
+mod dns;
 mod fail2ban;
 mod filter;
 mod provision;
+mod spf;
 mod web;
 
 use log::{debug, error, info, warn};

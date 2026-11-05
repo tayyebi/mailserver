@@ -1,0 +1,28 @@
+{% extends "layout.html" %}
+{% block title %}Toolbox{% endblock %}
+{% block content %}
+<h1>Toolbox</h1>
+<p>Diagnostic tools for mail delivery. Every lookup is made from this server.</p>
+
+<h2>SPF Resolver</h2>
+<p>Walks a domain's SPF policy the way a receiving server does. It follows <code>include:</code> and <code>redirect=</code>, resolves <code>a</code> and <code>mx</code> terms to addresses, and counts DNS lookups against the limit of {{ lookup_limit }}. Terms <code>ptr</code> and <code>exists</code> are counted but not evaluated.</p>
+
+<form method="get" action="/toolbox" class="form-inline">
+  <label>Domain <input type="text" name="domain" value="{{ domain }}" placeholder="example.com" required></label>
+  <button type="submit">Resolve SPF</button>
+</form>
+
+{% if let Some(msg) = input_error %}
+<p><em>{{ msg }}</em></p>
+{% endif %}
+
+{% if searched %}
+<h3>Result for {{ domain }}</h3>
+<p>
+  DNS lookups: <strong>{{ lookups }}</strong> of {{ lookup_limit }}
+  {% if over_limit %}&mdash; <strong>over the limit, so receivers return permerror</strong>{% endif %}
+</p>
+<pre><code>{% for l in lines %}{{ l.pad }}{% if l.class == "record" %}<strong>{{ l.text }}</strong>{% else if l.class == "warning" %}<strong>{{ l.text }}</strong>{% else if l.class == "error" %}<span class="text-danger">{{ l.text }}</span>{% else %}{{ l.text }}{% endif %}
+{% endfor %}</code></pre>
+{% endif %}
+{% endblock %}
