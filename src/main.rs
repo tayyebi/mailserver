@@ -1,3 +1,4 @@
+mod applog;
 mod auth;
 mod config;
 mod db;
@@ -10,9 +11,10 @@ use log::{debug, error, info, warn};
 use std::env;
 
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .format_timestamp_millis()
-        .init();
+    let mut builder =
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"));
+    builder.format_timestamp_millis();
+    applog::init(&mut builder).expect("failed to install logger");
 
     let args: Vec<String> = env::args().collect();
     let command = args.get(1).map(|s| s.as_str()).unwrap_or("help");

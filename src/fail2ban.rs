@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use crate::db::Database;
 
-const MAIL_LOG_PATH: &str = "/var/log/mail.log";
+pub const MAIL_LOG_PATH: &str = "/var/log/mail.log";
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
 const ENABLED_CACHE_TTL: Duration = Duration::from_secs(30);
 

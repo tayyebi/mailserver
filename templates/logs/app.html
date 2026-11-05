@@ -1,0 +1,39 @@
+{% extends "layout.html" %}
+{% block title %}Application Log{% endblock %}
+{% block content %}
+<h1>Application Log</h1>
+<p>Records from the admin server process, newest first. The buffer keeps the last {{ capacity }} records and is cleared on restart. The same records are also written to stderr (<code>docker logs</code>). The level is set by <code>RUST_LOG</code>.</p>
+
+<form method="get" action="/logs/app" class="form-inline">
+  <label>Filter <input type="search" name="q" value="{{ query }}" placeholder="e.g. fail2ban, webhook"></label>
+  <label>Lines <input type="number" name="lines" min="1" max="2000" value="{{ lines }}"></label>
+  <button type="submit">Apply</button>
+</form>
+
+{% if entries.is_empty() %}
+<p>No matching records.</p>
+{% else %}
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+  <th>Time</th>
+  <th>Level</th>
+  <th>Target</th>
+  <th>Message</th>
+</tr>
+</thead>
+<tbody>
+{% for e in entries %}
+<tr>
+  <td><code>{{ e.timestamp }}</code></td>
+  <td>{% if e.severe %}<strong>{{ e.level }}</strong>{% else %}{{ e.level }}{% endif %}</td>
+  <td><code>{{ e.target }}</code></td>
+  <td>{{ e.message }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

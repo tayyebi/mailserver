@@ -1,0 +1,32 @@
+{% extends "layout.html" %}
+{% block title %}Logs{% endblock %}
+{% block content %}
+<h1>Logs</h1>
+<p>Every log this server keeps: what it records, where it is stored, and the code that writes it.</p>
+
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+  <th>Log</th>
+  <th>Records</th>
+  <th>Storage</th>
+  <th>Implementation</th>
+</tr>
+</thead>
+<tbody>
+{% for s in sources %}
+<tr>
+  <td><a href="{{ s.view_url }}">{{ s.name }}</a></td>
+  <td>{{ s.records }}</td>
+  <td>{{ s.storage }}</td>
+  <td><code>{{ s.implementation }}</code></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+
+<h2>Not populated</h2>
+<p>The <code>email_logs</code> and <code>connection_logs</code> tables are created by migration 001, but no code writes to them, so they are always empty.</p>
+{% endblock %}
