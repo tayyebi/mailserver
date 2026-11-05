@@ -25,6 +25,7 @@ pub mod registration;
 pub mod relays;
 pub mod settings;
 pub mod spambl;
+pub mod toolbox;
 pub mod tracking;
 pub mod unsubscribe;
 pub mod webhook;
@@ -132,6 +133,7 @@ pub fn auth_routes() -> Router<AppState> {
             post(settings::restart_container),
         )
         .route("/configs", get(configs::page))
+        .route("/toolbox", get(toolbox::page))
         .route("/api", get(api_docs::page))
         .route("/api/token/generate", post(api_docs::generate_token))
         .route("/api/token/revoke", post(api_docs::revoke_token))
