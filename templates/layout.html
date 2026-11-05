@@ -36,7 +36,6 @@
     <div class="nav-group">
       <span class="nav-group-label">Processing</span>
       <a href="/queue"{% if nav_active == "Queue" %} aria-current="page"{% endif %}>Queue</a>
-      <a href="/tracking"{% if nav_active == "Tracking" %} aria-current="page"{% endif %}>Tracking</a>
       <a href="/unsubscribe/list"{% if nav_active == "Unsubscribe" %} aria-current="page"{% endif %}>Unsubscribe</a>
       <a href="/footer"{% if nav_active == "Footer" %} aria-current="page"{% endif %}>Footer</a>
       <a href="/rate-limits"{% if nav_active == "Rate Limits" %} aria-current="page"{% endif %}>Rate Limits</a>
@@ -44,7 +43,17 @@
       <a href="/dmarc"{% if nav_active == "DMARC" %} aria-current="page"{% endif %}>DMARC</a>
       <a href="/abuse"{% if nav_active == "Abuse" %} aria-current="page"{% endif %}>Abuse</a>
       <a href="/bounce"{% if nav_active == "Bounces" %} aria-current="page"{% endif %}>Bounces</a>
+    </div>
+
+    <div class="nav-group">
+      <span class="nav-group-label">Logs</span>
+      <a href="/logs"{% if nav_active == "Logs" %} aria-current="page"{% endif %}>Overview</a>
+      <a href="/logs/mail"{% if nav_active == "Mail Log" %} aria-current="page"{% endif %}>Mail</a>
+      <a href="/logs/app"{% if nav_active == "App Log" %} aria-current="page"{% endif %}>Application</a>
       <a href="/fail2ban"{% if nav_active == "Fail2ban" %} aria-current="page"{% endif %}>Fail2ban</a>
+      <a href="/webhooks"{% if nav_active == "Webhooks" %} aria-current="page"{% endif %}>Webhooks</a>
+      <a href="/mcp"{% if nav_active == "MCP" %} aria-current="page"{% endif %}>MCP</a>
+      <a href="/tracking"{% if nav_active == "Tracking" %} aria-current="page"{% endif %}>Tracking</a>
     </div>
 
     <div class="nav-group">
@@ -59,8 +68,6 @@
     <div class="nav-group">
       <span class="nav-group-label">Integration</span>
       <a href="/api"{% if nav_active == "API" %} aria-current="page"{% endif %}>API</a>
-      <a href="/webhooks"{% if nav_active == "Webhooks" %} aria-current="page"{% endif %}>Webhooks</a>
-      <a href="/mcp"{% if nav_active == "MCP" %} aria-current="page"{% endif %}>MCP</a>
     </div>
 
     <div class="nav-group">

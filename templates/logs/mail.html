@@ -1,0 +1,24 @@
+{% extends "layout.html" %}
+{% block title %}Mail Log{% endblock %}
+{% block content %}
+<h1>Mail Log</h1>
+<p>Newest lines first, read from <code>{{ file_path }}</code>. Shows the last part of the file only.</p>
+
+<form method="get" action="/logs/mail" class="form-inline">
+  <label>Filter <input type="search" name="q" value="{{ query }}" placeholder="e.g. SASL, user@domain"></label>
+  <label>Lines <input type="number" name="lines" min="1" max="2000" value="{{ lines }}"></label>
+  <button type="submit">Apply</button>
+</form>
+
+{% if let Some(msg) = error %}
+<p><em>{{ msg }}</em></p>
+{% else %}
+<p>Showing {{ shown }} matching lines.</p>
+{% if entries.is_empty() %}
+<p>No matching lines.</p>
+{% else %}
+<pre><code>{% for line in entries %}{{ line }}
+{% endfor %}</code></pre>
+{% endif %}
+{% endif %}
+{% endblock %}

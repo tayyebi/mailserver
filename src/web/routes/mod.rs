@@ -16,6 +16,7 @@ pub mod fail2ban;
 pub mod footer;
 pub mod forwarding;
 pub mod imap_idle;
+pub mod logs;
 pub mod mcp;
 pub mod pixel;
 pub mod queue;
@@ -140,6 +141,9 @@ pub fn auth_routes() -> Router<AppState> {
             get(api_email::get_email).delete(api_email::delete_email),
         )
         .route("/api/soap", get(api_soap::wsdl).post(api_soap::handle))
+        .route("/logs", get(logs::overview))
+        .route("/logs/mail", get(logs::mail))
+        .route("/logs/app", get(logs::app))
         .route("/fail2ban", get(fail2ban::overview))
         .route("/fail2ban/toggle", post(fail2ban::toggle_system))
         .route("/fail2ban/ban", post(fail2ban::ban_ip))
