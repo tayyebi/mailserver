@@ -340,6 +340,7 @@ pub async fn send_email(
         .from(from_mb)
         .to(to_mb)
         .subject(&body.subject);
+    builder = builder.raw_header(crate::web::x_mailer_header());
 
     for addr in body.cc.split(',').map(str::trim).filter(|s| !s.is_empty()) {
         if let Ok(a) = addr.parse() {

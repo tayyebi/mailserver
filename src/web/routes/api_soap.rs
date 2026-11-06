@@ -608,6 +608,7 @@ async fn handle_send_email(
         .from(from_mb)
         .to(to_mb)
         .subject(&subject);
+    builder = builder.raw_header(crate::web::x_mailer_header());
 
     for addr in cc.split(',').map(str::trim).filter(|s| !s.is_empty()) {
         if let Ok(a) = addr.parse() {
