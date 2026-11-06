@@ -302,14 +302,17 @@ pub(crate) async fn regen_configs(state: &AppState) {
 /// `details` — a JSON-serialisable value with event-specific information
 pub(crate) fn fire_webhook(state: &AppState, event: &str, details: serde_json::Value) {
     let db = state.db.clone();
-    let webhook_url = db.get_setting("webhook_url").unwrap_or_default();
-    if webhook_url.is_empty() {
-        return;
-    }
-
     let event = event.to_string();
 
+    // The setting is read on the spawned thread, not here. The synchronous postgres
+    // client runs its queries through a tokio runtime, and calling it from an async
+    // request handler panics. That panic drops the connection, so the admin sees a
+    // 502 even though the action itself has already been committed.
     std::thread::spawn(move || {
+        let webhook_url = db.get_setting("webhook_url").unwrap_or_default();
+        if webhook_url.is_empty() {
+            return;
+        }
 
         let timestamp = chrono::Utc::now().to_rfc3339();
         let payload = serde_json::json!({
