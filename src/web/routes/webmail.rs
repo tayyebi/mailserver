@@ -1333,6 +1333,9 @@ pub async fn send_email(
                 }
             }
 
+            // Identify the sending software
+            builder = builder.raw_header(crate::web::x_mailer_header());
+
             // Set In-Reply-To
             if !form.in_reply_to.trim().is_empty() {
                 let in_reply_to = sanitize_header_value(form.in_reply_to.trim());

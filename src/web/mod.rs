@@ -292,6 +292,24 @@ pub(crate) async fn regen_configs(state: &AppState) {
     });
 }
 
+/// Release tag advertised in the X-Mailer header of outgoing mail.
+/// Update this together with the git tag when cutting a release.
+pub(crate) const MAILER_VERSION_TAG: &str = "v1.2.0";
+
+/// X-Mailer header value for messages sent from the webmail, API, and MCP paths.
+pub(crate) fn x_mailer_header() -> lettre::message::header::HeaderValue {
+    use lettre::message::header::{HeaderName, HeaderValue};
+    let name = HeaderName::new_from_ascii("X-Mailer".to_string())
+        .expect("X-Mailer is a valid ASCII header name");
+    HeaderValue::new(
+        name,
+        format!(
+            "tayyebi-mailserver {} - https://github.com/tayyebi/mailserver",
+            MAILER_VERSION_TAG
+        ),
+    )
+}
+
 /// Fire a webhook notification for a system activity event.
 ///
 /// This sends a POST request with a JSON payload to the configured webhook URL.
@@ -376,4 +394,22 @@ pub(crate) fn fire_webhook(state: &AppState, event: &str, details: serde_json::V
             "",
         );
     });
+}
+
+#[cfg(test)]
+mod x_mailer_tests {
+    #[test]
+    fn outgoing_message_carries_x_mailer_header() {
+        let msg = lettre::Message::builder()
+            .from("sender@example.com".parse().unwrap())
+            .to("rcpt@example.com".parse().unwrap())
+            .subject("test")
+            .raw_header(super::x_mailer_header())
+            .body("hello".to_string())
+            .unwrap();
+        let formatted = String::from_utf8(msg.formatted()).unwrap();
+        assert!(formatted.contains(
+            "X-Mailer: tayyebi-mailserver v1.2.0 - https://github.com/tayyebi/mailserver"
+        ));
+    }
 }

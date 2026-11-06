@@ -726,6 +726,7 @@ async fn tool_send_email(state: &AppState, args: &Value) -> Result<Value, String
             .parse()
             .map_err(|e| format!("Invalid To address: {}", e))?)
         .subject(subject);
+    builder = builder.raw_header(crate::web::x_mailer_header());
 
     for addr in cc.split(',').map(str::trim).filter(|s| !s.is_empty()) {
         match addr.parse() {
